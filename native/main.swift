@@ -7,18 +7,17 @@
 // technique NoiseBuddy uses. We set DYLD_INSERT_LIBRARIES inside the
 // child, so it does not matter whether the parent process strips DYLD_* vars.
 //
-// Command surface (single-token, machine-parseable output):
-//   get                         -> off | transparency | adaptive |
-//                                  noise-cancellation | unknown | no-device
-//   set <token>                 -> ok | no-op | unsupported | no-device
-//   toggle <tokenA> <tokenB>    -> <new token> | no-op | no-device
-//   list                        -> comma-separated available tokens | no-device
-//   ca get                      -> on | off | unsupported | no-device
-//   ca set <on|off>             -> ok | no-op | unsupported | no-device
-//   ca toggle                   -> on | off | no-op | unsupported | no-device
-//   --json                      -> structured output for any command
-//   --help | -h                 -> usage
-//   --version | -v | version    -> 0.1.0
+// Command surface (single-token, machine-parseable output by default):
+//   listening-mode|lm get            -> off | transparency | adaptive |
+//                                       noise-cancellation | unknown | no-device
+//   listening-mode|lm set <token>    -> ok | no-op | unsupported | no-device
+//   listening-mode|lm list           -> comma-separated tokens | no-device
+//   conversation-awareness|ca get    -> on | off | unsupported | no-device
+//   conversation-awareness|ca set <on|off>
+//                                      -> ok | no-op | unsupported | no-device
+//   --json                           -> structured output for any command
+//   --help | -h                      -> global or resource-specific usage
+//   --version | -v | version         -> 0.1.0
 //
 // Exit codes: 0 ok, 1 no-device, 2 bad-args, 3 no-op, 4 unsupported.
 
@@ -108,73 +107,99 @@ func fail(_ token: String, _ code: Int32, json: [String: Any]? = nil) -> Never {
   finish(token, code: code, json: json)
 }
 
-let help = """
+let globalHelp = """
 Usage:
-  airpods-control get [--json]
-  airpods-control set <mode> [--json]
-  airpods-control toggle <modeA> <modeB> [--json]
-  airpods-control list [--json]
-  airpods-control ca [get | set on|off | toggle] [--json]
+  airpods-control <resource> <command> [--json]
   airpods-control --version | -v | version
   airpods-control --help | -h
+
+Resources:
+  listening-mode, lm            Read, set, or list listening modes.
+  conversation-awareness, ca    Read or set Conversation Awareness.
+
+Global options:
+  --json       Emit structured JSON instead of plain script-friendly output.
+  --version, -v
+               Print the version and exit.
+  --help, -h   Print this help and exit.
+
+Run 'airpods-control <resource> --help' for resource-specific help.
+"""
+
+let listeningModeHelp = """
+Usage:
+  airpods-control listening-mode get [--json]
+  airpods-control listening-mode set <mode> [--json]
+  airpods-control listening-mode list [--json]
+
+Alias:
+  lm
 
 Modes:
   off, transparency, adaptive, noise-cancellation
 
 Options:
   --json       Emit structured JSON instead of plain script-friendly output.
-  --version    Print the version and exit.
-  --help       Print this help and exit.
+  --help, -h   Print this help and exit without accessing the device.
+"""
+
+let conversationAwarenessHelp = """
+Usage:
+  airpods-control conversation-awareness get [--json]
+  airpods-control conversation-awareness set <on|off> [--json]
+
+Alias:
+  ca
+
+Options:
+  --json       Emit structured JSON instead of plain script-friendly output.
+  --help, -h   Print this help and exit without accessing the device.
 """
 
 enum CLICommand {
-  case get
-  case list
-  case set(String, String)
-  case toggle(String, String, String, String)
-  case caGet
-  case caSet(Bool)
-  case caToggle
+  case listeningModeGet
+  case listeningModeSet(String, String)
+  case listeningModeList
+  case conversationAwarenessGet
+  case conversationAwarenessSet(Bool)
 }
 
 func parseCommand(_ args: [String]) -> CLICommand {
-  guard let cmd = args.first else { fail("bad-args", 2) }
+  guard args.count >= 2 else { fail("bad-args", 2) }
 
-  switch cmd {
-  case "get":
-    guard args.count == 1 else { fail("bad-args", 2) }
-    return .get
-
-  case "list":
-    guard args.count == 1 else { fail("bad-args", 2) }
-    return .list
-
-  case "set":
-    guard args.count == 2 else { fail("bad-args", 2) }
-    guard let av = tokenToAV[args[1]] else { fail("unsupported", 4) }
-    return .set(args[1], av)
-
-  case "toggle":
-    guard args.count == 3 else { fail("bad-args", 2) }
-    guard let avA = tokenToAV[args[1]], let avB = tokenToAV[args[2]] else {
-      fail("unsupported", 4)
-    }
-    return .toggle(args[1], avA, args[2], avB)
-
-  case "ca":
-    let sub = args.count >= 2 ? args[1] : "get"
-    switch sub {
+  switch args[0] {
+  case "listening-mode", "lm":
+    switch args[1] {
     case "get":
-      guard args.count <= 2 else { fail("bad-args", 2) }
-      return .caGet
+      guard args.count == 2 else { fail("bad-args", 2) }
+      return .listeningModeGet
+
+    case "set":
+      guard args.count == 3, let av = tokenToAV[args[2]] else {
+        fail("bad-args", 2)
+      }
+      return .listeningModeSet(args[2], av)
+
+    case "list":
+      guard args.count == 2 else { fail("bad-args", 2) }
+      return .listeningModeList
+
+    default:
+      fail("bad-args", 2)
+    }
+
+  case "conversation-awareness", "ca":
+    switch args[1] {
+    case "get":
+      guard args.count == 2 else { fail("bad-args", 2) }
+      return .conversationAwarenessGet
+
     case "set":
       guard args.count == 3, ["on", "off"].contains(args[2]) else {
         fail("bad-args", 2)
       }
-      return .caSet(args[2] == "on")
-    case "toggle":
-      guard args.count == 2 else { fail("bad-args", 2) }
-      return .caToggle
+      return .conversationAwarenessSet(args[2] == "on")
+
     default:
       fail("bad-args", 2)
     }
@@ -206,16 +231,33 @@ func caSetAndVerify(_ dev: AVOutputDeviceShim, _ enabled: Bool) -> Bool {
 
 // ── Entry ─────────────────────────────────────────────────────────────────
 let rawArgs = Array(CommandLine.arguments.dropFirst())
+
+if rawArgs.isEmpty {
+  print(globalHelp)
+  exit(0)
+}
+
+if let helpIndex = rawArgs.firstIndex(where: { ["--help", "-h"].contains($0) }) {
+  let resource = rawArgs[..<helpIndex].first { argument in
+    ["listening-mode", "lm", "conversation-awareness", "ca"].contains(argument)
+  }
+
+  switch resource {
+  case "listening-mode", "lm":
+    print(listeningModeHelp)
+  case "conversation-awareness", "ca":
+    print(conversationAwarenessHelp)
+  default:
+    print(globalHelp)
+  }
+  exit(0)
+}
+
 let jsonFlagCount = rawArgs.filter { $0 == "--json" }.count
 jsonOutput = jsonFlagCount > 0
 guard jsonFlagCount <= 1 else { fail("bad-args", 2) }
 
 let args = rawArgs.filter { $0 != "--json" }
-
-if args.count == 1, ["--help", "-h"].contains(args[0]) {
-  print(help)
-  exit(0)
-}
 
 if args.count == 1, ["--version", "-v", "version"].contains(args[0]) {
   finish(VERSION, json: ["version": VERSION])
@@ -227,70 +269,45 @@ ensureBypass()
 guard let dev = airpodsDevice() else { fail("no-device", 1) }
 
 switch command {
-case .get:
+case .listeningModeGet:
   let av = dev.currentMode()
   let mode = av.flatMap { avToToken[$0] } ?? "unknown"
-  finish(mode, json: ["mode": mode])
+  finish(mode, json: ["listeningMode": mode])
 
-case .list:
+case .listeningModeList:
   let availableModes = Set(dev.availableModes() ?? [])
   let tokens = modeTokenOrder.filter { token in
     tokenToAV[token].map { availableModes.contains($0) } ?? false
   }
-  finish(tokens.joined(separator: ","), json: ["modes": tokens])
+  finish(tokens.joined(separator: ","), json: ["listeningModes": tokens])
 
-case let .set(token, av):
+case let .listeningModeSet(token, av):
   guard (dev.availableModes() ?? []).contains(av) else { fail("unsupported", 4) }
   if dev.currentMode() == av {
-    finish("ok", json: ["mode": token, "result": "ok"])
+    finish("ok", json: ["listeningMode": token, "result": "ok"])
   }
   let okSet = setAndVerify(dev, av)
   if okSet {
-    finish("ok", json: ["mode": token, "result": "ok"])
+    finish("ok", json: ["listeningMode": token, "result": "ok"])
   } else {
     fail("no-op", 3, json: ["result": "no-op"])
   }
 
-case let .toggle(tokenA, avA, tokenB, avB):
-  let cur = dev.currentMode()
-  let target = (cur == avA) ? avB : avA
-  let targetToken = (cur == avA) ? tokenB : tokenA
-  guard (dev.availableModes() ?? []).contains(target) else { fail("unsupported", 4) }
-  if setAndVerify(dev, target) {
-    finish(targetToken, json: ["mode": targetToken, "result": "ok"])
-  } else {
-    fail("no-op", 3, json: ["result": "no-op"])
-  }
-
-case .caGet, .caSet(_), .caToggle:
+case .conversationAwarenessGet:
   guard dev.supportsCA() else { fail("unsupported", 4) }
+  let state = dev.caEnabled() ? "on" : "off"
+  finish(state, json: ["conversationAwareness": state])
 
-  switch command {
-  case .caGet:
-    let state = dev.caEnabled() ? "on" : "off"
-    finish(state, json: ["ca": state])
-
-  case let .caSet(target):
-    if dev.caEnabled() == target {
-      finish("ok", json: ["ca": target ? "on" : "off", "result": "ok"])
-    }
-    let okCA = caSetAndVerify(dev, target)
-    if okCA {
-      finish("ok", json: ["ca": target ? "on" : "off", "result": "ok"])
-    } else {
-      fail("no-op", 3, json: ["result": "no-op"])
-    }
-
-  case .caToggle:
-    let target = !dev.caEnabled()
-    if caSetAndVerify(dev, target) {
-      let state = target ? "on" : "off"
-      finish(state, json: ["ca": state, "result": "ok"])
-    } else {
-      fail("no-op", 3, json: ["result": "no-op"])
-    }
-
-  default:
-    fatalError("unreachable")
+case let .conversationAwarenessSet(target):
+  guard dev.supportsCA() else { fail("unsupported", 4) }
+  let state = target ? "on" : "off"
+  if dev.caEnabled() == target {
+    finish("ok", json: ["conversationAwareness": state, "result": "ok"])
+  }
+  let okCA = caSetAndVerify(dev, target)
+  if okCA {
+    finish("ok", json: ["conversationAwareness": state, "result": "ok"])
+  } else {
+    fail("no-op", 3, json: ["result": "no-op"])
   }
 }

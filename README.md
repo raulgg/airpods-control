@@ -3,9 +3,9 @@
 Control your AirPods listening mode and Conversation Awareness from the command line — instantly, with no Control Center, no menu bar, and no Accessibility permission.
 
 ```console
-$ airpods-control set noise-cancellation
+$ airpods-control lm set noise-cancellation
 ok
-$ airpods-control ca toggle
+$ airpods-control ca get
 off
 ```
 
@@ -14,7 +14,7 @@ off
 ## What it does
 
 - **Listening mode:** `off`, `transparency`, `adaptive`, `noise-cancellation`.
-- **Conversation Awareness:** turn it on, off, or toggle.
+- **Conversation Awareness:** read it or turn it on and off.
 - **Scriptable:** single-token output on stdout, meaningful exit codes, optional `--json`. Wire it to a hotkey, a Stream Deck, a Shortcut, or a `launchd` job.
 
 Because it speaks to the audio daemon rather than driving the UI, it needs **no Accessibility or Automation permission** and there is nothing to click. It is effectively invisible and instant.
@@ -67,30 +67,37 @@ Uninstall with `sudo make uninstall`; remove build artifacts with `make clean`.
 ## Usage
 
 ```
-airpods-control get
-airpods-control set <mode>
-airpods-control toggle <modeA> <modeB>
-airpods-control list
-airpods-control ca [get | set on|off | toggle]
+airpods-control listening-mode get
+airpods-control listening-mode set <mode>
+airpods-control listening-mode list
+airpods-control conversation-awareness get
+airpods-control conversation-awareness set <on|off>
 airpods-control --version | -v | version
 airpods-control --help | -h
 ```
 
+`listening-mode` can be shortened to `lm`, and `conversation-awareness` to
+`ca`. The aliases replace only the resource name, so `airpods-control lm get`
+and `airpods-control ca set off` are complete commands. Reads are always
+explicit; a bare resource name is an error.
+
 `<mode>` is one of `off`, `transparency`, `adaptive`, `noise-cancellation`.
+Unknown mode or state tokens are `bad-args` (exit `2`); a valid feature that
+the connected hardware does not provide is `unsupported` (exit `4`).
 
 Any command accepts `--json` for structured output.
 
 ### Read the current mode
 
 ```console
-$ airpods-control get
+$ airpods-control listening-mode get
 transparency
 ```
 
 ### Set a mode
 
 ```console
-$ airpods-control set noise-cancellation
+$ airpods-control listening-mode set noise-cancellation
 ok
 ```
 
@@ -99,63 +106,58 @@ prints `ok`, exits `0`, and does not issue a write. If a requested change is a
 silent hardware no-op (see below), you get `no-op` and exit code `3`:
 
 ```console
-$ airpods-control set noise-cancellation
+$ airpods-control lm set noise-cancellation
 no-op
-```
-
-### Toggle between two modes
-
-Handy for a single hotkey. If the current mode is `modeA`, it switches to `modeB`; otherwise it switches to `modeA`. It prints the mode it landed on.
-
-```console
-$ airpods-control toggle transparency noise-cancellation
-noise-cancellation
-$ airpods-control toggle transparency noise-cancellation
-transparency
 ```
 
 ### List the modes this device supports
 
 ```console
-$ airpods-control list
+$ airpods-control listening-mode list
 off,transparency,adaptive,noise-cancellation
 ```
+
+Modes are always printed in that order, filtered to the modes supported by the
+connected device.
 
 ### Conversation Awareness
 
 ```console
-$ airpods-control ca get
+$ airpods-control conversation-awareness get
 on
 $ airpods-control ca set off
 ok
-$ airpods-control ca toggle
-on
 ```
 
-`ca` with no subcommand is the same as `ca get`. On hardware that does not support Conversation Awareness you get `unsupported` and exit code `4`.
+On hardware that does not support Conversation Awareness you get `unsupported`
+and exit code `4`.
 
 ### JSON output
 
 Add `--json` to any command for structured output, e.g.:
 
 ```console
-$ airpods-control get --json
-{"mode":"transparency"}
+$ airpods-control listening-mode get --json
+{"listeningMode":"transparency"}
 
-$ airpods-control set noise-cancellation --json
-{"mode":"noise-cancellation","result":"ok"}
+$ airpods-control lm set noise-cancellation --json
+{"listeningMode":"noise-cancellation","result":"ok"}
 
-$ airpods-control list --json
-{"modes":["off","transparency","adaptive","noise-cancellation"]}
+$ airpods-control lm list --json
+{"listeningModes":["off","transparency","adaptive","noise-cancellation"]}
 
 $ airpods-control ca get --json
-{"ca":"on"}
+{"conversationAwareness":"on"}
 ```
 
-Successful writes include `"result":"ok"`; read and toggle responses include
-the resulting `mode` or `ca` state. Errors use an `error` field, such as
-`{"error":"no-device"}`, while a write that changes nothing returns
+Successful writes include `"result":"ok"` and the resulting
+`listeningMode` or `conversationAwareness` state. Errors use an `error` field,
+such as `{"error":"no-device"}`, while a write that changes nothing returns
 `{"result":"no-op"}` with exit code `3`.
+
+`-h` and `--help` can appear anywhere. Help always wins, exits `0`, and never
+accesses the device; a recognized resource before the flag selects contextual
+help. Version flags are global only.
 
 ### The `off` no-op caveat
 

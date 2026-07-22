@@ -4,8 +4,23 @@
 airpods-control \- control AirPods listening mode and Conversation Awareness
 .SH SYNOPSIS
 .B airpods-control
-.I command
-.RI [ arguments ]
+.RB ( listening-mode | lm )
+.RB ( get | list )
+.RB [ --json ]
+.br
+.B airpods-control
+.RB ( listening-mode | lm )
+.BI "set " mode
+.RB [ --json ]
+.br
+.B airpods-control
+.RB ( conversation-awareness | ca )
+.B get
+.RB [ --json ]
+.br
+.B airpods-control
+.RB ( conversation-awareness | ca )
+.BI "set " "on|off"
 .RB [ --json ]
 .br
 .B airpods-control
@@ -29,38 +44,46 @@ process via a small interpose library inserted with
 .BR DYLD_INSERT_LIBRARIES .
 See the project README and SECURITY document for the full trust model.
 .SH COMMANDS
+.SS LISTENING MODE
 .TP
-.B get
+.BR "listening-mode get" ", " "lm get"
 Print the current listening mode.
 .TP
-.BI "set " mode
-Set the listening mode. Prints
+.BR "listening-mode set " mode ", " "lm set " mode
+Set the listening mode. If the mode is already active, prints
 .B ok
-on a verified change or
+without issuing a write. Otherwise prints
+.B ok
+on a verified change, or
 .B no-op
-if nothing changed.
+if the requested write did not change the setting.
 .TP
-.BI "toggle " "modeA modeB"
-If the current mode is
-.IR modeA ,
-switch to
-.IR modeB ,
-otherwise switch to
-.IR modeA .
-Prints the mode it landed on.
+.BR "listening-mode list" ", " "lm list"
+Print the comma-separated modes supported by the connected device in the
+deterministic order documented under
+.BR MODES .
+.SS CONVERSATION AWARENESS
 .TP
-.B list
-Print the comma-separated list of modes this device supports.
+.BR "conversation-awareness get" ", " "ca get"
+Print the current Conversation Awareness state as
+.B on
+or
+.BR off .
 .TP
-.BR "ca " [ get | "set on" | "set off" | toggle ]
-Query or change Conversation Awareness. With no subcommand, behaves like
-.BR "ca get" .
+.BR "conversation-awareness set " "on|off" ", " "ca set " "on|off"
+Set Conversation Awareness. The setter is idempotent and uses the same
+.B ok
+and
+.B no-op
+contract as listening mode.
+.SS GLOBAL
 .TP
 .BR --version ", " -v ", " version
 Print the version and exit.
 .TP
 .BR --help ", " -h
-Print usage and exit.
+Print global or resource-specific usage and exit. Help may appear anywhere in
+a command, takes precedence over all operations, and never accesses the device.
 .SH MODES
 .B off
 (silent no-op on AirPods Pro),
@@ -70,7 +93,8 @@ Print usage and exit.
 .SH OPTIONS
 .TP
 .B --json
-Emit structured JSON instead of a single token. Accepted by any command.
+Emit structured JSON instead of plain script-friendly output. Accepted anywhere
+in an operational command or global version command.
 .SH EXIT STATUS
 .TP
 .B 0
