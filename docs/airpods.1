@@ -1,0 +1,112 @@
+.\" Manpage for airpods.
+.TH AIRPODS 1 "July 22, 2026" "airpods 0.1.0" "User Commands"
+.SH NAME
+airpods \- control AirPods listening mode and Conversation Awareness
+.SH SYNOPSIS
+.B airpods
+.I command
+.RI [ arguments ]
+.RB [ --json ]
+.br
+.B airpods
+.RB [ --version | -v | version ]
+.RB [ --help | -h ]
+.SH DESCRIPTION
+.B airpods
+reads and sets the AirPods listening mode and Conversation Awareness by talking
+directly to the macOS system audio daemon through a private AVFoundation API
+.RB ( AVOutputDevice
+in
+.BR AVRouting.framework ).
+A change takes effect immediately and shows the same on-screen banner as a stem
+press. No Control Center, menu bar, or Accessibility permission is involved.
+.PP
+Reaching the API requires forging one private audio entitlement
+.RB ( com.apple.avfoundation.allow-system-wide-context )
+inside the
+.B airpods
+process via a small interpose library inserted with
+.BR DYLD_INSERT_LIBRARIES .
+See the project README and SECURITY document for the full trust model.
+.SH COMMANDS
+.TP
+.B get
+Print the current listening mode.
+.TP
+.BI "set " mode
+Set the listening mode. Prints
+.B ok
+on a verified change or
+.B no-op
+if nothing changed.
+.TP
+.BI "toggle " "modeA modeB"
+If the current mode is
+.IR modeA ,
+switch to
+.IR modeB ,
+otherwise switch to
+.IR modeA .
+Prints the mode it landed on.
+.TP
+.B list
+Print the comma-separated list of modes this device supports.
+.TP
+.BR "ca " [ get | "set on" | "set off" | toggle ]
+Query or change Conversation Awareness. With no subcommand, behaves like
+.BR "ca get" .
+.TP
+.BR --version ", " -v ", " version
+Print the version and exit.
+.TP
+.BR --help ", " -h
+Print usage and exit.
+.SH MODES
+.B off
+(silent no-op on AirPods Pro),
+.BR transparency ,
+.BR adaptive ,
+.BR noise-cancellation .
+.SH OPTIONS
+.TP
+.B --json
+Emit structured JSON instead of a single token. Accepted by any command.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+No supported AirPods found as the current output device (no-device).
+.TP
+.B 2
+Missing or malformed arguments (bad-args).
+.TP
+.B 3
+Nothing changed \(em already in that state, or a silent no-op (no-op).
+.TP
+.B 4
+The mode or feature is not available on this device (unsupported).
+.SH NOTES
+On AirPods Pro,
+.B off
+(the Normal state) is a silent no-op: the API accepts it but the hardware does
+not change.
+.B airpods
+verifies every change by reading it back and reports
+.B no-op
+(exit 3) rather than falsely claiming success. Use
+.B transparency
+for a "hear everything" mode.
+.PP
+This relies on a private API and targets macOS Tahoe (26); Apple may change it
+in any update. The tool fails safe (reporting
+.B unsupported
+or
+.BR no-device )
+rather than crashing when selectors are missing.
+.SH SEE ALSO
+Project documentation: https://github.com/raulg/airpods-control-cli
+.SH AUTHOR
+Raul.
+Not affiliated with Apple. AirPods is a trademark of Apple Inc.

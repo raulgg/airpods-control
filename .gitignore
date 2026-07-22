@@ -1,0 +1,25 @@
+# Build output
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Editor / IDE cruft
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.xcuserstate
+xcuserdata/
+
+# Misc
+*.log
+
+# Local planning notes (not shipped)
+*.local.md
+plans/

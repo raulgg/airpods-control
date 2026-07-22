@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swiftc --version
+          clang --version
+
+      - name: Build
+        run: |
+          make
+          lipo -archs build/airpods
+          lipo -archs build/avbypass.dylib
+          codesign --verify --verbose build/airpods
+          codesign --verify --verbose build/avbypass.dylib
+
+      - name: Smoke test (read-only)
+        run: |
+          # These never change a listening mode. CI has no AirPods, so `get`
+          # would print `no-device` — that is fine, we just don't run it here.
+          ./build/airpods --help
+          test "$(./build/airpods --version)" = "0.1.0"
+          test "$(./build/airpods version --json)" = '{"version":"0.1.0"}'
+
+      - name: Verify install layout
+        run: |
+          stage="$RUNNER_TEMP/airpods-install"
+          make install DESTDIR="$stage" PREFIX=/usr/local
+          test "$(readlink "$stage/usr/local/bin/airpods")" = \
+            "../libexec/airpods-control/airpods"
+          test "$("$stage/usr/local/bin/airpods" --version)" = "0.1.0"
+          make uninstall DESTDIR="$stage" PREFIX=/usr/local
+          test ! -e "$stage/usr/local/bin/airpods"
