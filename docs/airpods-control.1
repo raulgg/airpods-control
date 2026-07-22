@@ -1,18 +1,18 @@
-.\" Manpage for airpods.
-.TH AIRPODS 1 "July 22, 2026" "airpods 0.1.0" "User Commands"
+.\" Manpage for airpods-control.
+.TH AIRPODS-CONTROL 1 "July 22, 2026" "airpods-control 0.1.0" "User Commands"
 .SH NAME
-airpods \- control AirPods listening mode and Conversation Awareness
+airpods-control \- control AirPods listening mode and Conversation Awareness
 .SH SYNOPSIS
-.B airpods
+.B airpods-control
 .I command
 .RI [ arguments ]
 .RB [ --json ]
 .br
-.B airpods
+.B airpods-control
 .RB [ --version | -v | version ]
 .RB [ --help | -h ]
 .SH DESCRIPTION
-.B airpods
+.B airpods-control
 reads and sets the AirPods listening mode and Conversation Awareness by talking
 directly to the macOS system audio daemon through a private AVFoundation API
 .RB ( AVOutputDevice
@@ -24,7 +24,7 @@ press. No Control Center, menu bar, or Accessibility permission is involved.
 Reaching the API requires forging one private audio entitlement
 .RB ( com.apple.avfoundation.allow-system-wide-context )
 inside the
-.B airpods
+.B airpods-control
 process via a small interpose library inserted with
 .BR DYLD_INSERT_LIBRARIES .
 See the project README and SECURITY document for the full trust model.
@@ -92,7 +92,7 @@ On AirPods Pro,
 .B off
 (the Normal state) is a silent no-op: the API accepts it but the hardware does
 not change.
-.B airpods
+.B airpods-control
 verifies every change by reading it back and reports
 .B no-op
 (exit 3) rather than falsely claiming success. Use

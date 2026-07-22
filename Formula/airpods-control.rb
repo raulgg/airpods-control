@@ -19,6 +19,6 @@ class AirpodsControl < Formula
   test do
     # Read-only smoke test: never sets a mode. Just confirm the binary runs and
     # reports a version.
-    assert_match(/\d+\.\d+/, shell_output("#{bin}/airpods --version"))
+    assert_match(/\d+\.\d+/, shell_output("#{bin}/airpods-control --version"))
   end
 end

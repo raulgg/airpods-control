@@ -1,15 +1,15 @@
-# airpods
+# airpods-control
 
 Control your AirPods listening mode and Conversation Awareness from the command line — instantly, with no Control Center, no menu bar, and no Accessibility permission.
 
 ```console
-$ airpods set noise-cancellation
+$ airpods-control set noise-cancellation
 ok
-$ airpods ca toggle
+$ airpods-control ca toggle
 off
 ```
 
-`airpods` talks to the macOS system audio daemon directly through the same private AVFoundation API that AirPods use internally. Switching a mode is exactly like pressing and holding a stem: the change is immediate and you get the same on-screen banner. There is no polling, no synthetic clicks, and no UI automation.
+`airpods-control` talks to the macOS system audio daemon directly through the same private AVFoundation API that AirPods use internally. Switching a mode is exactly like pressing and holding a stem: the change is immediate and you get the same on-screen banner. There is no polling, no synthetic clicks, and no UI automation.
 
 ## What it does
 
@@ -44,7 +44,7 @@ make
 sudo make install            # installs to /usr/local by default
 ```
 
-`make` produces a universal (arm64 + x86_64), ad-hoc-signed `build/airpods` and its companion `build/avbypass.dylib` using only Command Line Tools.
+`make` produces a universal (arm64 + x86_64), ad-hoc-signed `build/airpods-control` and its companion `build/avbypass.dylib` using only Command Line Tools.
 
 `make install` honors `PREFIX` and `DESTDIR`:
 
@@ -55,9 +55,9 @@ make install PREFIX="$HOME/.local"       # no sudo needed for a user prefix
 It lays the files out as:
 
 ```
-<PREFIX>/libexec/airpods-control/airpods
+<PREFIX>/libexec/airpods-control/airpods-control
 <PREFIX>/libexec/airpods-control/avbypass.dylib
-<PREFIX>/bin/airpods -> ../libexec/airpods-control/airpods   # relative symlink
+<PREFIX>/bin/airpods-control -> ../libexec/airpods-control/airpods-control   # relative symlink
 ```
 
 The binary resolves its own real path (through the symlink) to locate `avbypass.dylib` beside it, so the `bin` symlink just works.
@@ -67,13 +67,13 @@ Uninstall with `sudo make uninstall`; remove build artifacts with `make clean`.
 ## Usage
 
 ```
-airpods get
-airpods set <mode>
-airpods toggle <modeA> <modeB>
-airpods list
-airpods ca [get | set on|off | toggle]
-airpods --version | -v | version
-airpods --help | -h
+airpods-control get
+airpods-control set <mode>
+airpods-control toggle <modeA> <modeB>
+airpods-control list
+airpods-control ca [get | set on|off | toggle]
+airpods-control --version | -v | version
+airpods-control --help | -h
 ```
 
 `<mode>` is one of `off`, `transparency`, `adaptive`, `noise-cancellation`.
@@ -83,14 +83,14 @@ Any command accepts `--json` for structured output.
 ### Read the current mode
 
 ```console
-$ airpods get
+$ airpods-control get
 transparency
 ```
 
 ### Set a mode
 
 ```console
-$ airpods set noise-cancellation
+$ airpods-control set noise-cancellation
 ok
 ```
 
@@ -99,7 +99,7 @@ prints `ok`, exits `0`, and does not issue a write. If a requested change is a
 silent hardware no-op (see below), you get `no-op` and exit code `3`:
 
 ```console
-$ airpods set noise-cancellation
+$ airpods-control set noise-cancellation
 no-op
 ```
 
@@ -108,27 +108,27 @@ no-op
 Handy for a single hotkey. If the current mode is `modeA`, it switches to `modeB`; otherwise it switches to `modeA`. It prints the mode it landed on.
 
 ```console
-$ airpods toggle transparency noise-cancellation
+$ airpods-control toggle transparency noise-cancellation
 noise-cancellation
-$ airpods toggle transparency noise-cancellation
+$ airpods-control toggle transparency noise-cancellation
 transparency
 ```
 
 ### List the modes this device supports
 
 ```console
-$ airpods list
+$ airpods-control list
 off,transparency,adaptive,noise-cancellation
 ```
 
 ### Conversation Awareness
 
 ```console
-$ airpods ca get
+$ airpods-control ca get
 on
-$ airpods ca set off
+$ airpods-control ca set off
 ok
-$ airpods ca toggle
+$ airpods-control ca toggle
 on
 ```
 
@@ -139,16 +139,16 @@ on
 Add `--json` to any command for structured output, e.g.:
 
 ```console
-$ airpods get --json
+$ airpods-control get --json
 {"mode":"transparency"}
 
-$ airpods set noise-cancellation --json
+$ airpods-control set noise-cancellation --json
 {"mode":"noise-cancellation","result":"ok"}
 
-$ airpods list --json
+$ airpods-control list --json
 {"modes":["off","transparency","adaptive","noise-cancellation"]}
 
-$ airpods ca get --json
+$ airpods-control ca get --json
 {"ca":"on"}
 ```
 
@@ -159,7 +159,7 @@ the resulting `mode` or `ca` state. Errors use an `error` field, such as
 
 ### The `off` no-op caveat
 
-On **AirPods Pro**, `off` (the "Normal"/no-active-mode state) is a **silent no-op**: the API accepts the request but the hardware stays where it is. `airpods` verifies every change by reading the value back, so rather than falsely claiming success it reports `no-op` and exits `3`. This is expected behavior on AirPods Pro, not a bug — use `transparency` if you want a "hear everything" mode.
+On **AirPods Pro**, `off` (the "Normal"/no-active-mode state) is a **silent no-op**: the API accepts the request but the hardware stays where it is. `airpods-control` verifies every change by reading the value back, so rather than falsely claiming success it reports `no-op` and exits `3`. This is expected behavior on AirPods Pro, not a bug — use `transparency` if you want a "hear everything" mode.
 
 ### Exit codes
 
@@ -179,24 +179,24 @@ This is the honest part, because the mechanism is unusual and you should underst
 
 ### The private API
 
-macOS exposes AirPods listening modes and Conversation Awareness only through a **private, undocumented Apple API**: `AVOutputDevice` in `AVRouting.framework`, reached via `AVOutputContext`'s shared system audio context. There is no public, sanctioned way to do this from a normal command-line tool. `airpods` duck-types that API through an `@objc` protocol and calls it directly — the same surface the system itself uses.
+macOS exposes AirPods listening modes and Conversation Awareness only through a **private, undocumented Apple API**: `AVOutputDevice` in `AVRouting.framework`, reached via `AVOutputContext`'s shared system audio context. There is no public, sanctioned way to do this from a normal command-line tool. `airpods-control` duck-types that API through an `@objc` protocol and calls it directly — the same surface the system itself uses.
 
 ### The one forged entitlement
 
 Acquiring the *shared system audio context* is gated by a private entitlement, `com.apple.avfoundation.allow-system-wide-context`. Apple's own audio components carry it; a normal ad-hoc-signed binary does not. AVFoundation checks for it **in-process** by calling `SecTaskCopyValueForEntitlement`.
 
-`airpods` satisfies that check with a tiny interpose library, [`native/bypass.c`](native/bypass.c) (~40 lines, fully included and auditable). It is loaded via `DYLD_INSERT_LIBRARIES` and does exactly one thing: when AVFoundation asks *"do I have `com.apple.avfoundation.allow-system-wide-context`?"* it answers *"yes."* **Every other entitlement query is passed straight through to the real implementation, unchanged.** On launch the tool re-execs itself once with the dylib inserted (setting `DYLD_INSERT_LIBRARIES` inside the child, so it works even if the parent environment strips `DYLD_*`), then does its work.
+`airpods-control` satisfies that check with a tiny interpose library, [`native/bypass.c`](native/bypass.c) (~40 lines, fully included and auditable). It is loaded via `DYLD_INSERT_LIBRARIES` and does exactly one thing: when AVFoundation asks *"do I have `com.apple.avfoundation.allow-system-wide-context`?"* it answers *"yes."* **Every other entitlement query is passed straight through to the real implementation, unchanged.** On launch the tool re-execs itself once with the dylib inserted (setting `DYLD_INSERT_LIBRARIES` inside the child, so it works even if the parent environment strips `DYLD_*`), then does its work.
 
 To be precise about what this does and does not do:
 
-- It **forges exactly one** audio entitlement, and only **inside the `airpods` helper process**. Nothing else on your system is affected.
+- It **forges exactly one** audio entitlement, and only **inside the `airpods-control` helper process**. Nothing else on your system is affected.
 - It **grants no new privilege** over your own machine — you already own the audio hardware and could press the stem by hand. It just removes an in-process gate that keeps third-party tools out of a first-party API.
 - It does **not** disable SIP, Gatekeeper, code signing, the sandbox, or any other protection. Nothing is turned off system-wide.
 - It touches **no network and no files** — it makes no connections and reads/writes nothing on disk. It reads and sets an audio setting, and exits.
 
 ### Why it builds from source (and can't be notarized)
 
-The interpose only works on an **ad-hoc-signed** binary. A notarized, hardened-runtime binary would enforce **library validation**, which blocks `DYLD_INSERT_LIBRARIES` from loading a library not signed by the same team — so the technique cannot be shipped as a signed, downloadable app. That is a feature of the trust model here, not a workaround: **`airpods` ships no prebuilt binary.** You clone the repo, read the ~40 lines of C and the Swift, and compile it yourself with your own toolchain. What runs is what you audited.
+The interpose only works on an **ad-hoc-signed** binary. A notarized, hardened-runtime binary would enforce **library validation**, which blocks `DYLD_INSERT_LIBRARIES` from loading a library not signed by the same team — so the technique cannot be shipped as a signed, downloadable app. That is a feature of the trust model here, not a workaround: **`airpods-control` ships no prebuilt binary.** You clone the repo, read the ~40 lines of C and the Swift, and compile it yourself with your own toolchain. What runs is what you audited.
 
 This is the same mechanism [NoiseBuddy](https://github.com/insidegui/NoiseBuddy) uses to offer these controls.
 
@@ -214,7 +214,7 @@ See [SECURITY.md](SECURITY.md) for the threat model and how to report issues.
 
 - [NoiseBuddy](https://github.com/insidegui/NoiseBuddy) by Guilherme Rambo — the prior art that documented this AVFoundation technique.
 
-`airpods` is a personal, independent tool. It is **not affiliated with, endorsed by, or supported by Apple**. AirPods and AirPods Pro are trademarks of Apple Inc.
+`airpods-control` is a personal, independent tool. It is **not affiliated with, endorsed by, or supported by Apple**. AirPods and AirPods Pro are trademarks of Apple Inc.
 
 ## License
 

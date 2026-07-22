@@ -20,25 +20,25 @@ jobs:
       - name: Build
         run: |
           make
-          lipo -archs build/airpods
+          lipo -archs build/airpods-control
           lipo -archs build/avbypass.dylib
-          codesign --verify --verbose build/airpods
+          codesign --verify --verbose build/airpods-control
           codesign --verify --verbose build/avbypass.dylib
 
       - name: Smoke test (read-only)
         run: |
           # These never change a listening mode. CI has no AirPods, so `get`
           # would print `no-device` — that is fine, we just don't run it here.
-          ./build/airpods --help
-          test "$(./build/airpods --version)" = "0.1.0"
-          test "$(./build/airpods version --json)" = '{"version":"0.1.0"}'
+          ./build/airpods-control --help
+          test "$(./build/airpods-control --version)" = "0.1.0"
+          test "$(./build/airpods-control version --json)" = '{"version":"0.1.0"}'
 
       - name: Verify install layout
         run: |
-          stage="$RUNNER_TEMP/airpods-install"
+          stage="$RUNNER_TEMP/airpods-control-install"
           make install DESTDIR="$stage" PREFIX=/usr/local
-          test "$(readlink "$stage/usr/local/bin/airpods")" = \
-            "../libexec/airpods-control/airpods"
-          test "$("$stage/usr/local/bin/airpods" --version)" = "0.1.0"
+          test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
+            "../libexec/airpods-control/airpods-control"
+          test "$("$stage/usr/local/bin/airpods-control" --version)" = "0.1.0"
           make uninstall DESTDIR="$stage" PREFIX=/usr/local
-          test ! -e "$stage/usr/local/bin/airpods"
+          test ! -e "$stage/usr/local/bin/airpods-control"

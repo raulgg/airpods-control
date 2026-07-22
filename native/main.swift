@@ -1,5 +1,5 @@
-// airpods — control AirPods listening mode and Conversation Awareness from a
-// scriptable command-line interface.
+// airpods-control — control AirPods listening mode and Conversation Awareness
+// from a scriptable command-line interface.
 //
 // Compiled with swiftc (no Xcode needed) + a tiny C bypass dylib. On launch it
 // re-execs itself once with avbypass.dylib inserted so the in-process
@@ -44,11 +44,11 @@ func resolvedExecutablePath() -> String? {
 }
 
 func ensureBypass() {
-  if ProcessInfo.processInfo.environment["AIRPODS_BYPASSED"] != nil { return }
+  if ProcessInfo.processInfo.environment["AIRPODS_CONTROL_BYPASSED"] != nil { return }
   guard let exe = resolvedExecutablePath() else { return }
   let dylib = (exe as NSString).deletingLastPathComponent + "/avbypass.dylib"
   setenv("DYLD_INSERT_LIBRARIES", dylib, 1)
-  setenv("AIRPODS_BYPASSED", "1", 1)
+  setenv("AIRPODS_CONTROL_BYPASSED", "1", 1)
   var cargs = CommandLine.arguments.map { strdup($0) }
   cargs.append(nil)
   execv(exe, &cargs)
@@ -110,13 +110,13 @@ func fail(_ token: String, _ code: Int32, json: [String: Any]? = nil) -> Never {
 
 let help = """
 Usage:
-  airpods get [--json]
-  airpods set <mode> [--json]
-  airpods toggle <modeA> <modeB> [--json]
-  airpods list [--json]
-  airpods ca [get | set on|off | toggle] [--json]
-  airpods --version | -v | version
-  airpods --help | -h
+  airpods-control get [--json]
+  airpods-control set <mode> [--json]
+  airpods-control toggle <modeA> <modeB> [--json]
+  airpods-control list [--json]
+  airpods-control ca [get | set on|off | toggle] [--json]
+  airpods-control --version | -v | version
+  airpods-control --help | -h
 
 Modes:
   off, transparency, adaptive, noise-cancellation

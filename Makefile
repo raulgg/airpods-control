@@ -10,7 +10,7 @@ LIPO ?= lipo
 CODESIGN ?= codesign
 INSTALL ?= install
 
-BINARY := $(BUILD_DIR)/airpods
+BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
 BUILD_STAMP := $(BUILD_DIR)/.built
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
@@ -39,7 +39,7 @@ _build:
 			-o "$$tmp/avbypass.$$arch.dylib" native/bypass.c \
 			-framework CoreFoundation -framework Security && \
 		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
-			-o "$$tmp/airpods.$$arch" native/main.swift; \
+			-o "$$tmp/airpods-control.$$arch" native/main.swift; \
 	}; \
 	succeeded=""; failed=""; \
 	for arch in $(ARCHS); do \
@@ -66,27 +66,27 @@ _build:
 	fi; \
 	binary_inputs=""; dylib_inputs=""; \
 	for arch in $$selected; do \
-		binary_inputs="$$binary_inputs $$tmp/airpods.$$arch"; \
+		binary_inputs="$$binary_inputs $$tmp/airpods-control.$$arch"; \
 		dylib_inputs="$$dylib_inputs $$tmp/avbypass.$$arch.dylib"; \
 	done; \
-	"$(LIPO)" -create $$binary_inputs -output "$$tmp/airpods"; \
+	"$(LIPO)" -create $$binary_inputs -output "$$tmp/airpods-control"; \
 	"$(LIPO)" -create $$dylib_inputs -output "$$tmp/avbypass.dylib"; \
 	"$(CODESIGN)" --force --sign - "$$tmp/avbypass.dylib"; \
-	"$(CODESIGN)" --force --sign - "$$tmp/airpods"; \
-	mv "$$tmp/airpods" "$(BINARY)"; \
+	"$(CODESIGN)" --force --sign - "$$tmp/airpods-control"; \
+	mv "$$tmp/airpods-control" "$(BINARY)"; \
 	mv "$$tmp/avbypass.dylib" "$(DYLIB)"; \
 	touch "$(BUILD_STAMP)"; \
 	echo "built: $(BINARY) ($$("$(LIPO)" -archs "$(BINARY)")) + avbypass.dylib"
 
 install: all
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)"
-	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/airpods"
+	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/airpods-control"
 	"$(INSTALL)" -m 755 "$(DYLIB)" "$(LIBEXEC_DIR)/avbypass.dylib"
-	ln -sfn ../libexec/airpods-control/airpods "$(BIN_DIR)/airpods"
+	ln -sfn ../libexec/airpods-control/airpods-control "$(BIN_DIR)/airpods-control"
 
 uninstall:
-	rm -f "$(BIN_DIR)/airpods"
-	rm -f "$(LIBEXEC_DIR)/airpods" "$(LIBEXEC_DIR)/avbypass.dylib"
+	rm -f "$(BIN_DIR)/airpods-control"
+	rm -f "$(LIBEXEC_DIR)/airpods-control" "$(LIBEXEC_DIR)/avbypass.dylib"
 	-rmdir "$(LIBEXEC_DIR)"
 
 clean:
