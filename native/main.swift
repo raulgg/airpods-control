@@ -90,6 +90,7 @@ let tokenToAV: [String: String] = [
   "adaptive": "AVOutputDeviceBluetoothListeningModeAutomatic",
   "noise-cancellation": "AVOutputDeviceBluetoothListeningModeActiveNoiseCancellation",
 ]
+let modeTokenOrder = ["off", "transparency", "adaptive", "noise-cancellation"]
 let avToToken = Dictionary(uniqueKeysWithValues: tokenToAV.map { ($1, $0) })
 
 func finish(_ token: String, code: Int32 = 0, json: [String: Any]? = nil) -> Never {
@@ -232,11 +233,17 @@ case .get:
   finish(mode, json: ["mode": mode])
 
 case .list:
-  let tokens = (dev.availableModes() ?? []).compactMap { avToToken[$0] }
+  let availableModes = Set(dev.availableModes() ?? [])
+  let tokens = modeTokenOrder.filter { token in
+    tokenToAV[token].map { availableModes.contains($0) } ?? false
+  }
   finish(tokens.joined(separator: ","), json: ["modes": tokens])
 
 case let .set(token, av):
   guard (dev.availableModes() ?? []).contains(av) else { fail("unsupported", 4) }
+  if dev.currentMode() == av {
+    finish("ok", json: ["mode": token, "result": "ok"])
+  }
   let okSet = setAndVerify(dev, av)
   if okSet {
     finish("ok", json: ["mode": token, "result": "ok"])
@@ -264,6 +271,9 @@ case .caGet, .caSet(_), .caToggle:
     finish(state, json: ["ca": state])
 
   case let .caSet(target):
+    if dev.caEnabled() == target {
+      finish("ok", json: ["ca": target ? "on" : "off", "result": "ok"])
+    }
     let okCA = caSetAndVerify(dev, target)
     if okCA {
       finish("ok", json: ["ca": target ? "on" : "off", "result": "ok"])

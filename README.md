@@ -94,7 +94,9 @@ $ airpods set noise-cancellation
 ok
 ```
 
-If the mode is already active (or the write is a silent no-op — see below), you get `no-op` and exit code `3`:
+Setters are idempotent: if the requested mode is already active, the command
+prints `ok`, exits `0`, and does not issue a write. If a requested change is a
+silent hardware no-op (see below), you get `no-op` and exit code `3`:
 
 ```console
 $ airpods set noise-cancellation
@@ -166,7 +168,7 @@ On **AirPods Pro**, `off` (the "Normal"/no-active-mode state) is a **silent no-o
 | `0`  | ok            | Command succeeded (including reads and verified writes).    |
 | `1`  | no-device     | No supported AirPods found as the current output device.    |
 | `2`  | bad-args      | Missing or malformed arguments.                             |
-| `3`  | no-op         | Nothing changed (already in that state, or a silent no-op). |
+| `3`  | no-op         | A requested write did not change the setting.              |
 | `4`  | unsupported   | The mode or feature isn't available on this device.         |
 
 The single-token stdout (`ok`, `no-op`, `no-device`, `unsupported`, a mode name, etc.) mirrors the exit code so you can branch on either.
