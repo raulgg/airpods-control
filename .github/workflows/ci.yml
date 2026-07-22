@@ -27,11 +27,8 @@ jobs:
 
       - name: Smoke test (read-only)
         run: |
-          # These never change a listening mode. CI has no AirPods, so `get`
-          # would print `no-device` — that is fine, we just don't run it here.
-          ./build/airpods-control --help
-          test "$(./build/airpods-control --version)" = "0.1.0"
-          test "$(./build/airpods-control version --json)" = '{"version":"0.1.0"}'
+          # Parser tests never access the device or load the bypass dylib.
+          make test
 
       - name: Verify install layout
         run: |

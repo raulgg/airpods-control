@@ -63,6 +63,7 @@ It lays the files out as:
 The binary resolves its own real path (through the symlink) to locate `avbypass.dylib` beside it, so the `bin` symlink just works.
 
 Uninstall with `sudo make uninstall`; remove build artifacts with `make clean`.
+Run `make test` for device-independent parser and command-contract checks.
 
 ## Usage
 

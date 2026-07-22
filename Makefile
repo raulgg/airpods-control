@@ -16,7 +16,7 @@ BUILD_STAMP := $(BUILD_DIR)/.built
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 
-.PHONY: all _build install uninstall clean
+.PHONY: all _build test install uninstall clean
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
@@ -77,6 +77,9 @@ _build:
 	mv "$$tmp/avbypass.dylib" "$(DYLIB)"; \
 	touch "$(BUILD_STAMP)"; \
 	echo "built: $(BINARY) ($$("$(LIPO)" -archs "$(BINARY)")) + avbypass.dylib"
+
+test: all
+	./tests/cli.sh
 
 install: all
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)"
