@@ -27,6 +27,4 @@ If you want to verify the dylib does only what is claimed, read `native/bypass.c
 
 ## Reporting an issue
 
-If you find a security problem — for example, the interpose affecting an entitlement other than the documented one, or any unexpected file/network activity — please open an issue at
-https://github.com/raulg/airpods-control-cli/issues
-with steps to reproduce. For anything you would rather not disclose publicly, note that in the issue and a private contact can be arranged.
+If you find a security problem — for example, the interpose affecting an entitlement other than the documented one, or any unexpected file/network activity — please open an issue at https://github.com/raulg/airpods-control-cli/issues with steps to reproduce. For anything you would rather not disclose publicly, note that in the issue and a private contact can be arranged.
