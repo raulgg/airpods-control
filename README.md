@@ -15,7 +15,10 @@ off
 
 - **Listening mode:** `off`, `transparency`, `adaptive`, `noise-cancellation`.
 - **Conversation Awareness:** read it or turn it on and off.
-- **Scriptable:** single-token output on stdout, meaningful exit codes, optional `--json`. Wire it to a hotkey, a Stream Deck, a Shortcut, or a `launchd` job.
+- **Device targeting:** select a compatible output device by exact name.
+- **Scriptable:** single-token output on stdout, meaningful exit codes, optional
+  `--json`, and opt-in diagnostics on stderr. Wire it to a hotkey, a Stream
+  Deck, a Shortcut, or a `launchd` job.
 
 Because it speaks to the audio daemon rather than driving the UI, it needs **no Accessibility or Automation permission** and there is nothing to click. It is effectively invisible and instant.
 
@@ -63,16 +66,17 @@ It lays the files out as:
 The binary resolves its own real path (through the symlink) to locate `avbypass.dylib` beside it, so the `bin` symlink just works.
 
 Uninstall with `sudo make uninstall`; remove build artifacts with `make clean`.
-Run `make test` for device-independent parser and command-contract checks.
+Run `make test` for device-independent CLI contract, parser, selector-discovery,
+and device-selection checks.
 
 ## Usage
 
 ```
-airpods-control listening-mode get
-airpods-control listening-mode set <mode>
-airpods-control listening-mode list
-airpods-control conversation-awareness get
-airpods-control conversation-awareness set <on|off>
+airpods-control [--device NAME] listening-mode get [--json] [--debug]
+airpods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
+airpods-control [--device NAME] listening-mode list [--json] [--debug]
+airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
+airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
 airpods-control --version | -v | version
 airpods-control --help | -h
 ```
@@ -83,10 +87,17 @@ and `airpods-control ca set off` are complete commands. Reads are always
 explicit; a bare resource name is an error.
 
 `<mode>` is one of `off`, `transparency`, `adaptive`, `noise-cancellation`.
+For interactive use, `trans` aliases `transparency`; `automatic` and `auto`
+alias `adaptive`; and `anc` and `nc` alias `noise-cancellation`. Output always
+uses the canonical names. There is intentionally no alias for `off`.
+
 Unknown mode or state tokens are `bad-args` (exit `2`); a valid feature that
 the connected hardware does not provide is `unsupported` (exit `4`).
 
-Any command accepts `--json` for structured output.
+Operational commands accept `--device NAME`, `--json`, and `--debug` anywhere.
+`--device` uses a case-insensitive exact name match among compatible output
+devices. It never falls back to another device; no match or multiple exact
+matches produce `no-device`.
 
 ### Read the current mode
 
@@ -133,32 +144,74 @@ ok
 On hardware that does not support Conversation Awareness you get `unsupported`
 and exit code `4`.
 
+### Target a device
+
+Without `--device`, the first compatible system output device is used. To
+select one explicitly:
+
+```console
+$ airpods-control --device "Raul’s AirPods Pro" lm get
+transparency
+```
+
+Names are matched exactly but case-insensitively. Substrings are not accepted,
+so `--device "Raul"` will not silently select `"Raul’s AirPods Pro"`.
+
 ### JSON output
 
 Add `--json` to any command for structured output, e.g.:
 
 ```console
 $ airpods-control listening-mode get --json
-{"listeningMode":"transparency"}
+{"device":"Raul’s AirPods Pro","listeningMode":"transparency","result":"ok"}
 
 $ airpods-control lm set noise-cancellation --json
-{"listeningMode":"noise-cancellation","result":"ok"}
+{"device":"Raul’s AirPods Pro","listeningMode":"noise-cancellation","result":"ok"}
 
 $ airpods-control lm list --json
-{"listeningModes":["off","transparency","adaptive","noise-cancellation"]}
+{"device":"Raul’s AirPods Pro","listeningMode":"transparency","result":"ok","supportedListeningModes":["off","transparency","adaptive","noise-cancellation"]}
 
 $ airpods-control ca get --json
-{"conversationAwareness":"on"}
+{"conversationAwareness":"on","device":"Raul’s AirPods Pro","result":"ok"}
 ```
 
-Successful writes include `"result":"ok"` and the resulting
-`listeningMode` or `conversationAwareness` state. Errors use an `error` field,
-such as `{"error":"no-device"}`, while a write that changes nothing returns
-`{"result":"no-op"}` with exit code `3`.
+Every JSON response contains `result`, whose value is `ok`, `no-op`, or
+`error`. A valid resource command also contains `device` and its resulting
+`listeningMode` or `conversationAwareness` state. If the device or state cannot
+be resolved, that value is JSON `null`; no invented state string is added.
+Errors add an `error` field:
+
+```console
+$ airpods-control --device "Missing AirPods" lm get --json
+{"device":null,"error":"no-device","listeningMode":null,"result":"error"}
+```
+
+`lm list` additionally returns `supportedListeningModes`. A failed write
+returns the state observed after the attempt, uses `"result":"no-op"`, and
+exits `3`. Version JSON follows the same result convention:
+`{"result":"ok","version":"0.1.0"}`.
 
 `-h` and `--help` can appear anywhere. Help always wins, exits `0`, and never
 accesses the device; a recognized resource before the flag selects contextual
-help. Version flags are global only.
+help. Version flags are global only and do not accept `--device`.
+
+### Debug diagnostics
+
+Add `--debug` to emit private-API discovery and operation diagnostics on
+stderr:
+
+```console
+$ airpods-control --debug lm get
+debug: cli.command="listening-mode.get"
+info: audio_context_selector="sharedSystemAudioContext"
+info: selected_device="Raul’s AirPods Pro"
+transparency
+```
+
+Debug output covers bypass/re-exec status, framework and selector discovery,
+compatible devices, exact-name selection, raw modes, capability checks, writes,
+and read-back attempts. It never changes stdout, JSON, or the exit code, so
+stdout remains safe to pipe or parse.
 
 ### The `off` no-op caveat
 
@@ -205,9 +258,15 @@ This is the same mechanism [NoiseBuddy](https://github.com/insidegui/NoiseBuddy)
 
 ## Compatibility and fragility
 
-This relies on a private API, so **Apple can change or remove it in any macOS update** without notice. The current release targets macOS **Tahoe (26)**. When an OS update breaks a selector or renames a mode string, releases will be patched to follow.
+This relies on a private API, so **Apple can change or remove it in any macOS
+update** without notice. The current release targets macOS **Tahoe (26)**. The
+tool probes known shared-context selector variants and verifies every required
+selector before calling it. When an OS update removes or renames a capability,
+the command reports `no-device` or `unsupported` instead of sending an
+unrecognized selector.
 
-The tool is written to **fail safe**: when an expected selector or capability is missing it reports `no-device` or `unsupported` and exits cleanly, rather than crashing or doing something unexpected.
+Use `--debug` to distinguish a missing private selector from an unavailable
+device or hardware feature.
 
 ## Security
 

@@ -4,24 +4,36 @@
 airpods-control \- control AirPods listening mode and Conversation Awareness
 .SH SYNOPSIS
 .B airpods-control
+.RB [ --device
+.IR name ]
 .RB ( listening-mode | lm )
 .RB ( get | list )
 .RB [ --json ]
+.RB [ --debug ]
 .br
 .B airpods-control
+.RB [ --device
+.IR name ]
 .RB ( listening-mode | lm )
 .BI "set " mode
 .RB [ --json ]
+.RB [ --debug ]
 .br
 .B airpods-control
+.RB [ --device
+.IR name ]
 .RB ( conversation-awareness | ca )
 .B get
 .RB [ --json ]
+.RB [ --debug ]
 .br
 .B airpods-control
+.RB [ --device
+.IR name ]
 .RB ( conversation-awareness | ca )
 .BI "set " "on|off"
 .RB [ --json ]
+.RB [ --debug ]
 .br
 .B airpods-control
 .RB [ --version | -v | version ]
@@ -90,11 +102,52 @@ a command, takes precedence over all operations, and never accesses the device.
 .BR transparency ,
 .BR adaptive ,
 .BR noise-cancellation .
+.PP
+For input,
+.B trans
+aliases
+.BR transparency ;
+.B automatic
+and
+.B auto
+alias
+.BR adaptive ;
+and
+.B anc
+and
+.B nc
+alias
+.BR noise-cancellation .
+Output always uses canonical names. There is no alias for
+.BR off .
 .SH OPTIONS
+.TP
+.BI "--device " name
+Target a compatible output device using a case-insensitive exact name match.
+The option is accepted anywhere in an operational command and may be supplied
+once. It never falls back to another device. No match or multiple exact matches
+produce
+.BR no-device .
 .TP
 .B --json
 Emit structured JSON instead of plain script-friendly output. Accepted anywhere
-in an operational command or global version command.
+in an operational command or global version command. Every JSON response has a
+.B result
+field. Device operations also contain
+.B device
+and the command's resulting
+.B listeningMode
+or
+.B conversationAwareness
+state; unavailable values are JSON
+.BR null .
+The listening-mode list command additionally returns
+.BR supportedListeningModes .
+.TP
+.B --debug
+Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code.
+Diagnostics cover the entitlement bypass, framework and selector discovery,
+device selection, raw state, capability checks, writes, and read-back attempts.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -124,7 +177,9 @@ verifies every change by reading it back and reports
 for a "hear everything" mode.
 .PP
 This relies on a private API and targets macOS Tahoe (26); Apple may change it
-in any update. The tool fails safe (reporting
+in any update. The tool probes known shared-system-audio context selector
+variants and checks every required selector before invocation. It fails safe
+(reporting
 .B unsupported
 or
 .BR no-device )
