@@ -5,9 +5,9 @@
 Control your AirPods listening mode and Conversation Awareness from the command line without using Control Center, a menu bar app, or Accessibility permission.
 
 ```console
-$ airpods-control lm set noise-cancellation
+$ airpods-control listening-mode set noise-cancellation
 ok
-$ airpods-control ca get
+$ airpods-control conversation-awareness get
 off
 ```
 
@@ -171,7 +171,7 @@ On hardware that does not support Conversation Awareness you get `unsupported` a
 Without `--device`, the first compatible system output device is used. To select one explicitly:
 
 ```console
-$ airpods-control --device "My AirPods Pro" lm get
+$ airpods-control --device "My AirPods Pro" listening-mode get
 transparency
 ```
 
@@ -185,24 +185,24 @@ Add `--json` to any command for structured output, e.g.:
 $ airpods-control listening-mode get --json
 {"device":"My AirPods Pro","listeningMode":"transparency","result":"ok"}
 
-$ airpods-control lm set noise-cancellation --json
+$ airpods-control listening-mode set noise-cancellation --json
 {"device":"My AirPods Pro","listeningMode":"noise-cancellation","result":"ok"}
 
-$ airpods-control lm list --json
+$ airpods-control listening-mode list --json
 {"device":"My AirPods Pro","listeningMode":"transparency","result":"ok","supportedListeningModes":["off","transparency","adaptive","noise-cancellation"]}
 
-$ airpods-control ca get --json
+$ airpods-control conversation-awareness get --json
 {"conversationAwareness":"on","device":"My AirPods Pro","result":"ok"}
 ```
 
 Every JSON response contains `result`, whose value is `ok`, `no-op`, or `error`. A valid resource command also contains `device` and its resulting `listeningMode` or `conversationAwareness` state. States normally reflect private-API readback; the documented accepted-`off` fallback below may instead report the expected eventual Transparency state. Otherwise, an unresolved device or state is JSON `null`. Errors add an `error` field:
 
 ```console
-$ airpods-control --device "Missing AirPods" lm get --json
+$ airpods-control --device "Missing AirPods" listening-mode get --json
 {"device":null,"error":"no-device","listeningMode":null,"result":"error"}
 ```
 
-`lm list` also returns `supportedListeningModes`. A write that does not verify uses `"result":"no-op"` and exits `3`. It returns the final canonical state read during the bounded settling window, the documented Transparency fallback, or JSON `null` when neither applies. Version JSON follows the same result convention: `{"result":"ok","version":"0.1.0"}`.
+`listening-mode list` also returns `supportedListeningModes`. A write that does not verify uses `"result":"no-op"` and exits `3`. It returns the final canonical state read during the bounded settling window, the documented Transparency fallback, or JSON `null` when neither applies. Version JSON follows the same result convention: `{"result":"ok","version":"0.1.0"}`.
 
 `-h` and `--help` can appear anywhere. Help always wins, exits `0`, and never accesses the device; a recognized resource before the flag selects contextual help. Version flags are global only and do not accept `--device`.
 
@@ -211,7 +211,7 @@ $ airpods-control --device "Missing AirPods" lm get --json
 Add `--debug` to emit private-API discovery and operation diagnostics on stderr:
 
 ```console
-$ airpods-control --debug lm get
+$ airpods-control --debug listening-mode get
 debug: cli.command="listening-mode.get"
 info: audio_context_selector="sharedSystemAudioContext"
 info: selected_device="My AirPods Pro"
