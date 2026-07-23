@@ -13,7 +13,7 @@ INSTALL ?= install
 BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
 BUILD_STAMP := $(BUILD_DIR)/.built
-SWIFT_SOURCES := native/CLI.swift native/PrivateAudio.swift native/main.swift
+SWIFT_SOURCES := native/CLI.swift native/PrivateAudio.swift native/CommandExecution.swift native/main.swift
 SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
@@ -87,7 +87,7 @@ test: all
 	"$(SWIFTC)" -Onone -parse-as-library \
 		-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 		-o "$(SWIFT_TEST_BINARY)" \
-		native/CLI.swift native/PrivateAudio.swift tests/SwiftTests.swift
+		native/CLI.swift native/PrivateAudio.swift native/CommandExecution.swift tests/SwiftTests.swift
 	"$(SWIFT_TEST_BINARY)"
 
 install: all

@@ -74,49 +74,27 @@ func finish(
   exit(code)
 }
 
-func finishResource(
-  invocation: CLIInvocation,
-  deviceName: String?,
-  plain: String,
-  code: Int32,
-  result: String,
-  state: String?,
-  error: String? = nil,
-  extra: [String: Any] = [:]
-) -> Never {
-  let resource = invocation.command.resource!
+func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
   finish(
-    plain: plain,
-    code: code,
-    jsonOutput: invocation.jsonOutput,
-    payload: makeResourcePayload(
-      resource: resource,
-      deviceName: deviceName,
-      result: result,
-      state: state,
-      error: error,
-      extra: extra
-    )
+    plain: outcome.plain,
+    code: outcome.exitCode,
+    jsonOutput: jsonOutput,
+    payload: outcome.payload
   )
 }
 
-func setAndObserveConversationAwareness(
-  device: AudioDevice,
-  target: Bool,
+func bootstrapAndSelectAudioDevice(
+  named requestedName: String?,
   logger: DebugLogger
-) -> (verified: Bool, observed: Bool?) {
-  guard device.setConversationAwareness(target) != nil else {
-    return (false, device.conversationAwarenessState())
+) -> AudioDevice? {
+  ensureBypass(logger: logger)
+
+  guard let rawDevices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
+    return nil
   }
 
-  var observed: Bool?
-  for attempt in 1...16 {
-    usleep(50_000)
-    observed = device.conversationAwarenessState()
-    logger.debug("verify.conversation_awareness.attempt", attempt)
-    if observed == target { return (true, observed) }
-  }
-  return (false, observed)
+  return PrivateAudioController(rawDevices: rawDevices, logger: logger)
+    .selectDevice(named: requestedName)
 }
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
@@ -148,281 +126,8 @@ do {
   )
 }
 
-let logger = DebugLogger(enabled: invocation.debugEnabled)
-logger.debug("cli.command", invocation.command.debugName)
-logger.debug("cli.json", invocation.jsonOutput)
-logger.debug("cli.requested_device", invocation.requestedDeviceName)
-
-if case .version = invocation.command {
-  finish(
-    plain: VERSION,
-    jsonOutput: invocation.jsonOutput,
-    payload: ["result": "ok", "version": VERSION]
-  )
-}
-
-ensureBypass(logger: logger)
-
-guard let rawDevices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
-  let extra: [String: Any]
-  if case .listeningModeList = invocation.command {
-    extra = ["supportedListeningModes": [String]()]
-  } else {
-    extra = [:]
-  }
-  finishResource(
-    invocation: invocation,
-    deviceName: nil,
-    plain: "no-device",
-    code: 1,
-    result: "error",
-    state: nil,
-    error: "no-device",
-    extra: extra
-  )
-}
-
-let controller = PrivateAudioController(rawDevices: rawDevices, logger: logger)
-guard let device = controller.selectDevice(named: invocation.requestedDeviceName) else {
-  let extra: [String: Any]
-  if case .listeningModeList = invocation.command {
-    extra = ["supportedListeningModes": [String]()]
-  } else {
-    extra = [:]
-  }
-  finishResource(
-    invocation: invocation,
-    deviceName: nil,
-    plain: "no-device",
-    code: 1,
-    result: "error",
-    state: nil,
-    error: "no-device",
-    extra: extra
-  )
-}
-
-switch invocation.command {
-case .version:
-  fatalError("version handled before device discovery")
-
-case .listeningModeGet:
-  let mode = canonicalListeningMode(device.currentListeningMode())
-  finishResource(
-    invocation: invocation,
-    deviceName: device.name,
-    plain: mode ?? "unknown",
-    code: 0,
-    result: "ok",
-    state: mode
-  )
-
-case .listeningModeList:
-  let current = canonicalListeningMode(device.currentListeningMode())
-  let availableModes = Set(device.availableListeningModes())
-  let tokens = modeTokenOrder.filter { token in
-    tokenToAV[token].map { availableModes.contains($0) } ?? false
-  }
-  finishResource(
-    invocation: invocation,
-    deviceName: device.name,
-    plain: tokens.joined(separator: ","),
-    code: 0,
-    result: "ok",
-    state: current,
-    extra: ["supportedListeningModes": tokens]
-  )
-
-case let .listeningModeSet(token, avMode):
-  let currentRaw = device.currentListeningMode()
-  let current = canonicalListeningMode(currentRaw)
-  let availableModes = Set(device.availableListeningModes())
-
-  guard availableModes.contains(avMode), device.canSetListeningMode() else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "unsupported",
-      code: 4,
-      result: "error",
-      state: current,
-      error: "unsupported"
-    )
-  }
-
-  if currentRaw == avMode {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "ok",
-      code: 0,
-      result: "ok",
-      state: token
-    )
-  }
-
-  let outcome = device.setListeningModeAndReadBack(avMode)
-  let resolution = resolveListeningModeWrite(
-    requestedToken: token,
-    setterAccepted: outcome.setterAccepted,
-    observedRawMode: outcome.observedRawMode,
-    transparencySupported: availableModes.contains(tokenToAV["transparency"]!)
-  )
-  if resolution.inferredOffFallback {
-    logger.debug("verify.listening_mode.inferred_off_fallback", true)
-  }
-
-  if resolution.verified {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "ok",
-      code: 0,
-      result: "ok",
-      state: resolution.state
-    )
-  } else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "no-op",
-      code: 3,
-      result: "no-op",
-      state: resolution.state
-    )
-  }
-
-case let .listeningModeCycle(requested):
-  let currentRaw = device.currentListeningMode()
-  let current = canonicalListeningMode(currentRaw)
-  let availableModes = Set(device.availableListeningModes())
-  let base = requested ?? modeTokenOrder.filter { $0 != "off" }
-  let cycleTokens = base.filter { token in
-    tokenToAV[token].map { availableModes.contains($0) } ?? false
-  }
-
-  guard cycleTokens.count >= 2, device.canSetListeningMode() else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "unsupported",
-      code: 4,
-      result: "error",
-      state: current,
-      error: "unsupported"
-    )
-  }
-
-  let targetToken = nextCycleMode(current: current, cycleTokens: cycleTokens)
-  let targetAV = tokenToAV[targetToken]!
-  logger.debug("cycle.set", cycleTokens.joined(separator: ","))
-  logger.debug("cycle.target", targetToken)
-
-  let outcome = device.setListeningModeAndReadBack(targetAV)
-  let resolution = resolveListeningModeWrite(
-    requestedToken: targetToken,
-    setterAccepted: outcome.setterAccepted,
-    observedRawMode: outcome.observedRawMode,
-    transparencySupported: availableModes.contains(tokenToAV["transparency"]!)
-  )
-  if resolution.inferredOffFallback {
-    logger.debug("verify.listening_mode.inferred_off_fallback", true)
-  }
-
-  if resolution.verified {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: targetToken,
-      code: 0,
-      result: "ok",
-      state: resolution.state
-    )
-  } else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "no-op",
-      code: 3,
-      result: "no-op",
-      state: resolution.state
-    )
-  }
-
-case .conversationAwarenessGet:
-  guard device.supportsConversationAwareness() == true,
-        let enabled = device.conversationAwarenessState()
-  else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "unsupported",
-      code: 4,
-      result: "error",
-      state: nil,
-      error: "unsupported"
-    )
-  }
-  finishResource(
-    invocation: invocation,
-    deviceName: device.name,
-    plain: enabled ? "on" : "off",
-    code: 0,
-    result: "ok",
-    state: enabled ? "on" : "off"
-  )
-
-case let .conversationAwarenessSet(target):
-  guard device.supportsConversationAwareness() == true,
-        let current = device.conversationAwarenessState(),
-        device.canSetConversationAwareness()
-  else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "unsupported",
-      code: 4,
-      result: "error",
-      state: nil,
-      error: "unsupported"
-    )
-  }
-
-  if current == target {
-    let state = target ? "on" : "off"
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "ok",
-      code: 0,
-      result: "ok",
-      state: state
-    )
-  }
-
-  let outcome = setAndObserveConversationAwareness(
-    device: device,
-    target: target,
-    logger: logger
-  )
-  let observed = outcome.observed.map { $0 ? "on" : "off" }
-  if outcome.verified {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "ok",
-      code: 0,
-      result: "ok",
-      state: observed
-    )
-  } else {
-    finishResource(
-      invocation: invocation,
-      deviceName: device.name,
-      plain: "no-op",
-      code: 3,
-      result: "no-op",
-      state: observed
-    )
-  }
-}
+let outcome = CommandExecution.execute(
+  invocation,
+  resolveDevice: bootstrapAndSelectAudioDevice
+)
+finish(outcome, jsonOutput: invocation.jsonOutput)

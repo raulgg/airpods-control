@@ -67,6 +67,9 @@ private func expectParseFailure(_ args: [String], _ description: String) {
   let conversationAwarenessSupported: Bool
   var conversationAwarenessEnabled: Bool
   let appliesListeningModeAsynchronously: Bool
+  let appliesConversationAwarenessWrite: Bool
+  var listeningModeSetCount = 0
+  var conversationAwarenessSetCount = 0
 
   init(
     name: String,
@@ -74,7 +77,8 @@ private func expectParseFailure(_ args: [String], _ description: String) {
     mode: String = tokenToAV["transparency"]!,
     conversationAwarenessSupported: Bool = true,
     conversationAwarenessEnabled: Bool = false,
-    appliesListeningModeAsynchronously: Bool = false
+    appliesListeningModeAsynchronously: Bool = false,
+    appliesConversationAwarenessWrite: Bool = true
   ) {
     outputName = name
     self.modes = modes
@@ -82,6 +86,7 @@ private func expectParseFailure(_ args: [String], _ description: String) {
     self.conversationAwarenessSupported = conversationAwarenessSupported
     self.conversationAwarenessEnabled = conversationAwarenessEnabled
     self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
+    self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
   }
 
   @objc(name) func deviceName() -> String {
@@ -98,6 +103,7 @@ private func expectParseFailure(_ args: [String], _ description: String) {
 
   @objc(setCurrentBluetoothListeningMode:error:)
   func setListeningMode(_ newMode: String, _ error: NSErrorPointer) -> Bool {
+    listeningModeSetCount += 1
     if appliesListeningModeAsynchronously {
       DispatchQueue.main.async { self.mode = newMode }
     } else {
@@ -116,7 +122,10 @@ private func expectParseFailure(_ args: [String], _ description: String) {
 
   @objc(setConversationDetectionEnabled:error:)
   func setConversationDetectionEnabled(_ enabled: Bool, _ error: NSErrorPointer) -> Bool {
-    conversationAwarenessEnabled = enabled
+    conversationAwarenessSetCount += 1
+    if appliesConversationAwarenessWrite {
+      conversationAwarenessEnabled = enabled
+    }
     return true
   }
 }
@@ -180,11 +189,14 @@ private func scriptedAudioDevice(
     reads: reads,
     setterAccepted: setterAccepted
   )
-  let controller = PrivateAudioController(
+  return audioDevice(rawDevice)
+}
+
+private func audioDevice(_ rawDevice: AnyObject) -> AudioDevice {
+  PrivateAudioController(
     rawDevices: [rawDevice],
     logger: DebugLogger(enabled: false)
-  )
-  return controller.selectDevice(named: nil)!
+  ).selectDevice(named: nil)!
 }
 
 @objc private final class FakeIncompleteDevice: NSObject {
@@ -336,53 +348,333 @@ private func testNextCycleMode() {
   )
 }
 
-private func testResourcePayloads() {
-  let listeningMode = makeResourcePayload(
-    resource: .listeningMode,
-    deviceName: "Raul’s AirPods Pro",
-    result: "ok",
-    state: "transparency",
-    extra: ["supportedListeningModes": ["transparency", "noise-cancellation"]]
-  )
-  check(listeningMode["device"] as? String == "Raul’s AirPods Pro", "payload has device")
-  check(listeningMode["result"] as? String == "ok", "payload has result")
+private func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
+  let versionInvocation = try! parseInvocation(["version"])
+  var resolverCallCount = 0
+  let version = CommandExecution.execute(versionInvocation) { _, _ in
+    resolverCallCount += 1
+    return nil
+  }
+  check(resolverCallCount == 0, "version does not resolve a device")
+  check(version.plain == VERSION, "version outcome has plain version")
+  check(version.exitCode == 0, "version outcome succeeds")
+  check(version.payload.count == 2, "version payload has no resource fields")
+  check(version.payload["result"] as? String == "ok", "version payload succeeds")
+  check(version.payload["version"] as? String == VERSION, "version payload has version")
+
+  let namedInvocation = try! parseInvocation(["--device", "Studio AirPods", "lm", "get"])
+  var capturedName: String?
+  var capturedLoggerEnabled = true
+  resolverCallCount = 0
+  let noDevice = CommandExecution.execute(namedInvocation) { name, logger in
+    resolverCallCount += 1
+    capturedName = name
+    capturedLoggerEnabled = logger.enabled
+    return nil
+  }
+  check(resolverCallCount == 1, "resource command resolves a device exactly once")
+  check(capturedName == "Studio AirPods", "execution forwards the requested device name")
+  check(!capturedLoggerEnabled, "execution forwards its configured logger")
+  check(noDevice.plain == "no-device", "missing device has plain no-device")
+  check(noDevice.exitCode == 1, "missing device exits one")
+  check(noDevice.payload.count == 4, "missing device get has the exact payload shape")
+  check(noDevice.payload["device"] is NSNull, "missing device is JSON null")
+  check(noDevice.payload["listeningMode"] is NSNull, "missing listening mode is JSON null")
+  check(noDevice.payload["result"] as? String == "error", "missing device is an error")
+  check(noDevice.payload["error"] as? String == "no-device", "missing device has error")
+
+  let listInvocation = try! parseInvocation(["lm", "list"])
+  let noDeviceList = CommandExecution.execute(listInvocation) { _, _ in nil }
+  check(noDeviceList.payload.count == 5, "missing-device list has the exact payload shape")
   check(
-    listeningMode["listeningMode"] as? String == "transparency",
-    "listening-mode payload has post-command state"
+    noDeviceList.payload["supportedListeningModes"] as? [String] == [],
+    "missing-device list has an empty supported mode list"
+  )
+
+  let awarenessInvocation = try! parseInvocation(["ca", "get"])
+  let noDeviceAwareness = CommandExecution.execute(awarenessInvocation) { _, _ in nil }
+  check(
+    noDeviceAwareness.payload["conversationAwareness"] is NSNull,
+    "missing Conversation Awareness state is JSON null"
   )
   check(
-    listeningMode["supportedListeningModes"] as? [String]
+    noDeviceAwareness.payload["listeningMode"] == nil,
+    "Conversation Awareness payload omits listening mode"
+  )
+}
+
+private func commandOutcome(_ arguments: [String], device: AudioDevice) -> CommandOutcome {
+  let invocation = try! parseInvocation(arguments)
+  return CommandExecution.execute(invocation) { _, _ in device }
+}
+
+private func testListeningModeCommandExecution() {
+  let knownRawDevice = FakeDevice(
+    name: "Known AirPods",
+    mode: tokenToAV["transparency"]!
+  )
+  let known = commandOutcome(["lm", "get"], device: audioDevice(knownRawDevice))
+  check(known.plain == "transparency", "listening-mode get returns the current mode")
+  check(known.exitCode == 0, "listening-mode get succeeds")
+  check(known.payload["device"] as? String == "Known AirPods", "get payload has device")
+  check(
+    known.payload["listeningMode"] as? String == "transparency",
+    "get payload has current mode"
+  )
+  check(known.payload["error"] == nil, "successful get omits error")
+
+  let unknown = commandOutcome(
+    ["lm", "get"],
+    device: scriptedAudioDevice(reads: ["AVOutputDeviceBluetoothListeningModeFuture"])
+  )
+  check(unknown.plain == "unknown", "unknown listening mode has plain fallback")
+  check(unknown.payload["listeningMode"] is NSNull, "unknown listening mode is JSON null")
+
+  let listRawDevice = FakeDevice(
+    name: "Subset AirPods",
+    modes: [tokenToAV["noise-cancellation"]!, tokenToAV["transparency"]!],
+    mode: tokenToAV["noise-cancellation"]!
+  )
+  let list = commandOutcome(["lm", "list"], device: audioDevice(listRawDevice))
+  check(
+    list.plain == "transparency,noise-cancellation",
+    "listening-mode list uses canonical order"
+  )
+  check(
+    list.payload["supportedListeningModes"] as? [String]
       == ["transparency", "noise-cancellation"],
-    "list payload has supportedListeningModes"
-  )
-  check(listeningMode["error"] == nil, "successful payload omits error")
-
-  let listeningModeNoOp = makeResourcePayload(
-    resource: .listeningMode,
-    deviceName: "Raul’s AirPods Pro",
-    result: "no-op",
-    state: "transparency"
+    "list payload has supported modes"
   )
   check(
-    listeningModeNoOp["listeningMode"] as? String == "transparency",
-    "no-op payload has the observed post-command listening mode"
+    list.payload["listeningMode"] as? String == "noise-cancellation",
+    "list payload has current mode"
   )
-  check(listeningModeNoOp["result"] as? String == "no-op", "no-op payload has result")
-  check(listeningModeNoOp["stateSource"] == nil, "no-op payload adds no inference field")
 
-  let noDevice = makeResourcePayload(
-    resource: .conversationAwareness,
-    deviceName: nil,
-    result: "error",
-    state: nil,
-    error: "no-device"
+  let unsupportedRawDevice = FakeDevice(
+    name: "Limited AirPods",
+    modes: [tokenToAV["transparency"]!],
+    mode: tokenToAV["transparency"]!
   )
-  check(noDevice["device"] is NSNull, "missing device is JSON null")
+  let unsupported = commandOutcome(
+    ["lm", "set", "adaptive"],
+    device: audioDevice(unsupportedRawDevice)
+  )
+  check(unsupported.plain == "unsupported", "unavailable listening mode is unsupported")
+  check(unsupported.exitCode == 4, "unsupported listening mode exits four")
+  check(unsupported.payload["result"] as? String == "error", "unsupported set is an error")
   check(
-    noDevice["conversationAwareness"] is NSNull,
-    "unavailable resource state is JSON null"
+    unsupported.payload["listeningMode"] as? String == "transparency",
+    "unsupported set preserves current mode"
   )
-  check(noDevice["error"] as? String == "no-device", "failure payload has optional error")
+  check(unsupported.payload["error"] as? String == "unsupported", "unsupported set has error")
+
+  let currentRawDevice = FakeDevice(
+    name: "Current AirPods",
+    mode: tokenToAV["adaptive"]!
+  )
+  let current = commandOutcome(
+    ["lm", "set", "adaptive"],
+    device: audioDevice(currentRawDevice)
+  )
+  check(current.plain == "ok", "setting the current mode succeeds")
+  check(current.exitCode == 0, "setting the current mode exits zero")
+  check(currentRawDevice.listeningModeSetCount == 0, "idempotent set skips the setter")
+
+  let changedRawDevice = FakeDevice(
+    name: "Changed AirPods",
+    mode: tokenToAV["transparency"]!
+  )
+  let changed = commandOutcome(
+    ["lm", "set", "adaptive"],
+    device: audioDevice(changedRawDevice)
+  )
+  check(changed.plain == "ok", "verified listening-mode change succeeds")
+  check(changed.exitCode == 0, "verified listening-mode change exits zero")
+  check(
+    changed.payload["listeningMode"] as? String == "adaptive",
+    "verified change reports observed mode"
+  )
+  check(changedRawDevice.mode == tokenToAV["adaptive"], "verified change mutates the device")
+  check(changedRawDevice.listeningModeSetCount == 1, "verified change invokes the setter once")
+
+  let unchanged = commandOutcome(
+    ["lm", "set", "adaptive"],
+    device: scriptedAudioDevice(
+      reads: Array(repeating: tokenToAV["transparency"]!, count: 18)
+    )
+  )
+  check(unchanged.plain == "no-op", "unverified listening-mode change is a no-op")
+  check(unchanged.exitCode == 3, "unverified listening-mode change exits three")
+  check(unchanged.payload["result"] as? String == "no-op", "no-op payload has result")
+  check(
+    unchanged.payload["listeningMode"] as? String == "transparency",
+    "no-op payload has observed mode"
+  )
+  check(unchanged.payload["error"] == nil, "no-op payload omits error")
+}
+
+private func testListeningModeCycleCommandExecution() {
+  let defaultRawDevice = FakeDevice(
+    name: "Cycle AirPods",
+    mode: tokenToAV["transparency"]!
+  )
+  let defaultCycle = commandOutcome(
+    ["lm", "cycle"],
+    device: audioDevice(defaultRawDevice)
+  )
+  check(defaultCycle.plain == "adaptive", "default cycle advances to Adaptive")
+  check(defaultCycle.exitCode == 0, "verified cycle exits zero")
+  check(
+    defaultCycle.payload["listeningMode"] as? String == "adaptive",
+    "cycle payload has target mode"
+  )
+  check(defaultRawDevice.mode == tokenToAV["adaptive"], "cycle mutates the device")
+  check(
+    defaultCycle.payload["supportedListeningModes"] == nil,
+    "cycle payload omits supported mode list"
+  )
+
+  let explicitRawDevice = FakeDevice(
+    name: "Explicit Cycle AirPods",
+    mode: tokenToAV["transparency"]!
+  )
+  let explicitCycle = commandOutcome(
+    ["lm", "cycle", "--modes", "transparency,noise-cancellation"],
+    device: audioDevice(explicitRawDevice)
+  )
+  check(
+    explicitCycle.plain == "noise-cancellation",
+    "explicit cycle advances within its selected modes"
+  )
+  check(
+    explicitRawDevice.mode == tokenToAV["noise-cancellation"],
+    "explicit cycle applies its target"
+  )
+
+  let limitedRawDevice = FakeDevice(
+    name: "Limited Cycle AirPods",
+    modes: [tokenToAV["transparency"]!],
+    mode: tokenToAV["transparency"]!
+  )
+  let unsupported = commandOutcome(
+    ["lm", "cycle"],
+    device: audioDevice(limitedRawDevice)
+  )
+  check(unsupported.plain == "unsupported", "cycle with fewer than two modes is unsupported")
+  check(unsupported.exitCode == 4, "unsupported cycle exits four")
+  check(
+    unsupported.payload["listeningMode"] as? String == "transparency",
+    "unsupported cycle preserves current mode"
+  )
+  check(unsupported.payload["error"] as? String == "unsupported", "unsupported cycle has error")
+
+  let unchanged = commandOutcome(
+    ["lm", "cycle"],
+    device: scriptedAudioDevice(
+      reads: Array(repeating: tokenToAV["transparency"]!, count: 18)
+    )
+  )
+  check(unchanged.plain == "no-op", "unverified cycle is a no-op")
+  check(unchanged.exitCode == 3, "unverified cycle exits three")
+  check(unchanged.payload["result"] as? String == "no-op", "cycle no-op payload has result")
+  check(
+    unchanged.payload["listeningMode"] as? String == "transparency",
+    "cycle no-op payload has observed mode"
+  )
+}
+
+private func testConversationAwarenessCommandExecution() {
+  let offRawDevice = FakeDevice(
+    name: "Awareness AirPods",
+    conversationAwarenessEnabled: false
+  )
+  let get = commandOutcome(["ca", "get"], device: audioDevice(offRawDevice))
+  check(get.plain == "off", "Conversation Awareness get returns state")
+  check(get.exitCode == 0, "Conversation Awareness get succeeds")
+  check(
+    get.payload["conversationAwareness"] as? String == "off",
+    "Conversation Awareness payload has state"
+  )
+
+  let unsupportedRawDevice = FakeDevice(
+    name: "Unsupported Awareness AirPods",
+    conversationAwarenessSupported: false
+  )
+  let unsupported = commandOutcome(
+    ["ca", "get"],
+    device: audioDevice(unsupportedRawDevice)
+  )
+  check(unsupported.plain == "unsupported", "unsupported Conversation Awareness is reported")
+  check(unsupported.exitCode == 4, "unsupported Conversation Awareness exits four")
+  check(
+    unsupported.payload["conversationAwareness"] is NSNull,
+    "unsupported Conversation Awareness state is JSON null"
+  )
+  check(
+    unsupported.payload["error"] as? String == "unsupported",
+    "unsupported Conversation Awareness has error"
+  )
+  let unsupportedSet = commandOutcome(
+    ["ca", "set", "on"],
+    device: audioDevice(unsupportedRawDevice)
+  )
+  check(
+    unsupportedSet.plain == "unsupported",
+    "unsupported Conversation Awareness set is reported"
+  )
+  check(unsupportedSet.exitCode == 4, "unsupported Conversation Awareness set exits four")
+
+  let currentRawDevice = FakeDevice(
+    name: "Current Awareness AirPods",
+    conversationAwarenessEnabled: true
+  )
+  let current = commandOutcome(
+    ["ca", "set", "on"],
+    device: audioDevice(currentRawDevice)
+  )
+  check(current.plain == "ok", "setting current Conversation Awareness state succeeds")
+  check(
+    currentRawDevice.conversationAwarenessSetCount == 0,
+    "idempotent Conversation Awareness set skips the setter"
+  )
+
+  let changedRawDevice = FakeDevice(
+    name: "Changed Awareness AirPods",
+    conversationAwarenessEnabled: false
+  )
+  let changed = commandOutcome(
+    ["ca", "set", "on"],
+    device: audioDevice(changedRawDevice)
+  )
+  check(changed.plain == "ok", "verified Conversation Awareness change succeeds")
+  check(changed.exitCode == 0, "verified Conversation Awareness change exits zero")
+  check(
+    changed.payload["conversationAwareness"] as? String == "on",
+    "verified Conversation Awareness change reports observed state"
+  )
+  check(changedRawDevice.conversationAwarenessEnabled, "Conversation Awareness setter mutates")
+  check(
+    changedRawDevice.conversationAwarenessSetCount == 1,
+    "Conversation Awareness change invokes the setter once"
+  )
+
+  let unchangedRawDevice = FakeDevice(
+    name: "Unchanged Awareness AirPods",
+    conversationAwarenessEnabled: false,
+    appliesConversationAwarenessWrite: false
+  )
+  let unchanged = commandOutcome(
+    ["ca", "set", "on"],
+    device: audioDevice(unchangedRawDevice)
+  )
+  check(unchanged.plain == "no-op", "unverified Conversation Awareness change is a no-op")
+  check(unchanged.exitCode == 3, "unverified Conversation Awareness change exits three")
+  check(
+    unchanged.payload["conversationAwareness"] as? String == "off",
+    "Conversation Awareness no-op reports observed state"
+  )
+  check(unchanged.payload["result"] as? String == "no-op", "Conversation Awareness no-op result")
+  check(unchanged.payload["error"] == nil, "Conversation Awareness no-op omits error")
 }
 
 private func testListeningModeCanonicalization() {
@@ -708,7 +1000,10 @@ private struct SwiftTests {
     testCLIParsing()
     testCycleParsing()
     testNextCycleMode()
-    testResourcePayloads()
+    testCommandExecutionLifecycleAndNoDeviceOutcomes()
+    testListeningModeCommandExecution()
+    testListeningModeCycleCommandExecution()
+    testConversationAwarenessCommandExecution()
     testListeningModeCanonicalization()
     testObservedOffFallbackResolution()
     testOffFallbackResolutionBoundaries()
@@ -726,6 +1021,6 @@ private struct SwiftTests {
       fputs("Swift tests failed: \(failureCount)\n", stderr)
       exit(1)
     }
-    print("Swift selector and parser tests passed")
+    print("Swift command and private-audio tests passed")
   }
 }

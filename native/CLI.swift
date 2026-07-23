@@ -274,24 +274,6 @@ func nextCycleMode(current: String?, cycleTokens: [String]) -> String {
   return cycleTokens[0]
 }
 
-func makeResourcePayload(
-  resource: CLIResource,
-  deviceName: String?,
-  result: String,
-  state: String?,
-  error: String? = nil,
-  extra: [String: Any] = [:]
-) -> [String: Any] {
-  var payload = extra
-  payload["device"] = deviceName ?? NSNull()
-  payload["result"] = result
-  payload[resource.stateKey] = state ?? NSNull()
-  if let error {
-    payload["error"] = error
-  }
-  return payload
-}
-
 func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   var positional: [String] = []
   var jsonOutput = false
