@@ -4,29 +4,11 @@
 // Compiled with swiftc (no Xcode needed) + a tiny C bypass dylib. On launch it
 // re-execs itself once with avbypass.dylib inserted so the in-process
 // entitlement gate for the shared system audio context is satisfied — the same
-// technique NoiseBuddy uses. We set DYLD_INSERT_LIBRARIES inside the
-// child, so it does not matter whether the parent process strips DYLD_* vars.
-//
-// Command surface (single-token, machine-parseable output by default):
-//   listening-mode|lm get            -> off | transparency | adaptive |
-//                                       noise-cancellation | unknown | no-device
-//   listening-mode|lm set <token>    -> ok | no-op | unsupported | no-device
-//   listening-mode|lm list           -> comma-separated tokens | no-device
-//   conversation-awareness|ca get    -> on | off | unsupported | no-device
-//   conversation-awareness|ca set <on|off>
-//                                      -> ok | no-op | unsupported | no-device
-//   --json                           -> structured output for any command
-//   --help | -h                      -> global or resource-specific usage
-//   --version | -v | version         -> 0.1.0
-//
-// Exit codes: 0 ok, 1 no-device, 2 bad-args, 3 no-op, 4 unsupported.
+// technique NoiseBuddy uses.
 
+import Darwin
 import Foundation
 
-let VERSION = "0.1.0"
-var jsonOutput = false
-
-// ── Entitlement-bypass bootstrap ──────────────────────────────────────────
 func resolvedExecutablePath() -> String? {
   var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
   var size = UInt32(buffer.count)
@@ -42,194 +24,124 @@ func resolvedExecutablePath() -> String? {
     .standardizedFileURL.path
 }
 
-func ensureBypass() {
-  if ProcessInfo.processInfo.environment["AIRPODS_CONTROL_BYPASSED"] != nil { return }
-  guard let exe = resolvedExecutablePath() else { return }
-  let dylib = (exe as NSString).deletingLastPathComponent + "/avbypass.dylib"
+func ensureBypass(logger: DebugLogger) {
+  if ProcessInfo.processInfo.environment["AIRPODS_CONTROL_BYPASSED"] != nil {
+    logger.debug("bypass.status", "active")
+    return
+  }
+
+  guard let executable = resolvedExecutablePath() else {
+    logger.warning("bypass.status", "executable-path-unavailable")
+    return
+  }
+
+  let dylib = (executable as NSString).deletingLastPathComponent + "/avbypass.dylib"
+  guard FileManager.default.fileExists(atPath: dylib) else {
+    logger.warning("bypass.status", "dylib-missing")
+    logger.debug("bypass.dylib", dylib)
+    return
+  }
+
   setenv("DYLD_INSERT_LIBRARIES", dylib, 1)
   setenv("AIRPODS_CONTROL_BYPASSED", "1", 1)
+  logger.info("bypass.status", "reexec")
+  logger.debug("bypass.dylib", dylib)
+
   var cargs = CommandLine.arguments.map { strdup($0) }
   cargs.append(nil)
-  execv(exe, &cargs)
-  // If execv returns it failed; we continue unbypassed and report no-device.
+  execv(executable, &cargs)
+
+  logger.warning("bypass.status", "reexec-failed")
+  logger.debug("bypass.errno", errno)
 }
 
-// ── Private API surface (duck-typed via an @objc protocol) ────────────────
-@objc protocol AVOutputDeviceShim {
-  @objc(availableBluetoothListeningModes) func availableModes() -> [String]?
-  @objc(currentBluetoothListeningMode) func currentMode() -> String?
-  @objc(setCurrentBluetoothListeningMode:error:)
-  func setMode(_ mode: String, _ error: NSErrorPointer) -> Bool
-  @objc(isConversationDetectionEnabled) func caEnabled() -> Bool
-  @objc(setConversationDetectionEnabled:error:)
-  func setCA(_ enabled: Bool, _ error: NSErrorPointer) -> Bool
-  @objc(supportsConversationDetection) func supportsCA() -> Bool
+func writeJSON(_ payload: [String: Any]) {
+  let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+  print(String(decoding: data, as: UTF8.self))
 }
 
-func airpodsDevice() -> AVOutputDeviceShim? {
-  dlopen("/System/Library/Frameworks/AVFoundation.framework/AVFoundation", RTLD_NOW)
-  dlopen("/System/Library/Frameworks/AVRouting.framework/AVRouting", RTLD_NOW)
-  guard let cls = NSClassFromString("AVOutputContext") else { return nil }
-  let ctxSel = NSSelectorFromString("sharedSystemAudioContext")
-  guard let ctxU = (cls as AnyObject).perform(ctxSel) else { return nil }
-  let ctx = ctxU.takeUnretainedValue()
-  guard let devU = ctx.perform(NSSelectorFromString("outputDevices")),
-        let devices = devU.takeUnretainedValue() as? [AnyObject] else { return nil }
-  for d in devices {
-    let shim = unsafeBitCast(d, to: AVOutputDeviceShim.self)
-    if let modes = shim.availableModes(), !modes.isEmpty { return shim }
-  }
-  return nil
-}
-
-// ── Token <-> AVOutputDevice mode-string mapping ──────────────────────────
-let tokenToAV: [String: String] = [
-  "off": "AVOutputDeviceBluetoothListeningModeNormal",
-  "transparency": "AVOutputDeviceBluetoothListeningModeAudioTransparency",
-  "adaptive": "AVOutputDeviceBluetoothListeningModeAutomatic",
-  "noise-cancellation": "AVOutputDeviceBluetoothListeningModeActiveNoiseCancellation",
-]
-let modeTokenOrder = ["off", "transparency", "adaptive", "noise-cancellation"]
-let avToToken = Dictionary(uniqueKeysWithValues: tokenToAV.map { ($1, $0) })
-
-func finish(_ token: String, code: Int32 = 0, json: [String: Any]? = nil) -> Never {
+func finish(
+  plain: String,
+  code: Int32 = 0,
+  jsonOutput: Bool,
+  payload: [String: Any]
+) -> Never {
   if jsonOutput {
-    let payload = json ?? [code == 0 ? "result" : "error": token]
-    let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-    print(String(decoding: data, as: UTF8.self))
+    writeJSON(payload)
   } else {
-    print(token)
+    print(plain)
   }
   exit(code)
 }
 
-func fail(_ token: String, _ code: Int32, json: [String: Any]? = nil) -> Never {
-  finish(token, code: code, json: json)
+func finishResource(
+  invocation: CLIInvocation,
+  deviceName: String?,
+  plain: String,
+  code: Int32,
+  result: String,
+  state: String?,
+  error: String? = nil,
+  extra: [String: Any] = [:]
+) -> Never {
+  let resource = invocation.command.resource!
+  finish(
+    plain: plain,
+    code: code,
+    jsonOutput: invocation.jsonOutput,
+    payload: makeResourcePayload(
+      resource: resource,
+      deviceName: deviceName,
+      result: result,
+      state: state,
+      error: error,
+      extra: extra
+    )
+  )
 }
 
-let globalHelp = """
-Usage:
-  airpods-control <resource> <command> [--json]
-  airpods-control --version | -v | version
-  airpods-control --help | -h
-
-Resources:
-  listening-mode, lm            Read, set, or list listening modes.
-  conversation-awareness, ca    Read or set Conversation Awareness.
-
-Global options:
-  --json       Emit structured JSON instead of plain script-friendly output.
-  --version, -v
-               Print the version and exit.
-  --help, -h   Print this help and exit.
-
-Run 'airpods-control <resource> --help' for resource-specific help.
-"""
-
-let listeningModeHelp = """
-Usage:
-  airpods-control listening-mode get [--json]
-  airpods-control listening-mode set <mode> [--json]
-  airpods-control listening-mode list [--json]
-
-Alias:
-  lm
-
-Modes:
-  off, transparency, adaptive, noise-cancellation
-
-Options:
-  --json       Emit structured JSON instead of plain script-friendly output.
-  --help, -h   Print this help and exit without accessing the device.
-"""
-
-let conversationAwarenessHelp = """
-Usage:
-  airpods-control conversation-awareness get [--json]
-  airpods-control conversation-awareness set <on|off> [--json]
-
-Alias:
-  ca
-
-Options:
-  --json       Emit structured JSON instead of plain script-friendly output.
-  --help, -h   Print this help and exit without accessing the device.
-"""
-
-enum CLICommand {
-  case listeningModeGet
-  case listeningModeSet(String, String)
-  case listeningModeList
-  case conversationAwarenessGet
-  case conversationAwarenessSet(Bool)
+func canonicalListeningMode(_ rawMode: String?) -> String? {
+  rawMode.flatMap { avToToken[$0] }
 }
 
-func parseCommand(_ args: [String]) -> CLICommand {
-  guard args.count >= 2 else { fail("bad-args", 2) }
-
-  switch args[0] {
-  case "listening-mode", "lm":
-    switch args[1] {
-    case "get":
-      guard args.count == 2 else { fail("bad-args", 2) }
-      return .listeningModeGet
-
-    case "set":
-      guard args.count == 3, let av = tokenToAV[args[2]] else {
-        fail("bad-args", 2)
-      }
-      return .listeningModeSet(args[2], av)
-
-    case "list":
-      guard args.count == 2 else { fail("bad-args", 2) }
-      return .listeningModeList
-
-    default:
-      fail("bad-args", 2)
-    }
-
-  case "conversation-awareness", "ca":
-    switch args[1] {
-    case "get":
-      guard args.count == 2 else { fail("bad-args", 2) }
-      return .conversationAwarenessGet
-
-    case "set":
-      guard args.count == 3, ["on", "off"].contains(args[2]) else {
-        fail("bad-args", 2)
-      }
-      return .conversationAwarenessSet(args[2] == "on")
-
-    default:
-      fail("bad-args", 2)
-    }
-
-  default:
-    fail("bad-args", 2)
+func setAndObserveListeningMode(
+  device: AudioDevice,
+  target: String,
+  logger: DebugLogger
+) -> (verified: Bool, observed: String?) {
+  guard device.setListeningMode(target) != nil else {
+    return (false, device.currentListeningMode())
   }
-}
 
-// Sets `av` and confirms by read-back (the BOOL return lies — it is 1 even for
-// silent no-ops like Off on AirPods Pro). Returns true only on a verified flip.
-func setAndVerify(_ dev: AVOutputDeviceShim, _ av: String) -> Bool {
-  _ = dev.setMode(av, nil)
-  for _ in 0..<16 {
-    usleep(50_000) // ~800ms total budget
-    if dev.currentMode() == av { return true }
-  }
-  return false
-}
-
-func caSetAndVerify(_ dev: AVOutputDeviceShim, _ enabled: Bool) -> Bool {
-  _ = dev.setCA(enabled, nil)
-  for _ in 0..<16 {
+  var observed: String?
+  for attempt in 1...16 {
     usleep(50_000)
-    if dev.caEnabled() == enabled { return true }
+    observed = device.currentListeningMode()
+    logger.debug("verify.listening_mode.attempt", attempt)
+    if observed == target { return (true, observed) }
   }
-  return false
+  return (false, observed)
 }
 
-// ── Entry ─────────────────────────────────────────────────────────────────
+func setAndObserveConversationAwareness(
+  device: AudioDevice,
+  target: Bool,
+  logger: DebugLogger
+) -> (verified: Bool, observed: Bool?) {
+  guard device.setConversationAwareness(target) != nil else {
+    return (false, device.conversationAwarenessState())
+  }
+
+  var observed: Bool?
+  for attempt in 1...16 {
+    usleep(50_000)
+    observed = device.conversationAwarenessState()
+    logger.debug("verify.conversation_awareness.attempt", attempt)
+    if observed == target { return (true, observed) }
+  }
+  return (false, observed)
+}
+
 let rawArgs = Array(CommandLine.arguments.dropFirst())
 
 if rawArgs.isEmpty {
@@ -237,77 +149,236 @@ if rawArgs.isEmpty {
   exit(0)
 }
 
-if let helpIndex = rawArgs.firstIndex(where: { ["--help", "-h"].contains($0) }) {
-  let resource = rawArgs[..<helpIndex].first { argument in
-    ["listening-mode", "lm", "conversation-awareness", "ca"].contains(argument)
-  }
-
-  switch resource {
-  case "listening-mode", "lm":
-    print(listeningModeHelp)
-  case "conversation-awareness", "ca":
-    print(conversationAwarenessHelp)
-  default:
-    print(globalHelp)
-  }
+if let help = helpText(for: rawArgs) {
+  print(help)
   exit(0)
 }
 
-let jsonFlagCount = rawArgs.filter { $0 == "--json" }.count
-jsonOutput = jsonFlagCount > 0
-guard jsonFlagCount <= 1 else { fail("bad-args", 2) }
+let preliminaryJSON = rawArgs.contains("--json")
+let preliminaryDebug = rawArgs.contains("--debug")
+let preliminaryLogger = DebugLogger(enabled: preliminaryDebug)
 
-let args = rawArgs.filter { $0 != "--json" }
-
-if args.count == 1, ["--version", "-v", "version"].contains(args[0]) {
-  finish(VERSION, json: ["version": VERSION])
+let invocation: CLIInvocation
+do {
+  invocation = try parseInvocation(rawArgs)
+} catch {
+  preliminaryLogger.warning("cli.parse", "bad-args")
+  finish(
+    plain: "bad-args",
+    code: 2,
+    jsonOutput: preliminaryJSON,
+    payload: ["error": "bad-args", "result": "error"]
+  )
 }
 
-let command = parseCommand(args)
+let logger = DebugLogger(enabled: invocation.debugEnabled)
+logger.debug("cli.command", invocation.command.debugName)
+logger.debug("cli.json", invocation.jsonOutput)
+logger.debug("cli.requested_device", invocation.requestedDeviceName)
 
-ensureBypass()
-guard let dev = airpodsDevice() else { fail("no-device", 1) }
+if case .version = invocation.command {
+  finish(
+    plain: VERSION,
+    jsonOutput: invocation.jsonOutput,
+    payload: ["result": "ok", "version": VERSION]
+  )
+}
 
-switch command {
+ensureBypass(logger: logger)
+
+guard let rawDevices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
+  let extra: [String: Any]
+  if case .listeningModeList = invocation.command {
+    extra = ["supportedListeningModes": [String]()]
+  } else {
+    extra = [:]
+  }
+  finishResource(
+    invocation: invocation,
+    deviceName: nil,
+    plain: "no-device",
+    code: 1,
+    result: "error",
+    state: nil,
+    error: "no-device",
+    extra: extra
+  )
+}
+
+let controller = PrivateAudioController(rawDevices: rawDevices, logger: logger)
+guard let device = controller.selectDevice(named: invocation.requestedDeviceName) else {
+  let extra: [String: Any]
+  if case .listeningModeList = invocation.command {
+    extra = ["supportedListeningModes": [String]()]
+  } else {
+    extra = [:]
+  }
+  finishResource(
+    invocation: invocation,
+    deviceName: nil,
+    plain: "no-device",
+    code: 1,
+    result: "error",
+    state: nil,
+    error: "no-device",
+    extra: extra
+  )
+}
+
+switch invocation.command {
+case .version:
+  fatalError("version handled before device discovery")
+
 case .listeningModeGet:
-  let av = dev.currentMode()
-  let mode = av.flatMap { avToToken[$0] } ?? "unknown"
-  finish(mode, json: ["listeningMode": mode])
+  let mode = canonicalListeningMode(device.currentListeningMode())
+  finishResource(
+    invocation: invocation,
+    deviceName: device.name,
+    plain: mode ?? "unknown",
+    code: 0,
+    result: "ok",
+    state: mode
+  )
 
 case .listeningModeList:
-  let availableModes = Set(dev.availableModes() ?? [])
+  let current = canonicalListeningMode(device.currentListeningMode())
+  let availableModes = Set(device.availableListeningModes())
   let tokens = modeTokenOrder.filter { token in
     tokenToAV[token].map { availableModes.contains($0) } ?? false
   }
-  finish(tokens.joined(separator: ","), json: ["listeningModes": tokens])
+  finishResource(
+    invocation: invocation,
+    deviceName: device.name,
+    plain: tokens.joined(separator: ","),
+    code: 0,
+    result: "ok",
+    state: current,
+    extra: ["supportedListeningModes": tokens]
+  )
 
-case let .listeningModeSet(token, av):
-  guard (dev.availableModes() ?? []).contains(av) else { fail("unsupported", 4) }
-  if dev.currentMode() == av {
-    finish("ok", json: ["listeningMode": token, "result": "ok"])
+case let .listeningModeSet(token, avMode):
+  let currentRaw = device.currentListeningMode()
+  let current = canonicalListeningMode(currentRaw)
+
+  guard device.availableListeningModes().contains(avMode), device.canSetListeningMode() else {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "unsupported",
+      code: 4,
+      result: "error",
+      state: current,
+      error: "unsupported"
+    )
   }
-  let okSet = setAndVerify(dev, av)
-  if okSet {
-    finish("ok", json: ["listeningMode": token, "result": "ok"])
+
+  if currentRaw == avMode {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "ok",
+      code: 0,
+      result: "ok",
+      state: token
+    )
+  }
+
+  let outcome = setAndObserveListeningMode(device: device, target: avMode, logger: logger)
+  let observed = canonicalListeningMode(outcome.observed)
+  if outcome.verified {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "ok",
+      code: 0,
+      result: "ok",
+      state: observed
+    )
   } else {
-    fail("no-op", 3, json: ["result": "no-op"])
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "no-op",
+      code: 3,
+      result: "no-op",
+      state: observed
+    )
   }
 
 case .conversationAwarenessGet:
-  guard dev.supportsCA() else { fail("unsupported", 4) }
-  let state = dev.caEnabled() ? "on" : "off"
-  finish(state, json: ["conversationAwareness": state])
+  guard device.supportsConversationAwareness() == true,
+        let enabled = device.conversationAwarenessState()
+  else {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "unsupported",
+      code: 4,
+      result: "error",
+      state: nil,
+      error: "unsupported"
+    )
+  }
+  finishResource(
+    invocation: invocation,
+    deviceName: device.name,
+    plain: enabled ? "on" : "off",
+    code: 0,
+    result: "ok",
+    state: enabled ? "on" : "off"
+  )
 
 case let .conversationAwarenessSet(target):
-  guard dev.supportsCA() else { fail("unsupported", 4) }
-  let state = target ? "on" : "off"
-  if dev.caEnabled() == target {
-    finish("ok", json: ["conversationAwareness": state, "result": "ok"])
+  guard device.supportsConversationAwareness() == true,
+        let current = device.conversationAwarenessState(),
+        device.canSetConversationAwareness()
+  else {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "unsupported",
+      code: 4,
+      result: "error",
+      state: nil,
+      error: "unsupported"
+    )
   }
-  let okCA = caSetAndVerify(dev, target)
-  if okCA {
-    finish("ok", json: ["conversationAwareness": state, "result": "ok"])
+
+  if current == target {
+    let state = target ? "on" : "off"
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "ok",
+      code: 0,
+      result: "ok",
+      state: state
+    )
+  }
+
+  let outcome = setAndObserveConversationAwareness(
+    device: device,
+    target: target,
+    logger: logger
+  )
+  let observed = outcome.observed.map { $0 ? "on" : "off" }
+  if outcome.verified {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "ok",
+      code: 0,
+      result: "ok",
+      state: observed
+    )
   } else {
-    fail("no-op", 3, json: ["result": "no-op"])
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "no-op",
+      code: 3,
+      result: "no-op",
+      state: observed
+    )
   }
 }

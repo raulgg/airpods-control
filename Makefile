@@ -13,6 +13,9 @@ INSTALL ?= install
 BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
 BUILD_STAMP := $(BUILD_DIR)/.built
+SWIFT_SOURCES := native/CLI.swift native/PrivateAudio.swift native/main.swift
+SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
+SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 
@@ -23,12 +26,12 @@ all: $(BUILD_STAMP)
 		$(MAKE) --no-print-directory _build; \
 	fi
 
-$(BUILD_STAMP): native/main.swift native/bypass.c Makefile
+$(BUILD_STAMP): $(SWIFT_SOURCES) native/bypass.c Makefile
 	@$(MAKE) --no-print-directory _build
 
 _build:
 	@set -eu; \
-	mkdir -p "$(BUILD_DIR)"; \
+	mkdir -p "$(BUILD_DIR)" "$(SWIFT_MODULE_CACHE)"; \
 	tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/airpods-control.XXXXXX"); \
 	trap 'rm -rf "$$tmp"' EXIT HUP INT TERM; \
 	host_arch=$$(uname -m); \
@@ -39,7 +42,8 @@ _build:
 			-o "$$tmp/avbypass.$$arch.dylib" native/bypass.c \
 			-framework CoreFoundation -framework Security && \
 		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
-			-o "$$tmp/airpods-control.$$arch" native/main.swift; \
+			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
+			-o "$$tmp/airpods-control.$$arch" $(SWIFT_SOURCES); \
 	}; \
 	succeeded=""; failed=""; \
 	for arch in $(ARCHS); do \
@@ -80,6 +84,11 @@ _build:
 
 test: all
 	./tests/cli.sh
+	"$(SWIFTC)" -Onone -parse-as-library \
+		-module-cache-path "$(SWIFT_MODULE_CACHE)" \
+		-o "$(SWIFT_TEST_BINARY)" \
+		native/CLI.swift native/PrivateAudio.swift tests/SwiftTests.swift
+	"$(SWIFT_TEST_BINARY)"
 
 install: all
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)"
