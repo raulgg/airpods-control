@@ -804,7 +804,7 @@ private func testPrivateSelectorDiscovery() {
     "missing outputDevices selector returns nil"
   )
 
-  let device = FakeDevice(name: "Raul’s AirPods Pro")
+  let device = FakeDevice(name: "My AirPods Pro")
   let context = FakeContext(devices: [device])
   let outputDevices = PrivateAudioDiscovery.outputDevices(from: context, logger: logger)
   check(outputDevices?.count == 1, "outputDevices is discovered safely")
@@ -937,20 +937,20 @@ private func testListeningModeReadbackProcessesAsyncDeviceUpdates() {
 
 private func testDeviceSelectionAndCapabilities() {
   let logger = DebugLogger(enabled: false)
-  let first = FakeDevice(name: "Raul’s AirPods Pro")
+  let first = FakeDevice(name: "My AirPods Pro")
   let second = FakeDevice(name: "Studio AirPods")
   let controller = PrivateAudioController(rawDevices: [first, second], logger: logger)
 
   check(
-    controller.selectDevice(named: nil)?.name == "Raul’s AirPods Pro",
+    controller.selectDevice(named: nil)?.name == "My AirPods Pro",
     "default selection uses the first compatible device"
   )
   check(
-    controller.selectDevice(named: "RAUL’S AIRPODS PRO")?.name == "Raul’s AirPods Pro",
+    controller.selectDevice(named: "MY AIRPODS PRO")?.name == "My AirPods Pro",
     "device matching is case-insensitive and exact"
   )
   check(
-    controller.selectDevice(named: "Raul") == nil,
+    controller.selectDevice(named: "My") == nil,
     "device matching does not use substrings"
   )
   check(
@@ -958,10 +958,10 @@ private func testDeviceSelectionAndCapabilities() {
     "device matching never falls back"
   )
 
-  let duplicate = FakeDevice(name: "RAUL’S AIRPODS PRO")
+  let duplicate = FakeDevice(name: "MY AIRPODS PRO")
   let ambiguous = PrivateAudioController(rawDevices: [first, duplicate], logger: logger)
   check(
-    ambiguous.selectDevice(named: "Raul’s AirPods Pro") == nil,
+    ambiguous.selectDevice(named: "My AirPods Pro") == nil,
     "duplicate exact names are rejected"
   )
 
