@@ -12,12 +12,14 @@ INSTALL ?= install
 
 BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
+MANPAGE := docs/airpods-control.1
 BUILD_STAMP := $(BUILD_DIR)/.built
 SWIFT_SOURCES := native/CLI.swift native/PrivateAudio.swift native/CommandExecution.swift native/main.swift
 SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
+MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
 .PHONY: all _build test install uninstall clean
 
@@ -91,14 +93,16 @@ test: all
 	"$(SWIFT_TEST_BINARY)"
 
 install: all
-	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)"
+	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"
 	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/airpods-control"
 	"$(INSTALL)" -m 755 "$(DYLIB)" "$(LIBEXEC_DIR)/avbypass.dylib"
+	"$(INSTALL)" -m 644 "$(MANPAGE)" "$(MAN_DIR)/airpods-control.1"
 	ln -sfn ../libexec/airpods-control/airpods-control "$(BIN_DIR)/airpods-control"
 
 uninstall:
 	rm -f "$(BIN_DIR)/airpods-control"
 	rm -f "$(LIBEXEC_DIR)/airpods-control" "$(LIBEXEC_DIR)/avbypass.dylib"
+	rm -f "$(MAN_DIR)/airpods-control.1"
 	-rmdir "$(LIBEXEC_DIR)"
 
 clean:
