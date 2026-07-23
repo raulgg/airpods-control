@@ -1,6 +1,19 @@
 import Darwin
 import Foundation
 
+let normalListeningModeRawValue = "AVOutputDeviceBluetoothListeningModeNormal"
+
+private let standardListeningModeReadbackAttempts = 16
+private let offListeningModeReadbackAttempts = 30
+private let listeningModeReadbackDelay: useconds_t = 50_000
+
+// AVFoundation delivers route-state changes through the main run loop. A
+// blocking sleep can leave the output-device snapshot stale until process exit.
+private func waitForPrivateAudioUpdate(_ microseconds: useconds_t) {
+  let interval = TimeInterval(microseconds) / 1_000_000
+  RunLoop.current.run(until: Date(timeIntervalSinceNow: interval))
+}
+
 private let nameSelector = NSSelectorFromString("name")
 private let availableModesSelector = NSSelectorFromString("availableBluetoothListeningModes")
 private let currentModeSelector = NSSelectorFromString("currentBluetoothListeningMode")
@@ -8,6 +21,11 @@ private let setModeSelector = NSSelectorFromString("setCurrentBluetoothListening
 private let supportsCASelector = NSSelectorFromString("supportsConversationDetection")
 private let caEnabledSelector = NSSelectorFromString("isConversationDetectionEnabled")
 private let setCASelector = NSSelectorFromString("setConversationDetectionEnabled:error:")
+
+struct ListeningModeWriteOutcome {
+  let setterAccepted: Bool
+  let observedRawMode: String?
+}
 
 @objc private protocol ListeningModeSetterShim {
   @objc(setCurrentBluetoothListeningMode:error:)
@@ -173,6 +191,38 @@ final class AudioDevice {
       logger.warning("write.listening_mode.error", error.localizedDescription)
     }
     return accepted
+  }
+
+  func setListeningModeAndReadBack(_ target: String) -> ListeningModeWriteOutcome {
+    setListeningModeAndReadBack(target, wait: waitForPrivateAudioUpdate)
+  }
+
+  func setListeningModeAndReadBack(
+    _ target: String,
+    wait: (useconds_t) -> Void
+  ) -> ListeningModeWriteOutcome {
+    let settleThroughDeadline = target == normalListeningModeRawValue
+    let attemptLimit = settleThroughDeadline
+      ? offListeningModeReadbackAttempts
+      : standardListeningModeReadbackAttempts
+
+    let setterAccepted = setListeningMode(target) == true
+    var observed = currentListeningMode()
+    logger.debug("verify.listening_mode.attempt", 0)
+
+    if observed != target || settleThroughDeadline {
+      for attempt in 1...attemptLimit {
+        wait(listeningModeReadbackDelay)
+        observed = currentListeningMode()
+        logger.debug("verify.listening_mode.attempt", attempt)
+        if observed == target, !settleThroughDeadline { break }
+      }
+    }
+
+    return ListeningModeWriteOutcome(
+      setterAccepted: setterAccepted,
+      observedRawMode: observed
+    )
   }
 
   func supportsConversationAwareness() -> Bool? {

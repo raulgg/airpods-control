@@ -3,7 +3,7 @@ import Foundation
 let VERSION = "0.1.0"
 
 let tokenToAV: [String: String] = [
-  "off": "AVOutputDeviceBluetoothListeningModeNormal",
+  "off": normalListeningModeRawValue,
   "transparency": "AVOutputDeviceBluetoothListeningModeAudioTransparency",
   "adaptive": "AVOutputDeviceBluetoothListeningModeAutomatic",
   "noise-cancellation": "AVOutputDeviceBluetoothListeningModeActiveNoiseCancellation",
@@ -19,6 +19,38 @@ let modeAliases: [String: String] = [
 
 let modeTokenOrder = ["off", "transparency", "adaptive", "noise-cancellation"]
 let avToToken = Dictionary(uniqueKeysWithValues: tokenToAV.map { ($1, $0) })
+
+func canonicalListeningMode(_ rawMode: String?) -> String? {
+  rawMode.flatMap { avToToken[$0] }
+}
+
+struct ListeningModeWriteResolution {
+  let verified: Bool
+  let state: String?
+  let inferredOffFallback: Bool
+}
+
+func resolveListeningModeWrite(
+  requestedToken: String,
+  setterAccepted: Bool,
+  observedRawMode: String?,
+  transparencySupported: Bool
+) -> ListeningModeWriteResolution {
+  let verified = observedRawMode == tokenToAV[requestedToken]
+  let observedState = canonicalListeningMode(observedRawMode)
+  let inferredOffFallback =
+    requestedToken == "off"
+    && !verified
+    && setterAccepted
+    && transparencySupported
+    && observedState != "transparency"
+  let state = inferredOffFallback ? "transparency" : observedState
+  return ListeningModeWriteResolution(
+    verified: verified,
+    state: state,
+    inferredOffFallback: inferredOffFallback
+  )
+}
 
 enum CLIResource {
   case listeningMode
@@ -240,26 +272,6 @@ func nextCycleMode(current: String?, cycleTokens: [String]) -> String {
     if cycleTokens.contains(candidate) { return candidate }
   }
   return cycleTokens[0]
-}
-
-func listeningModeStateAfterSet(
-  requestedToken: String,
-  setterAccepted: Bool,
-  observedRawMode: String?
-) -> String? {
-  guard let observedRawMode else { return nil }
-
-  // MVP heuristic: current AirPods firmware resolves an accepted Off request
-  // to Transparency when Off Listening Mode is disabled. Replace this with an
-  // authoritative device event if that private signal becomes reliable.
-  if requestedToken == "off",
-     setterAccepted,
-     observedRawMode != tokenToAV["off"]
-  {
-    return "transparency"
-  }
-
-  return avToToken[observedRawMode]
 }
 
 func makeResourcePayload(

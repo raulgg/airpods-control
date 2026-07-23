@@ -78,7 +78,7 @@ without issuing a write. Otherwise prints
 .B ok
 on a verified change, or
 .B no-op
-if the requested write did not change the setting.
+if the requested mode is not observed within the bounded verification window.
 .TP
 .BR "listening-mode list" ", " "lm list"
 Print the comma-separated modes supported by the connected device in the
@@ -126,7 +126,7 @@ Print global or resource-specific usage and exit. Help may appear anywhere in
 a command, takes precedence over all operations, and never accesses the device.
 .SH MODES
 .B off
-(silent no-op on AirPods Pro),
+(Normal/no active mode),
 .BR transparency ,
 .BR adaptive ,
 .BR noise-cancellation .
@@ -198,26 +198,36 @@ No supported AirPods found as the current output device (no-device).
 Missing or malformed arguments (bad-args).
 .TP
 .B 3
-A requested write did not reach the requested state (no-op).
+A requested write was not verified within the bounded window (no-op).
 .TP
 .B 4
 The mode or feature is not available on this device (unsupported).
 .SH NOTES
-When
+Listening-mode writes are checked every 50 milliseconds while the device
+settles. Modes other than
 .B off
-(the Normal state) is disabled for the connected AirPods, the API may still
-accept the request while the hardware resolves asynchronously to
-.BR transparency .
-.B airpods-control
-therefore reports
-.B transparency
-without waiting when an accepted
+return when the target is observed, within about 800 milliseconds. Changed
 .B off
-request has a concrete immediate readback other than
-.BR off .
-It returns
+writes use a 1.5-second window because their fallback can bounce between modes.
+If
+.B off
+is not verified, the setter accepted the request, and the device advertises
+Transparency, direct writes and explicit cycles into
+.B off
+report
 .B no-op
-(exit 3). Rejected writes and unavailable readback state are not inferred.
+(exit 3) with
+.B listeningMode
+set to
+.BR transparency .
+This is the expected eventual fallback when Off Listening Mode is disabled,
+not an observed final sample. With
+.BR --debug ,
+.B verify.listening_mode.inferred_off_fallback=true
+identifies the inference. Rejected writes and devices without Transparency
+report the final observed canonical mode, or
+.B null
+when the final readback is missing or unknown.
 .PP
 This relies on a private API and targets macOS Tahoe (26); Apple may change it
 in any update. The tool probes known shared-system-audio context selector

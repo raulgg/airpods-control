@@ -66,19 +66,22 @@ private func expectParseFailure(_ args: [String], _ description: String) {
   var mode: String
   let conversationAwarenessSupported: Bool
   var conversationAwarenessEnabled: Bool
+  let appliesListeningModeAsynchronously: Bool
 
   init(
     name: String,
     modes: [String] = Array(tokenToAV.values),
     mode: String = tokenToAV["transparency"]!,
     conversationAwarenessSupported: Bool = true,
-    conversationAwarenessEnabled: Bool = false
+    conversationAwarenessEnabled: Bool = false,
+    appliesListeningModeAsynchronously: Bool = false
   ) {
     outputName = name
     self.modes = modes
     self.mode = mode
     self.conversationAwarenessSupported = conversationAwarenessSupported
     self.conversationAwarenessEnabled = conversationAwarenessEnabled
+    self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
   }
 
   @objc(name) func deviceName() -> String {
@@ -95,7 +98,11 @@ private func expectParseFailure(_ args: [String], _ description: String) {
 
   @objc(setCurrentBluetoothListeningMode:error:)
   func setListeningMode(_ newMode: String, _ error: NSErrorPointer) -> Bool {
-    mode = newMode
+    if appliesListeningModeAsynchronously {
+      DispatchQueue.main.async { self.mode = newMode }
+    } else {
+      mode = newMode
+    }
     return true
   }
 
@@ -132,6 +139,52 @@ private func expectParseFailure(_ args: [String], _ description: String) {
   @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {
     tokenToAV["transparency"]!
   }
+}
+
+@objc private final class FakeScriptedListeningModeDevice: NSObject {
+  let reads: [String?]
+  let setterAccepted: Bool
+  var readIndex = 0
+
+  init(reads: [String?], setterAccepted: Bool = true) {
+    precondition(!reads.isEmpty)
+    self.reads = reads
+    self.setterAccepted = setterAccepted
+  }
+
+  @objc(name) func deviceName() -> String {
+    "Scripted AirPods"
+  }
+
+  @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
+    Array(tokenToAV.values)
+  }
+
+  @objc(currentBluetoothListeningMode) func currentListeningMode() -> String? {
+    let index = min(readIndex, reads.count - 1)
+    readIndex += 1
+    return reads[index]
+  }
+
+  @objc(setCurrentBluetoothListeningMode:error:)
+  func setListeningMode(_ newMode: String, _ error: NSErrorPointer) -> Bool {
+    setterAccepted
+  }
+}
+
+private func scriptedAudioDevice(
+  reads: [String?],
+  setterAccepted: Bool = true
+) -> AudioDevice {
+  let rawDevice = FakeScriptedListeningModeDevice(
+    reads: reads,
+    setterAccepted: setterAccepted
+  )
+  let controller = PrivateAudioController(
+    rawDevices: [rawDevice],
+    logger: DebugLogger(enabled: false)
+  )
+  return controller.selectDevice(named: nil)!
 }
 
 @objc private final class FakeIncompleteDevice: NSObject {
@@ -315,6 +368,7 @@ private func testResourcePayloads() {
     "no-op payload has the observed post-command listening mode"
   )
   check(listeningModeNoOp["result"] as? String == "no-op", "no-op payload has result")
+  check(listeningModeNoOp["stateSource"] == nil, "no-op payload adds no inference field")
 
   let noDevice = makeResourcePayload(
     resource: .conversationAwareness,
@@ -331,51 +385,108 @@ private func testResourcePayloads() {
   check(noDevice["error"] as? String == "no-device", "failure payload has optional error")
 }
 
-private func testListeningModeSetState() {
+private func testListeningModeCanonicalization() {
   let off = tokenToAV["off"]!
-  let transparency = tokenToAV["transparency"]!
   let noiseCancellation = tokenToAV["noise-cancellation"]!
 
   check(
-    listeningModeStateAfterSet(
-      requestedToken: "off",
-      setterAccepted: true,
-      observedRawMode: off
-    ) == "off",
-    "successful Off readback is reported as off"
+    canonicalListeningMode(off) == "off",
+    "Off readback is canonicalized"
   )
   check(
-    listeningModeStateAfterSet(
-      requestedToken: "off",
-      setterAccepted: true,
-      observedRawMode: noiseCancellation
-    ) == "transparency",
-    "accepted Off no-op infers the Transparency fallback"
+    canonicalListeningMode(noiseCancellation) == "noise-cancellation",
+    "observed noise cancellation is not rewritten"
   )
   check(
-    listeningModeStateAfterSet(
-      requestedToken: "off",
-      setterAccepted: false,
-      observedRawMode: noiseCancellation
-    ) == "noise-cancellation",
-    "rejected Off write preserves the observed mode"
+    canonicalListeningMode("AVOutputDeviceBluetoothListeningModeFuture") == nil,
+    "unknown readback is not invented"
   )
   check(
-    listeningModeStateAfterSet(
+    canonicalListeningMode(nil) == nil,
+    "missing readback is not invented"
+  )
+}
+
+private func testObservedOffFallbackResolution() {
+  let resolution = resolveListeningModeWrite(
+    requestedToken: "off",
+    setterAccepted: true,
+    observedRawMode: tokenToAV["transparency"],
+    transparencySupported: true
+  )
+
+  check(resolution.state == "transparency", "observed Off fallback reports Transparency")
+  check(!resolution.inferredOffFallback, "observed Off fallback is not inferred")
+}
+
+private func testOffFallbackResolutionBoundaries() {
+  let adaptive = tokenToAV["adaptive"]!
+  let noiseCancellation = tokenToAV["noise-cancellation"]!
+  let off = tokenToAV["off"]!
+  let unknown = "AVOutputDeviceBluetoothListeningModeFuture"
+  let inferenceCases: [(String, String?)] = [
+    ("noise cancellation", noiseCancellation),
+    ("Adaptive", adaptive),
+    ("unknown", unknown),
+    ("missing", nil),
+  ]
+
+  let verified = resolveListeningModeWrite(
+    requestedToken: "off",
+    setterAccepted: false,
+    observedRawMode: off,
+    transparencySupported: true
+  )
+  check(verified.verified, "observed Off verifies regardless of setter result")
+  check(verified.state == "off", "verified Off reports Off")
+  check(!verified.inferredOffFallback, "verified Off is not inferred")
+
+  for (description, observed) in inferenceCases {
+    let inferred = resolveListeningModeWrite(
       requestedToken: "off",
       setterAccepted: true,
-      observedRawMode: nil
-    ) == nil,
-    "missing Off readback is not inferred"
+      observedRawMode: observed,
+      transparencySupported: true
+    )
+    check(!inferred.verified, "accepted Off does not verify \(description)")
+    check(inferred.state == "transparency", "accepted Off infers \(description) fallback")
+    check(inferred.inferredOffFallback, "accepted Off marks \(description) inference")
+  }
+
+  let rejected = resolveListeningModeWrite(
+    requestedToken: "off",
+    setterAccepted: false,
+    observedRawMode: noiseCancellation,
+    transparencySupported: true
   )
-  check(
-    listeningModeStateAfterSet(
-      requestedToken: "noise-cancellation",
-      setterAccepted: true,
-      observedRawMode: transparency
-    ) == "transparency",
-    "other modes always report their observed state"
+  check(rejected.state == "noise-cancellation", "rejected Off preserves observed state")
+  check(!rejected.inferredOffFallback, "rejected Off is not inferred")
+
+  let rejectedUnknown = resolveListeningModeWrite(
+    requestedToken: "off",
+    setterAccepted: false,
+    observedRawMode: unknown,
+    transparencySupported: true
   )
+  check(rejectedUnknown.state == nil, "rejected Off preserves unknown state as null")
+
+  let unsupported = resolveListeningModeWrite(
+    requestedToken: "off",
+    setterAccepted: true,
+    observedRawMode: noiseCancellation,
+    transparencySupported: false
+  )
+  check(unsupported.state == "noise-cancellation", "unsupported fallback preserves state")
+  check(!unsupported.inferredOffFallback, "unsupported fallback is not inferred")
+
+  let nonOff = resolveListeningModeWrite(
+    requestedToken: "adaptive",
+    setterAccepted: true,
+    observedRawMode: noiseCancellation,
+    transparencySupported: true
+  )
+  check(nonOff.state == "noise-cancellation", "non-Off preserves observed state")
+  check(!nonOff.inferredOffFallback, "non-Off writes never infer Transparency")
 }
 
 private func testPrivateSelectorDiscovery() {
@@ -405,6 +516,131 @@ private func testPrivateSelectorDiscovery() {
   let context = FakeContext(devices: [device])
   let outputDevices = PrivateAudioDiscovery.outputDevices(from: context, logger: logger)
   check(outputDevices?.count == 1, "outputDevices is discovered safely")
+}
+
+private func testListeningModeReadbackWaitsForDelayedTarget() {
+  let off = tokenToAV["off"]!
+  let device = scriptedAudioDevice(
+    reads: [tokenToAV["noise-cancellation"]!, tokenToAV["noise-cancellation"]!, off]
+  )
+
+  let outcome = device.setListeningModeAndReadBack(off, wait: { _ in })
+
+  check(
+    outcome.observedRawMode == off,
+    "listening-mode readback waits for a delayed target"
+  )
+}
+
+private func testListeningModeReadbackReturnsImmediatelyForObservedTarget() {
+  let adaptive = tokenToAV["adaptive"]!
+  let device = scriptedAudioDevice(
+    reads: [adaptive],
+    setterAccepted: false
+  )
+  var waitCount = 0
+
+  let outcome = device.setListeningModeAndReadBack(adaptive) { _ in waitCount += 1 }
+
+  check(
+    outcome.observedRawMode == adaptive,
+    "observed target is authoritative when the setter rejects"
+  )
+  check(!outcome.setterAccepted, "readback preserves setter rejection")
+  check(waitCount == 0, "observed target returns without waiting")
+}
+
+private func testListeningModeReadbackReturnsFinalFallback() {
+  let off = tokenToAV["off"]!
+  let noiseCancellation = tokenToAV["noise-cancellation"]!
+  let transparency = tokenToAV["transparency"]!
+  let device = scriptedAudioDevice(
+    reads: [noiseCancellation, transparency]
+      + Array(repeating: noiseCancellation, count: 18)
+      + [transparency]
+  )
+  var waitCount = 0
+
+  let outcome = device.setListeningModeAndReadBack(off) { _ in waitCount += 1 }
+
+  check(
+    outcome.observedRawMode == transparency,
+    "Off returns the settled fallback mode"
+  )
+  check(outcome.setterAccepted, "readback preserves setter acceptance")
+  check(waitCount == 30, "Off readback uses its full settling window")
+}
+
+private func testListeningModeReadbackReturnsUnknownOrMissingFinalState() {
+  let off = tokenToAV["off"]!
+  let noiseCancellation = tokenToAV["noise-cancellation"]!
+  let unknown = "AVOutputDeviceBluetoothListeningModeFuture"
+
+  let unknownObserved = scriptedAudioDevice(reads: [noiseCancellation, unknown])
+    .setListeningModeAndReadBack(off, wait: { _ in })
+    .observedRawMode
+  check(
+    canonicalListeningMode(unknownObserved) == nil,
+    "unknown final readback becomes null state"
+  )
+
+  let missingObserved = scriptedAudioDevice(reads: [noiseCancellation, nil])
+    .setListeningModeAndReadBack(off, wait: { _ in })
+    .observedRawMode
+  check(
+    canonicalListeningMode(missingObserved) == nil,
+    "missing final readback becomes null state"
+  )
+}
+
+private func testListeningModeReadbackPreservesDelayedNonOffModes() {
+  let adaptive = tokenToAV["adaptive"]!
+  let device = scriptedAudioDevice(
+    reads: [tokenToAV["transparency"]!, adaptive]
+  )
+
+  let outcome = device.setListeningModeAndReadBack(adaptive, wait: { _ in })
+
+  check(
+    outcome.observedRawMode == adaptive,
+    "non-Off modes retain delayed readback verification"
+  )
+}
+
+private func testNonOffReadbackRetainsStandardTimeout() {
+  let adaptive = tokenToAV["adaptive"]!
+  let transparency = tokenToAV["transparency"]!
+  let device = scriptedAudioDevice(reads: [transparency])
+  var waitCount = 0
+
+  let outcome = device.setListeningModeAndReadBack(adaptive) { _ in waitCount += 1 }
+
+  check(
+    outcome.observedRawMode == transparency,
+    "timed-out non-Off returns the final observed mode"
+  )
+  check(waitCount == 16, "non-Off readback retains the standard timeout")
+}
+
+private func testListeningModeReadbackProcessesAsyncDeviceUpdates() {
+  let rawDevice = FakeDevice(
+    name: "Async AirPods",
+    mode: tokenToAV["noise-cancellation"]!,
+    appliesListeningModeAsynchronously: true
+  )
+  let controller = PrivateAudioController(
+    rawDevices: [rawDevice],
+    logger: DebugLogger(enabled: false)
+  )
+  let device = controller.selectDevice(named: nil)!
+  let transparency = tokenToAV["transparency"]!
+
+  let outcome = device.setListeningModeAndReadBack(transparency)
+
+  check(
+    outcome.observedRawMode == transparency,
+    "readback processes asynchronous device updates"
+  )
 }
 
 private func testDeviceSelectionAndCapabilities() {
@@ -473,8 +709,17 @@ private struct SwiftTests {
     testCycleParsing()
     testNextCycleMode()
     testResourcePayloads()
-    testListeningModeSetState()
+    testListeningModeCanonicalization()
+    testObservedOffFallbackResolution()
+    testOffFallbackResolutionBoundaries()
     testPrivateSelectorDiscovery()
+    testListeningModeReadbackWaitsForDelayedTarget()
+    testListeningModeReadbackReturnsImmediatelyForObservedTarget()
+    testListeningModeReadbackReturnsFinalFallback()
+    testListeningModeReadbackReturnsUnknownOrMissingFinalState()
+    testListeningModeReadbackPreservesDelayedNonOffModes()
+    testNonOffReadbackRetainsStandardTimeout()
+    testListeningModeReadbackProcessesAsyncDeviceUpdates()
     testDeviceSelectionAndCapabilities()
 
     if failureCount > 0 {

@@ -9,7 +9,7 @@ $ airpods-control ca get
 off
 ```
 
-`airpods-control` talks to the macOS system audio daemon directly through the same private AVFoundation API that AirPods use internally. Switching a mode is exactly like pressing and holding a stem: the change is immediate and you get the same on-screen banner. There is no polling, no synthetic clicks, and no UI automation.
+`airpods-control` talks to the macOS system audio daemon directly through the same private AVFoundation API that AirPods use internally. Switching a mode is exactly like pressing and holding a stem: the change is immediate and you get the same on-screen banner. There is no background polling, no synthetic clicks, and no UI automation.
 
 ## What it does
 
@@ -100,7 +100,7 @@ $ airpods-control listening-mode set noise-cancellation
 ok
 ```
 
-Setters are idempotent: if the requested mode is already active, the command prints `ok`, exits `0`, and does not issue a write. If a requested change is a silent hardware no-op (see below), you get `no-op` and exit code `3`:
+Setters are idempotent: if the requested mode is already active, the command prints `ok`, exits `0`, and does not issue a write. If a requested change does not verify within the bounded readback window, you get `no-op` and exit code `3`:
 
 ```console
 $ airpods-control lm set noise-cancellation
@@ -150,8 +150,7 @@ order, and the mode aliases listed above are accepted. Fewer than two distinct
 modes or an unknown token is `bad-args` (exit `2`). Listed modes the connected
 device does not support are skipped; if fewer than two remain, the command
 reports `unsupported` (exit `4`). A change that does not verify reports
-`no-op` (exit `3`) — in particular, cycling *into* `off` is subject to the
-[`off` no-op caveat](#the-off-no-op-caveat).
+`no-op` (exit `3`).
 
 ### Conversation Awareness
 
@@ -193,14 +192,14 @@ $ airpods-control ca get --json
 {"conversationAwareness":"on","device":"Raul’s AirPods Pro","result":"ok"}
 ```
 
-Every JSON response contains `result`, whose value is `ok`, `no-op`, or `error`. A valid resource command also contains `device` and its resulting `listeningMode` or `conversationAwareness` state. If the device or state cannot be resolved, that value is JSON `null`; no invented state string is added. Errors add an `error` field:
+Every JSON response contains `result`, whose value is `ok`, `no-op`, or `error`. A valid resource command also contains `device` and its resulting `listeningMode` or `conversationAwareness` state. States normally reflect private-API readback; the documented accepted-`off` fallback below may instead report the expected eventual Transparency state. Otherwise, an unresolved device or state is JSON `null`. Errors add an `error` field:
 
 ```console
 $ airpods-control --device "Missing AirPods" lm get --json
 {"device":null,"error":"no-device","listeningMode":null,"result":"error"}
 ```
 
-`lm list` additionally returns `supportedListeningModes`. A failed write uses `"result":"no-op"` and exits `3`. It returns the state read back after the attempt (waiting briefly for the device to settle), except for the disabled-`off` fallback described below, which reports immediately. Version JSON follows the same result convention: `{"result":"ok","version":"0.1.0"}`.
+`lm list` additionally returns `supportedListeningModes`. A write that does not verify uses `"result":"no-op"` and exits `3`. It returns the final canonical state read during the bounded settling window, the documented Transparency fallback, or JSON `null` when neither applies. Version JSON follows the same result convention: `{"result":"ok","version":"0.1.0"}`.
 
 `-h` and `--help` can appear anywhere. Help always wins, exits `0`, and never accesses the device; a recognized resource before the flag selects contextual help. Version flags are global only and do not accept `--device`.
 
@@ -218,9 +217,11 @@ transparency
 
 Debug output covers bypass/re-exec status, framework and selector discovery, compatible devices, exact-name selection, raw modes, capability checks, writes, and read-back attempts. It never changes stdout, JSON, or the exit code, so stdout remains safe to pipe or parse.
 
-### The `off` no-op caveat
+### Write verification
 
-When `off` (the "Normal"/no-active-mode state) is disabled for the connected AirPods, the API may still accept the request while the hardware resolves to `transparency` asynchronously. As an MVP compatibility rule, an accepted `off` request whose immediate readback is not `off` reports `transparency` with `no-op` and exit `3`, without waiting for that transition. This inference is intentionally limited to accepted `off` requests with a concrete readback; rejected writes and unavailable state are not rewritten.
+Listening-mode writes are checked every 50 ms while the device settles. Non-`off` writes return when the target is observed, within about 800 ms. Changed `off` writes use a 1.5-second window because their fallback can bounce between modes.
+
+If `off` is not verified, the setter accepted the request, and the device advertises Transparency, `set off` and explicit cycles into `off` report `no-op` with `listeningMode: "transparency"`. This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. With `--debug`, `verify.listening_mode.inferred_off_fallback=true` identifies this inference. Rejected writes and devices without Transparency continue to report the final observed canonical mode or `null`.
 
 ### Exit codes
 
@@ -229,7 +230,7 @@ When `off` (the "Normal"/no-active-mode state) is disabled for the connected Air
 | `0`  | ok          | Command succeeded (including reads and verified writes). |
 | `1`  | no-device   | No supported AirPods found as the current output device. |
 | `2`  | bad-args    | Missing or malformed arguments.                          |
-| `3`  | no-op       | A requested write did not reach the requested state.     |
+| `3`  | no-op       | A requested write was not verified in the bounded window. |
 | `4`  | unsupported | The mode or feature isn't available on this device.      |
 
 The single-token stdout (`ok`, `no-op`, `no-device`, `unsupported`, a mode name, etc.) mirrors the exit code so you can branch on either.

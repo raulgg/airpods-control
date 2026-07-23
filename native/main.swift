@@ -100,36 +100,6 @@ func finishResource(
   )
 }
 
-func canonicalListeningMode(_ rawMode: String?) -> String? {
-  rawMode.flatMap { avToToken[$0] }
-}
-
-func setAndReadListeningMode(
-  device: AudioDevice,
-  target: String,
-  logger: DebugLogger
-) -> (accepted: Bool, observed: String?) {
-  let accepted = device.setListeningMode(target) ?? false
-  var observed = device.currentListeningMode()
-  logger.debug("verify.listening_mode.attempt", 0)
-  if observed == target { return (accepted, observed) }
-
-  // An accepted Off request with a concrete non-Off readback resolves through
-  // the disabled-Off fallback; report it immediately instead of waiting for a
-  // transition that will not converge on Off.
-  if target == tokenToAV["off"], accepted, observed != nil {
-    return (accepted, observed)
-  }
-
-  for attempt in 1...16 {
-    usleep(50_000)
-    observed = device.currentListeningMode()
-    logger.debug("verify.listening_mode.attempt", attempt)
-    if observed == target { return (accepted, observed) }
-  }
-  return (accepted, observed)
-}
-
 func setAndObserveConversationAwareness(
   device: AudioDevice,
   target: Bool,
@@ -266,8 +236,9 @@ case .listeningModeList:
 case let .listeningModeSet(token, avMode):
   let currentRaw = device.currentListeningMode()
   let current = canonicalListeningMode(currentRaw)
+  let availableModes = Set(device.availableListeningModes())
 
-  guard device.availableListeningModes().contains(avMode), device.canSetListeningMode() else {
+  guard availableModes.contains(avMode), device.canSetListeningMode() else {
     finishResource(
       invocation: invocation,
       deviceName: device.name,
@@ -290,24 +261,25 @@ case let .listeningModeSet(token, avMode):
     )
   }
 
-  let outcome = setAndReadListeningMode(device: device, target: avMode, logger: logger)
-  let state = listeningModeStateAfterSet(
+  let outcome = device.setListeningModeAndReadBack(avMode)
+  let resolution = resolveListeningModeWrite(
     requestedToken: token,
-    setterAccepted: outcome.accepted,
-    observedRawMode: outcome.observed
+    setterAccepted: outcome.setterAccepted,
+    observedRawMode: outcome.observedRawMode,
+    transparencySupported: availableModes.contains(tokenToAV["transparency"]!)
   )
-  let inferredOffFallback =
-    token == "off" && outcome.accepted && outcome.observed != nil && outcome.observed != avMode
-  logger.debug("verify.listening_mode.inferred_off_fallback", inferredOffFallback)
+  if resolution.inferredOffFallback {
+    logger.debug("verify.listening_mode.inferred_off_fallback", true)
+  }
 
-  if outcome.observed == avMode {
+  if resolution.verified {
     finishResource(
       invocation: invocation,
       deviceName: device.name,
       plain: "ok",
       code: 0,
       result: "ok",
-      state: state
+      state: resolution.state
     )
   } else {
     finishResource(
@@ -316,7 +288,7 @@ case let .listeningModeSet(token, avMode):
       plain: "no-op",
       code: 3,
       result: "no-op",
-      state: state
+      state: resolution.state
     )
   }
 
@@ -346,21 +318,25 @@ case let .listeningModeCycle(requested):
   logger.debug("cycle.set", cycleTokens.joined(separator: ","))
   logger.debug("cycle.target", targetToken)
 
-  let outcome = setAndReadListeningMode(device: device, target: targetAV, logger: logger)
-  let state = listeningModeStateAfterSet(
+  let outcome = device.setListeningModeAndReadBack(targetAV)
+  let resolution = resolveListeningModeWrite(
     requestedToken: targetToken,
-    setterAccepted: outcome.accepted,
-    observedRawMode: outcome.observed
+    setterAccepted: outcome.setterAccepted,
+    observedRawMode: outcome.observedRawMode,
+    transparencySupported: availableModes.contains(tokenToAV["transparency"]!)
   )
+  if resolution.inferredOffFallback {
+    logger.debug("verify.listening_mode.inferred_off_fallback", true)
+  }
 
-  if outcome.observed == targetAV {
+  if resolution.verified {
     finishResource(
       invocation: invocation,
       deviceName: device.name,
       plain: targetToken,
       code: 0,
       result: "ok",
-      state: state
+      state: resolution.state
     )
   } else {
     finishResource(
@@ -369,7 +345,7 @@ case let .listeningModeCycle(requested):
       plain: "no-op",
       code: 3,
       result: "no-op",
-      state: state
+      state: resolution.state
     )
   }
 
