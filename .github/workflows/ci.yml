@@ -4,9 +4,17 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-14
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -36,6 +44,8 @@ jobs:
           make install DESTDIR="$stage" PREFIX=/usr/local
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
+          test -f "$stage/usr/local/share/man/man1/airpods-control.1"
           test "$("$stage/usr/local/bin/airpods-control" --version)" = "0.1.0"
           make uninstall DESTDIR="$stage" PREFIX=/usr/local
           test ! -e "$stage/usr/local/bin/airpods-control"
+          test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
