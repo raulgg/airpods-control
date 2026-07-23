@@ -20,7 +20,7 @@ The library [`native/bypass.c`](native/bypass.c) interposes that one function. W
 **No prebuilt binaries are distributed.** There is nothing to download and trust blindly. The interpose technique requires an ad-hoc-signed binary, which cannot be notarized (a hardened runtime enforces library validation and would block the inserted library), so shipping a signed download is not even possible. Instead:
 
 - You clone the repository and compile it locally with your own Command Line Tools toolchain.
-- The entire mechanism is [`native/bypass.c`](native/bypass.c) — around 40 lines of C — plus [`native/main.swift`](native/main.swift). **Read them before you build.** The whole trust surface is small enough to audit in a few minutes, and what runs is what you compiled.
+- The complete runtime source is [`native/bypass.c`](native/bypass.c) — around 40 lines of C — plus [`native/main.swift`](native/main.swift), [`native/CLI.swift`](native/CLI.swift), and [`native/PrivateAudio.swift`](native/PrivateAudio.swift). **Read them before you build.** The whole trust surface is small enough to audit in a few minutes, and what runs is what you compiled.
 - The Homebrew formula also builds from source; it downloads a source tarball, not a binary, and runs the same `make`.
 
 If you want to verify the dylib does only what is claimed, read `native/bypass.c`: it should compare against exactly the one entitlement string and delegate every other case to `SecTaskCopyValueForEntitlement`. Anything beyond that would be a red flag worth reporting.
