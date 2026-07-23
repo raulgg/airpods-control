@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   build:
+    name: Build, test, and verify install
     runs-on: macos-14
     timeout-minutes: 15
 
