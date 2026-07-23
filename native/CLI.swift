@@ -116,7 +116,7 @@ Usage:
   airpods-control --help | -h
 
 Resources:
-  listening-mode, lm            Read, set, or list listening modes.
+  listening-mode, lm            Read, set, list, or cycle listening modes.
   conversation-awareness, ca    Read or set Conversation Awareness.
 
 Global options:

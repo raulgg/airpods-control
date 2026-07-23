@@ -55,6 +55,8 @@ assert_contains "$("$CLI" --help)" 'Resources:' "long global help"
 assert_contains "$("$CLI" -h)" 'Resources:' "short global help"
 assert_contains "$("$CLI" --help)" '--debug' "global debug help"
 assert_contains "$("$CLI" --help)" '--device NAME' "global device help"
+assert_contains "$("$CLI" --help)" 'Read, set, list, or cycle listening modes.' \
+  "global listening-mode command summary"
 
 assert_contains "$("$CLI" lm --help)" 'listening-mode set <mode>' "lm help"
 assert_contains "$("$CLI" listening-mode -h)" 'listening-mode list' "listening-mode help"
