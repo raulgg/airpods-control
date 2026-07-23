@@ -210,6 +210,18 @@ private func testResourcePayloads() {
   )
   check(listeningMode["error"] == nil, "successful payload omits error")
 
+  let listeningModeNoOp = makeResourcePayload(
+    resource: .listeningMode,
+    deviceName: "Raul’s AirPods Pro",
+    result: "no-op",
+    state: "transparency"
+  )
+  check(
+    listeningModeNoOp["listeningMode"] as? String == "transparency",
+    "no-op payload has the observed post-command listening mode"
+  )
+  check(listeningModeNoOp["result"] as? String == "no-op", "no-op payload has result")
+
   let noDevice = makeResourcePayload(
     resource: .conversationAwareness,
     deviceName: nil,
@@ -223,6 +235,53 @@ private func testResourcePayloads() {
     "unavailable resource state is JSON null"
   )
   check(noDevice["error"] as? String == "no-device", "failure payload has optional error")
+}
+
+private func testListeningModeSetState() {
+  let off = tokenToAV["off"]!
+  let transparency = tokenToAV["transparency"]!
+  let noiseCancellation = tokenToAV["noise-cancellation"]!
+
+  check(
+    listeningModeStateAfterSet(
+      requestedToken: "off",
+      setterAccepted: true,
+      observedRawMode: off
+    ) == "off",
+    "successful Off readback is reported as off"
+  )
+  check(
+    listeningModeStateAfterSet(
+      requestedToken: "off",
+      setterAccepted: true,
+      observedRawMode: noiseCancellation
+    ) == "transparency",
+    "accepted Off no-op infers the Transparency fallback"
+  )
+  check(
+    listeningModeStateAfterSet(
+      requestedToken: "off",
+      setterAccepted: false,
+      observedRawMode: noiseCancellation
+    ) == "noise-cancellation",
+    "rejected Off write preserves the observed mode"
+  )
+  check(
+    listeningModeStateAfterSet(
+      requestedToken: "off",
+      setterAccepted: true,
+      observedRawMode: nil
+    ) == nil,
+    "missing Off readback is not inferred"
+  )
+  check(
+    listeningModeStateAfterSet(
+      requestedToken: "noise-cancellation",
+      setterAccepted: true,
+      observedRawMode: transparency
+    ) == "transparency",
+    "other modes always report their observed state"
+  )
 }
 
 private func testPrivateSelectorDiscovery() {
@@ -318,6 +377,7 @@ private struct SwiftTests {
   static func main() {
     testCLIParsing()
     testResourcePayloads()
+    testListeningModeSetState()
     testPrivateSelectorDiscovery()
     testDeviceSelectionAndCapabilities()
 

@@ -104,23 +104,15 @@ func canonicalListeningMode(_ rawMode: String?) -> String? {
   rawMode.flatMap { avToToken[$0] }
 }
 
-func setAndObserveListeningMode(
+func setAndReadListeningMode(
   device: AudioDevice,
   target: String,
   logger: DebugLogger
-) -> (verified: Bool, observed: String?) {
-  guard device.setListeningMode(target) != nil else {
-    return (false, device.currentListeningMode())
-  }
-
-  var observed: String?
-  for attempt in 1...16 {
-    usleep(50_000)
-    observed = device.currentListeningMode()
-    logger.debug("verify.listening_mode.attempt", attempt)
-    if observed == target { return (true, observed) }
-  }
-  return (false, observed)
+) -> (accepted: Bool, observed: String?) {
+  let accepted = device.setListeningMode(target) ?? false
+  let observed = device.currentListeningMode()
+  logger.debug("verify.listening_mode.attempt", 0)
+  return (accepted, observed)
 }
 
 func setAndObserveConversationAwareness(
@@ -283,16 +275,24 @@ case let .listeningModeSet(token, avMode):
     )
   }
 
-  let outcome = setAndObserveListeningMode(device: device, target: avMode, logger: logger)
-  let observed = canonicalListeningMode(outcome.observed)
-  if outcome.verified {
+  let outcome = setAndReadListeningMode(device: device, target: avMode, logger: logger)
+  let state = listeningModeStateAfterSet(
+    requestedToken: token,
+    setterAccepted: outcome.accepted,
+    observedRawMode: outcome.observed
+  )
+  let inferredOffFallback =
+    token == "off" && outcome.accepted && outcome.observed != nil && outcome.observed != avMode
+  logger.debug("verify.listening_mode.inferred_off_fallback", inferredOffFallback)
+
+  if outcome.observed == avMode {
     finishResource(
       invocation: invocation,
       deviceName: device.name,
       plain: "ok",
       code: 0,
       result: "ok",
-      state: observed
+      state: state
     )
   } else {
     finishResource(
@@ -301,7 +301,7 @@ case let .listeningModeSet(token, avMode):
       plain: "no-op",
       code: 3,
       result: "no-op",
-      state: observed
+      state: state
     )
   }
 

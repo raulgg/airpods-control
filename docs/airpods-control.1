@@ -160,21 +160,26 @@ No supported AirPods found as the current output device (no-device).
 Missing or malformed arguments (bad-args).
 .TP
 .B 3
-A requested write did not change the setting (no-op).
+A requested write did not reach the requested state (no-op).
 .TP
 .B 4
 The mode or feature is not available on this device (unsupported).
 .SH NOTES
-On AirPods Pro,
+When
 .B off
-(the Normal state) is a silent no-op: the API accepts it but the hardware does
-not change.
+(the Normal state) is disabled for the connected AirPods, the API may still
+accept the request while the hardware resolves asynchronously to
+.BR transparency .
 .B airpods-control
-verifies every change by reading it back and reports
-.B no-op
-(exit 3) rather than falsely claiming success. Use
+therefore reports
 .B transparency
-for a "hear everything" mode.
+without waiting when an accepted
+.B off
+request has a concrete immediate readback other than
+.BR off .
+It returns
+.B no-op
+(exit 3). Rejected writes and unavailable readback state are not inferred.
 .PP
 This relies on a private API and targets macOS Tahoe (26); Apple may change it
 in any update. The tool probes known shared-system-audio context selector

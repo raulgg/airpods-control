@@ -194,6 +194,26 @@ func canonicalModeToken(_ input: String) -> String? {
   return modeAliases[input]
 }
 
+func listeningModeStateAfterSet(
+  requestedToken: String,
+  setterAccepted: Bool,
+  observedRawMode: String?
+) -> String? {
+  guard let observedRawMode else { return nil }
+
+  // MVP heuristic: current AirPods firmware resolves an accepted Off request
+  // to Transparency when Off Listening Mode is disabled. Replace this with an
+  // authoritative device event if that private signal becomes reliable.
+  if requestedToken == "off",
+     setterAccepted,
+     observedRawMode != tokenToAV["off"]
+  {
+    return "transparency"
+  }
+
+  return avToToken[observedRawMode]
+}
+
 func makeResourcePayload(
   resource: CLIResource,
   deviceName: String?,

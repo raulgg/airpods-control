@@ -186,9 +186,10 @@ $ airpods-control --device "Missing AirPods" lm get --json
 {"device":null,"error":"no-device","listeningMode":null,"result":"error"}
 ```
 
-`lm list` additionally returns `supportedListeningModes`. A failed write
-returns the state observed after the attempt, uses `"result":"no-op"`, and
-exits `3`. Version JSON follows the same result convention:
+`lm list` additionally returns `supportedListeningModes`. A failed write uses
+`"result":"no-op"` and exits `3`. It returns the state read immediately after
+the attempt, except for the disabled-`off` fallback described below. Version
+JSON follows the same result convention:
 `{"result":"ok","version":"0.1.0"}`.
 
 `-h` and `--help` can appear anywhere. Help always wins, exits `0`, and never
@@ -215,17 +216,17 @@ stdout remains safe to pipe or parse.
 
 ### The `off` no-op caveat
 
-On **AirPods Pro**, `off` (the "Normal"/no-active-mode state) is a **silent no-op**: the API accepts the request but the hardware stays where it is. `airpods-control` verifies every change by reading the value back, so rather than falsely claiming success it reports `no-op` and exits `3`. This is expected behavior on AirPods Pro, not a bug — use `transparency` if you want a "hear everything" mode.
+When `off` (the "Normal"/no-active-mode state) is disabled for the connected AirPods, the API may still accept the request while the hardware resolves to `transparency` asynchronously. As an MVP compatibility rule, an accepted `off` request whose immediate readback is not `off` reports `transparency` with `no-op` and exit `3`, without waiting for that transition. This inference is intentionally limited to accepted `off` requests with a concrete readback; rejected writes and unavailable state are not rewritten.
 
 ### Exit codes
 
-| Code | Meaning       | When                                                        |
-|------|---------------|-------------------------------------------------------------|
-| `0`  | ok            | Command succeeded (including reads and verified writes).    |
-| `1`  | no-device     | No supported AirPods found as the current output device.    |
-| `2`  | bad-args      | Missing or malformed arguments.                             |
-| `3`  | no-op         | A requested write did not change the setting.              |
-| `4`  | unsupported   | The mode or feature isn't available on this device.         |
+| Code | Meaning     | When                                                     |
+| ---- | ----------- | -------------------------------------------------------- |
+| `0`  | ok          | Command succeeded (including reads and verified writes). |
+| `1`  | no-device   | No supported AirPods found as the current output device. |
+| `2`  | bad-args    | Missing or malformed arguments.                          |
+| `3`  | no-op       | A requested write did not reach the requested state.     |
+| `4`  | unsupported | The mode or feature isn't available on this device.      |
 
 The single-token stdout (`ok`, `no-op`, `no-device`, `unsupported`, a mode name, etc.) mirrors the exit code so you can branch on either.
 
@@ -239,9 +240,9 @@ macOS exposes AirPods listening modes and Conversation Awareness only through a 
 
 ### The one forged entitlement
 
-Acquiring the *shared system audio context* is gated by a private entitlement, `com.apple.avfoundation.allow-system-wide-context`. Apple's own audio components carry it; a normal ad-hoc-signed binary does not. AVFoundation checks for it **in-process** by calling `SecTaskCopyValueForEntitlement`.
+Acquiring the _shared system audio context_ is gated by a private entitlement, `com.apple.avfoundation.allow-system-wide-context`. Apple's own audio components carry it; a normal ad-hoc-signed binary does not. AVFoundation checks for it **in-process** by calling `SecTaskCopyValueForEntitlement`.
 
-`airpods-control` satisfies that check with a tiny interpose library, [`native/bypass.c`](native/bypass.c) (~40 lines, fully included and auditable). It is loaded via `DYLD_INSERT_LIBRARIES` and does exactly one thing: when AVFoundation asks *"do I have `com.apple.avfoundation.allow-system-wide-context`?"* it answers *"yes."* **Every other entitlement query is passed straight through to the real implementation, unchanged.** On launch the tool re-execs itself once with the dylib inserted (setting `DYLD_INSERT_LIBRARIES` inside the child, so it works even if the parent environment strips `DYLD_*`), then does its work.
+`airpods-control` satisfies that check with a tiny interpose library, [`native/bypass.c`](native/bypass.c) (~40 lines, fully included and auditable). It is loaded via `DYLD_INSERT_LIBRARIES` and does exactly one thing: when AVFoundation asks _"do I have `com.apple.avfoundation.allow-system-wide-context`?"_ it answers _"yes."_ **Every other entitlement query is passed straight through to the real implementation, unchanged.** On launch the tool re-execs itself once with the dylib inserted (setting `DYLD_INSERT_LIBRARIES` inside the child, so it works even if the parent environment strips `DYLD_*`), then does its work.
 
 To be precise about what this does and does not do:
 
