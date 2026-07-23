@@ -1,6 +1,6 @@
 # airpods-control
 
-[![CI](https://github.com/raulg/airpods-control-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/raulg/airpods-control-cli/actions/workflows/ci.yml)
+[![CI](https://github.com/raulgg/airpods-control-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/raulgg/airpods-control-cli/actions/workflows/ci.yml)
 
 Control your AirPods listening mode and Conversation Awareness from the command line without using Control Center, a menu bar app, or Accessibility permission.
 
@@ -33,7 +33,7 @@ Because it talks to the audio daemon instead of driving the UI, it needs no Acce
 ### Homebrew (build-from-source)
 
 ```sh
-brew install raulg/tap/airpods-control
+brew install raulgg/tap/airpods-control
 ```
 
 The formula downloads the source and compiles it locally. It does not download a prebuilt binary. See [How it works](#how-it-works). Homebrew needs Command Line Tools or Xcode to run `swiftc`.
@@ -41,7 +41,7 @@ The formula downloads the source and compiles it locally. It does not download a
 ### From source
 
 ```sh
-git clone https://github.com/raulg/airpods-control-cli
+git clone https://github.com/raulgg/airpods-control-cli
 cd airpods-control-cli
 make
 sudo make install            # installs to /usr/local by default

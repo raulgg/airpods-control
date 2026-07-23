@@ -5,8 +5,8 @@
 # No prebuilt binary is shipped — the ad-hoc-signed build cannot be notarized.
 class AirpodsControl < Formula
   desc "Control AirPods listening mode and Conversation Awareness from the CLI"
-  homepage "https://github.com/raulg/airpods-control-cli"
-  url "https://github.com/raulg/airpods-control-cli/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/raulgg/airpods-control-cli"
+  url "https://github.com/raulgg/airpods-control-cli/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "PLACEHOLDER" # fill in on release: shasum -a 256 of the release tarball
   license "MIT"
 
