@@ -162,7 +162,7 @@ $ airpods-control --device "Missing AirPods" lm get --json
 {"device":null,"error":"no-device","listeningMode":null,"result":"error"}
 ```
 
-`lm list` additionally returns `supportedListeningModes`. A failed write uses `"result":"no-op"` and exits `3`. It returns the state read immediately after the attempt, except for the disabled-`off` fallback described below. Version JSON follows the same result convention: `{"result":"ok","version":"0.1.0"}`.
+`lm list` additionally returns `supportedListeningModes`. A failed write uses `"result":"no-op"` and exits `3`. It returns the state read back after the attempt (waiting briefly for the device to settle), except for the disabled-`off` fallback described below, which reports immediately. Version JSON follows the same result convention: `{"result":"ok","version":"0.1.0"}`.
 
 `-h` and `--help` can appear anywhere. Help always wins, exits `0`, and never accesses the device; a recognized resource before the flag selects contextual help. Version flags are global only and do not accept `--device`.
 

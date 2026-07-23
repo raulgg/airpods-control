@@ -110,8 +110,23 @@ func setAndReadListeningMode(
   logger: DebugLogger
 ) -> (accepted: Bool, observed: String?) {
   let accepted = device.setListeningMode(target) ?? false
-  let observed = device.currentListeningMode()
+  var observed = device.currentListeningMode()
   logger.debug("verify.listening_mode.attempt", 0)
+  if observed == target { return (accepted, observed) }
+
+  // An accepted Off request with a concrete non-Off readback resolves through
+  // the disabled-Off fallback; report it immediately instead of waiting for a
+  // transition that will not converge on Off.
+  if target == tokenToAV["off"], accepted, observed != nil {
+    return (accepted, observed)
+  }
+
+  for attempt in 1...16 {
+    usleep(50_000)
+    observed = device.currentListeningMode()
+    logger.debug("verify.listening_mode.attempt", attempt)
+    if observed == target { return (accepted, observed) }
+  }
   return (accepted, observed)
 }
 
