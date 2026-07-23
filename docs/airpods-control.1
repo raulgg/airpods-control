@@ -22,6 +22,16 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .B airpods-control
 .RB [ --device
 .IR name ]
+.RB ( listening-mode | lm )
+.B cycle
+.RB [ --modes
+.IR m1,m2[,...] ]
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B airpods-control
+.RB [ --device
+.IR name ]
 .RB ( conversation-awareness | ca )
 .B get
 .RB [ --json ]
@@ -74,6 +84,24 @@ if the requested write did not change the setting.
 Print the comma-separated modes supported by the connected device in the
 deterministic order documented under
 .BR MODES .
+.TP
+.BR "listening-mode cycle" ", " "lm cycle"
+Advance to the next mode in the cycle set, wrapping around, and print the mode
+landed on. Modes always cycle in the order documented under
+.BR MODES .
+The cycle set defaults to every mode the device supports except
+.BR off ;
+.B --modes
+selects an explicit subset of at least two distinct modes. Modes the device
+does not support are skipped; if fewer than two remain the command reports
+.B unsupported
+(exit 4). If the current mode is outside the cycle set (including
+.BR off ),
+cycle still advances in canonical order from the current mode to the next mode
+that is in the set, wrapping around; if the current mode is unknown, cycle
+starts at the set's first mode. A change that does not verify reports
+.B no-op
+(exit 3).
 .SS CONVERSATION AWARENESS
 .TP
 .BR "conversation-awareness get" ", " "ca get"
@@ -121,6 +149,16 @@ alias
 Output always uses canonical names. There is no alias for
 .BR off .
 .SH OPTIONS
+.TP
+.BI "--modes " m1,m2[,...]
+For
+.BR "listening-mode cycle" :
+a comma-separated subset of the modes documented under
+.BR MODES ,
+at least two distinct entries. Mode aliases are accepted. Duplicates are
+ignored. Unknown tokens are
+.B bad-args
+(exit 2).
 .TP
 .BI "--device " name
 Target a compatible output device using a case-insensitive exact name match.

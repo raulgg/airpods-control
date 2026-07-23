@@ -58,6 +58,7 @@ assert_contains "$("$CLI" --help)" '--device NAME' "global device help"
 
 assert_contains "$("$CLI" lm --help)" 'listening-mode set <mode>' "lm help"
 assert_contains "$("$CLI" listening-mode -h)" 'listening-mode list' "listening-mode help"
+assert_contains "$("$CLI" lm cycle --help)" 'listening-mode cycle' "lm cycle help"
 assert_contains "$("$CLI" lm --help)" 'anc, nc' "listening-mode alias help"
 assert_contains "$("$CLI" ca get --help)" 'conversation-awareness get' "ca help"
 assert_contains "$("$CLI" conversation-awareness set on -h)" \
@@ -88,6 +89,19 @@ expect_failure 2 bad-args "$CLI" list
 expect_failure 2 bad-args "$CLI" toggle transparency adaptive
 expect_failure 2 bad-args "$CLI" lm toggle transparency adaptive
 expect_failure 2 bad-args "$CLI" ca toggle
+expect_failure 2 bad-args "$CLI" cycle
+expect_failure 2 bad-args "$CLI" lm cycle extra
+expect_failure 2 bad-args "$CLI" lm cycle --modes
+expect_failure 2 bad-args "$CLI" lm cycle --modes transparency
+expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,transparency
+expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,normal
+expect_failure 2 bad-args "$CLI" lm cycle --modes trans,transparency
+expect_failure 2 bad-args "$CLI" lm cycle --modes ,transparency,adaptive
+expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,,adaptive
+expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,adaptive,
+expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,adaptive extra
+expect_failure 2 '{"error":"bad-args","result":"error"}' \
+  "$CLI" lm cycle --modes anc --json
 expect_failure 2 bad-args "$CLI" lm set normal
 expect_failure 2 bad-args "$CLI" ca set true
 expect_failure 2 bad-args "$CLI" lm --version
@@ -113,6 +127,12 @@ assert_contains "$(cat "$PROBE_DIR/duplicate-debug.stderr")" \
 for alias in anc nc trans automatic auto; do
   expect_failure 1 no-device "$CLI" lm set "$alias"
 done
+
+expect_failure 1 no-device "$CLI" lm cycle
+expect_failure 1 no-device "$CLI" lm cycle --modes off,trans,anc
+expect_failure 1 \
+  '{"device":null,"error":"no-device","listeningMode":null,"result":"error"}' \
+  "$CLI" lm cycle --json
 
 expect_failure 1 no-device "$CLI" lm --device 'Missing AirPods' get
 expect_failure 1 no-device "$CLI" --device 'Missing AirPods' ca get

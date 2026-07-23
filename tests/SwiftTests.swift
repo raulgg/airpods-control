@@ -189,6 +189,100 @@ private func testCLIParsing() {
   expectParseFailure(["--device", "AirPods", "version"], "device is invalid for version")
 }
 
+private func testCycleParsing() {
+  do {
+    let invocation = try parseInvocation(["lm", "cycle"])
+    if case let .listeningModeCycle(requested) = invocation.command {
+      check(requested == nil, "bare cycle uses the default cycle set")
+    } else {
+      check(false, "bare cycle parses as listening-mode cycle")
+    }
+  } catch {
+    check(false, "bare cycle parses successfully")
+  }
+
+  do {
+    let invocation = try parseInvocation(["lm", "cycle", "--modes", "anc,trans"])
+    if case let .listeningModeCycle(requested) = invocation.command {
+      check(
+        requested == ["transparency", "noise-cancellation"],
+        "cycle modes canonicalize aliases and sort into canonical order"
+      )
+    } else {
+      check(false, "cycle with --modes parses as listening-mode cycle")
+    }
+  } catch {
+    check(false, "cycle with aliased modes parses successfully")
+  }
+
+  do {
+    let invocation = try parseInvocation(
+      ["lm", "cycle", "--modes", "noise-cancellation,off,transparency"]
+    )
+    if case let .listeningModeCycle(requested) = invocation.command {
+      check(
+        requested == ["off", "transparency", "noise-cancellation"],
+        "off sorts first in the cycle set"
+      )
+    } else {
+      check(false, "cycle with off parses as listening-mode cycle")
+    }
+  } catch {
+    check(false, "cycle with off parses successfully")
+  }
+
+  expectParseFailure(["lm", "cycle", "extra"], "cycle takes no positional arguments")
+  expectParseFailure(["lm", "cycle", "--modes"], "missing cycle modes value")
+  expectParseFailure(["lm", "cycle", "--modes", "transparency"], "one mode is not a cycle")
+  expectParseFailure(
+    ["lm", "cycle", "--modes", "trans,transparency"],
+    "aliases dedupe before the two-mode minimum"
+  )
+  expectParseFailure(["lm", "cycle", "--modes", "transparency,normal"], "unknown cycle token")
+  expectParseFailure(["lm", "cycle", "--modes", ",transparency,adaptive"], "empty cycle token")
+  expectParseFailure(
+    ["lm", "cycle", "--modes", "a,b", "--modes", "a,b"],
+    "duplicate --modes flag"
+  )
+  expectParseFailure(["lm", "get", "--modes", "transparency,adaptive"], "modes only for cycle")
+  expectParseFailure(["--modes", "transparency,adaptive", "version"], "modes invalid for version")
+}
+
+private func testNextCycleMode() {
+  let all = ["off", "transparency", "adaptive", "noise-cancellation"]
+  let noOff = ["transparency", "adaptive", "noise-cancellation"]
+
+  check(
+    nextCycleMode(current: "transparency", cycleTokens: noOff) == "adaptive",
+    "cycle advances in canonical order"
+  )
+  check(
+    nextCycleMode(current: "noise-cancellation", cycleTokens: noOff) == "transparency",
+    "cycle wraps to the set's first mode"
+  )
+  check(
+    nextCycleMode(current: "noise-cancellation", cycleTokens: all) == "off",
+    "cycle wraps through off when it is in the set"
+  )
+  check(
+    nextCycleMode(current: "adaptive", cycleTokens: ["transparency", "noise-cancellation"])
+      == "noise-cancellation",
+    "a current mode outside the set folds into canonical order"
+  )
+  check(
+    nextCycleMode(current: "adaptive", cycleTokens: ["off", "transparency"]) == "off",
+    "folding wraps past the end of the canonical order"
+  )
+  check(
+    nextCycleMode(current: "off", cycleTokens: noOff) == "transparency",
+    "cycling out of off enters the set in canonical order"
+  )
+  check(
+    nextCycleMode(current: nil, cycleTokens: noOff) == "transparency",
+    "an unknown current mode starts at the set's first mode"
+  )
+}
+
 private func testResourcePayloads() {
   let listeningMode = makeResourcePayload(
     resource: .listeningMode,
@@ -376,6 +470,8 @@ private func testDeviceSelectionAndCapabilities() {
 private struct SwiftTests {
   static func main() {
     testCLIParsing()
+    testCycleParsing()
+    testNextCycleMode()
     testResourcePayloads()
     testListeningModeSetState()
     testPrivateSelectorDiscovery()

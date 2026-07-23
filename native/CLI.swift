@@ -37,6 +37,9 @@ enum CLICommand {
   case listeningModeGet
   case listeningModeSet(token: String, avMode: String)
   case listeningModeList
+  // Requested cycle tokens in canonical order; nil means the default set
+  // (every available mode except off).
+  case listeningModeCycle(requested: [String]?)
   case conversationAwarenessGet
   case conversationAwarenessSet(Bool)
 
@@ -44,7 +47,7 @@ enum CLICommand {
     switch self {
     case .version:
       return nil
-    case .listeningModeGet, .listeningModeSet, .listeningModeList:
+    case .listeningModeGet, .listeningModeSet, .listeningModeList, .listeningModeCycle:
       return .listeningMode
     case .conversationAwarenessGet, .conversationAwarenessSet:
       return .conversationAwareness
@@ -57,6 +60,7 @@ enum CLICommand {
     case .listeningModeGet: return "listening-mode.get"
     case .listeningModeSet: return "listening-mode.set"
     case .listeningModeList: return "listening-mode.list"
+    case .listeningModeCycle: return "listening-mode.cycle"
     case .conversationAwarenessGet: return "conversation-awareness.get"
     case .conversationAwarenessSet: return "conversation-awareness.set"
     }
@@ -132,6 +136,7 @@ Usage:
   airpods-control [--device NAME] listening-mode get [--json] [--debug]
   airpods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
   airpods-control [--device NAME] listening-mode list [--json] [--debug]
+  airpods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
 
 Alias:
   lm
@@ -146,9 +151,21 @@ Mode aliases:
                adaptive
   anc, nc      noise-cancellation
 
+Cycle:
+  cycle advances to the next mode in the order above, wrapping around, and
+  prints the mode it landed on. The cycle set defaults to every mode the
+  device supports except off. --modes selects an explicit subset (at least
+  two distinct modes); modes the device lacks are skipped. If the current
+  mode is outside the cycle set, cycle still advances in the order above
+  from the current mode to the next mode that is in the set (wrapping); if
+  the current mode is unknown, cycle starts at the set's first mode.
+
 Options:
   --device NAME
                Target a compatible output device by exact name (case-insensitive).
+  --modes <m1,m2[,...]>
+               Cycle set for listening-mode cycle: at least two distinct
+               modes, comma-separated. Mode aliases are accepted.
   --json       Emit structured JSON instead of plain script-friendly output.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing the device.
@@ -194,6 +211,37 @@ func canonicalModeToken(_ input: String) -> String? {
   return modeAliases[input]
 }
 
+// Parses a --modes value into distinct canonical tokens in canonical order.
+// Empty or unknown tokens and sets of fewer than two distinct modes are
+// parse errors.
+func parseCycleModes(_ raw: String) throws -> [String] {
+  let tokens = try raw
+    .split(separator: ",", omittingEmptySubsequences: false)
+    .map { piece -> String in
+      guard let canonical = canonicalModeToken(String(piece)) else {
+        throw CLIParseError()
+      }
+      return canonical
+    }
+  let unique = Set(tokens)
+  guard unique.count >= 2 else { throw CLIParseError() }
+  return modeTokenOrder.filter { unique.contains($0) }
+}
+
+// Advances through the canonical mode order from the current mode, wrapping,
+// to the next mode in the cycle set — a current mode outside the set folds
+// into the same order. An unknown current mode starts at the set's first mode.
+func nextCycleMode(current: String?, cycleTokens: [String]) -> String {
+  guard let current, let start = modeTokenOrder.firstIndex(of: current) else {
+    return cycleTokens[0]
+  }
+  for step in 1...modeTokenOrder.count {
+    let candidate = modeTokenOrder[(start + step) % modeTokenOrder.count]
+    if cycleTokens.contains(candidate) { return candidate }
+  }
+  return cycleTokens[0]
+}
+
 func listeningModeStateAfterSet(
   requestedToken: String,
   setterAccepted: Bool,
@@ -237,6 +285,7 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   var jsonOutput = false
   var debugEnabled = false
   var requestedDeviceName: String?
+  var requestedCycleModes: [String]?
   var index = 0
 
   while index < rawArgs.count {
@@ -261,6 +310,13 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       requestedDeviceName = name
       index += 1
 
+    case "--modes":
+      guard requestedCycleModes == nil, index + 1 < rawArgs.count else {
+        throw CLIParseError()
+      }
+      requestedCycleModes = try parseCycleModes(rawArgs[index + 1])
+      index += 1
+
     default:
       positional.append(rawArgs[index])
     }
@@ -269,7 +325,7 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   }
 
   if positional.count == 1, ["--version", "-v", "version"].contains(positional[0]) {
-    guard requestedDeviceName == nil else { throw CLIParseError() }
+    guard requestedDeviceName == nil, requestedCycleModes == nil else { throw CLIParseError() }
     return CLIInvocation(
       command: .version,
       jsonOutput: jsonOutput,
@@ -301,6 +357,11 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       guard positional.count == 2 else { throw CLIParseError() }
       command = .listeningModeList
 
+    case "cycle":
+      guard positional.count == 2 else { throw CLIParseError() }
+      command = .listeningModeCycle(requested: requestedCycleModes)
+      requestedCycleModes = nil
+
     default:
       throw CLIParseError()
     }
@@ -324,6 +385,9 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   default:
     throw CLIParseError()
   }
+
+  // --modes is only meaningful for listening-mode cycle, which consumes it.
+  guard requestedCycleModes == nil else { throw CLIParseError() }
 
   return CLIInvocation(
     command: command,

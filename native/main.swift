@@ -320,6 +320,59 @@ case let .listeningModeSet(token, avMode):
     )
   }
 
+case let .listeningModeCycle(requested):
+  let currentRaw = device.currentListeningMode()
+  let current = canonicalListeningMode(currentRaw)
+  let availableModes = Set(device.availableListeningModes())
+  let base = requested ?? modeTokenOrder.filter { $0 != "off" }
+  let cycleTokens = base.filter { token in
+    tokenToAV[token].map { availableModes.contains($0) } ?? false
+  }
+
+  guard cycleTokens.count >= 2, device.canSetListeningMode() else {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "unsupported",
+      code: 4,
+      result: "error",
+      state: current,
+      error: "unsupported"
+    )
+  }
+
+  let targetToken = nextCycleMode(current: current, cycleTokens: cycleTokens)
+  let targetAV = tokenToAV[targetToken]!
+  logger.debug("cycle.set", cycleTokens.joined(separator: ","))
+  logger.debug("cycle.target", targetToken)
+
+  let outcome = setAndReadListeningMode(device: device, target: targetAV, logger: logger)
+  let state = listeningModeStateAfterSet(
+    requestedToken: targetToken,
+    setterAccepted: outcome.accepted,
+    observedRawMode: outcome.observed
+  )
+
+  if outcome.observed == targetAV {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: targetToken,
+      code: 0,
+      result: "ok",
+      state: state
+    )
+  } else {
+    finishResource(
+      invocation: invocation,
+      deviceName: device.name,
+      plain: "no-op",
+      code: 3,
+      result: "no-op",
+      state: state
+    )
+  }
+
 case .conversationAwarenessGet:
   guard device.supportsConversationAwareness() == true,
         let enabled = device.conversationAwarenessState()

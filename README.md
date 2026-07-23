@@ -13,7 +13,7 @@ off
 
 ## What it does
 
-- **Listening mode:** `off`, `transparency`, `adaptive`, `noise-cancellation`.
+- **Listening mode:** `off`, `transparency`, `adaptive`, `noise-cancellation` — read, set, or cycle through a configurable set.
 - **Conversation Awareness:** read it or turn it on and off.
 - **Device targeting:** select a compatible output device by exact name.
 - **Scriptable:** single-token output on stdout, meaningful exit codes, optional `--json`, and opt-in diagnostics on stderr. Wire it to a hotkey, a Stream Deck, a Shortcut, or a `launchd` job.
@@ -71,6 +71,7 @@ Uninstall with `sudo make uninstall`; remove build artifacts with `make clean`. 
 airpods-control [--device NAME] listening-mode get [--json] [--debug]
 airpods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
 airpods-control [--device NAME] listening-mode list [--json] [--debug]
+airpods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
 airpods-control --version | -v | version
@@ -114,6 +115,43 @@ off,transparency,adaptive,noise-cancellation
 ```
 
 Modes are always printed in that order, filtered to the modes supported by the connected device.
+
+### Cycle through modes
+
+`cycle` advances to the next mode — like pressing and holding an AirPods stem —
+and prints the mode it landed on:
+
+```console
+$ airpods-control listening-mode cycle
+adaptive
+$ airpods-control lm cycle
+noise-cancellation
+```
+
+By default the cycle set is every mode the device supports except `off`. Modes
+always cycle in canonical order (`off`, `transparency`, `adaptive`,
+`noise-cancellation`), wrapping around. A current mode outside the cycle set
+folds into that same order: cycling from `adaptive` with
+`--modes transparency,noise-cancellation` lands on `noise-cancellation`, and
+with `--modes off,transparency` it wraps to `off`. If the current mode is
+`unknown`, `cycle` starts at the set's first mode.
+
+`--modes` selects an explicit cycle set — a comma-separated list of at least
+two distinct modes, mirroring the "Press and Hold to Cycle Between"
+checkboxes in System Settings:
+
+```console
+$ airpods-control lm cycle --modes off,transparency,noise-cancellation
+transparency
+```
+
+Order within `--modes` does not matter; cycling always follows the canonical
+order, and the mode aliases listed above are accepted. Fewer than two distinct
+modes or an unknown token is `bad-args` (exit `2`). Listed modes the connected
+device does not support are skipped; if fewer than two remain, the command
+reports `unsupported` (exit `4`). A change that does not verify reports
+`no-op` (exit `3`) — in particular, cycling *into* `off` is subject to the
+[`off` no-op caveat](#the-off-no-op-caveat).
 
 ### Conversation Awareness
 
