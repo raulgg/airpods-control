@@ -225,7 +225,7 @@ enum SupportReportInteraction {
     inputIsInteractive: Bool = isatty(STDIN_FILENO) == 1,
     readResponse: () -> String? = { readLine() },
     openURL: (URL) -> Bool = openInDefaultBrowser,
-    writeOutput: (String) -> Void = { print($0) },
+    writeOutput: (String) -> Void = { print($0); fflush(stdout) },
     writeError: (String) -> Void = { fputs($0, stderr) }
   ) -> Int32 {
     writeOutput(outcome.plain)
