@@ -1,6 +1,10 @@
 # airpods-control
 
-[![CI](https://github.com/raulgg/airpods-control/actions/workflows/ci.yml/badge.svg)](https://github.com/raulgg/airpods-control/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/raulgg/airpods-control/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/raulgg/airpods-control/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/raulgg/airpods-control?style=flat-square&color=0a0a0c)](https://github.com/raulgg/airpods-control/releases/latest)
+[![Tested on macOS Tahoe 26](https://img.shields.io/badge/tested-macOS%20Tahoe%2026-0a0a0c?style=flat-square&logo=apple&logoColor=white)](#compatibility)
+[![Homebrew](https://img.shields.io/badge/brew-raulgg%2Ftap%2Fairpods--control-FBB040?style=flat-square&logo=homebrew&logoColor=black)](https://github.com/raulgg/homebrew-tap/blob/main/Formula/airpods-control.rb)
+[![License: MIT](https://img.shields.io/badge/license-MIT-6e5aff?style=flat-square)](LICENSE)
 
 Control AirPods listening modes and Conversation Awareness from the command
 line without Control Center, a menu bar app, or Accessibility permission.
@@ -95,7 +99,6 @@ write verification, and exit codes. After installation, you can also run
 ## Documentation
 
 - [CLI reference](docs/cli.md)
-- [Man-page source](docs/man/airpods-control.1)
 - [Security and trust model](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 
