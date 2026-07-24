@@ -1,6 +1,6 @@
 # airpods-control
 
-[![CI](https://github.com/raulgg/airpods-control-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/raulgg/airpods-control-cli/actions/workflows/ci.yml)
+[![CI](https://github.com/raulgg/airpods-control/actions/workflows/ci.yml/badge.svg)](https://github.com/raulgg/airpods-control/actions/workflows/ci.yml)
 
 Control your AirPods listening mode and Conversation Awareness from the command line without using Control Center, a menu bar app, or Accessibility permission.
 
@@ -41,8 +41,8 @@ The formula downloads the source and compiles it locally. It does not download a
 ### From source
 
 ```sh
-git clone https://github.com/raulgg/airpods-control-cli
-cd airpods-control-cli
+git clone https://github.com/raulgg/airpods-control
+cd airpods-control
 make
 sudo make install            # installs to /usr/local by default
 ```

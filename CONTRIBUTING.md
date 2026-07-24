@@ -7,7 +7,7 @@ Bug reports, compatibility findings, documentation fixes, and focused pull reque
 - Search existing issues first.
 - For a bug, include the macOS version, AirPods model, command used, expected result, actual result, and exit code.
 - Re-run the command with `--debug` when possible and attach stderr. Redact device names and other personal information.
-- Use [private vulnerability reporting](https://github.com/raulgg/airpods-control-cli/security/advisories/new) for security concerns. Do not disclose sensitive vulnerability details in a public issue.
+- Use [private vulnerability reporting](https://github.com/raulgg/airpods-control/security/advisories/new) for security concerns. Do not disclose sensitive vulnerability details in a public issue.
 
 This project uses an undocumented macOS API, so a macOS update can break compatibility. Report these regressions with the same details as other bugs.
 

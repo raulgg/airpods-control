@@ -27,7 +27,7 @@ To verify the dylib, read `native/bypass.c`. It should compare against one entit
 
 ## Reporting a vulnerability
 
-Report suspected vulnerabilities through [GitHub private vulnerability reporting](https://github.com/raulgg/airpods-control-cli/security/advisories/new). Do not include sensitive vulnerability details in a public issue.
+Report suspected vulnerabilities through [GitHub private vulnerability reporting](https://github.com/raulgg/airpods-control/security/advisories/new). Do not include sensitive vulnerability details in a public issue.
 
 Include the affected macOS version, the `airpods-control` version or commit, the expected behavior, and enough reproduction detail to investigate. Redact device names and other personal information from debug output.
 
