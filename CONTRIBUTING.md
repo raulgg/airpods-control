@@ -47,4 +47,7 @@ These paths follow conventional Swift target naming, but the Makefile remains th
 - Preserve the script-friendly stdout and exit-code contract.
 - Avoid new runtime dependencies unless they are essential.
 
+Maintainers should follow [RELEASING.md](RELEASING.md) for signed releases
+and Homebrew formula updates.
+
 By contributing, you agree that your contribution is licensed under the repository's [MIT License](LICENSE).
