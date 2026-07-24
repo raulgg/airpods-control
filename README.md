@@ -250,7 +250,7 @@ macOS exposes AirPods listening modes and Conversation Awareness through the pri
 
 The shared system audio context requires the private `com.apple.avfoundation.allow-system-wide-context` entitlement. Apple's audio components carry it, but a normal ad-hoc-signed binary does not. AVFoundation checks for the entitlement in-process by calling `SecTaskCopyValueForEntitlement`.
 
-The interpose library in [`native/bypass.c`](native/bypass.c), about 40 lines of C, satisfies that check. It loads through `DYLD_INSERT_LIBRARIES` and returns true only for `com.apple.avfoundation.allow-system-wide-context`. It passes every other entitlement query to the real implementation unchanged. At launch, the tool re-execs itself once with the dylib inserted. It sets `DYLD_INSERT_LIBRARIES` in the child so the process still works if the parent environment strips `DYLD_*` variables.
+The interpose library in [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c), about 40 lines of C, satisfies that check. It loads through `DYLD_INSERT_LIBRARIES` and returns true only for `com.apple.avfoundation.allow-system-wide-context`. It passes every other entitlement query to the real implementation unchanged. At launch, the tool re-execs itself once with the dylib inserted. It sets `DYLD_INSERT_LIBRARIES` in the child so the process still works if the parent environment strips `DYLD_*` variables.
 
 The interpose has a narrow scope:
 

@@ -1,7 +1,8 @@
 # airpods-control builds from source: it needs Swift (Command Line Tools or
 # Xcode) to compile. It reaches a PRIVATE, undocumented Apple audio API and, to
 # do so, forges exactly one audio entitlement inside its own process via a tiny
-# DYLD interpose library (see native/bypass.c). Read that source before tapping.
+# DYLD interpose library (see Sources/AVBypass/bypass.c). Read that source before
+# tapping.
 # No prebuilt binary is shipped — the ad-hoc-signed build cannot be notarized.
 class AirpodsControl < Formula
   desc "Control AirPods listening mode and Conversation Awareness from the CLI"

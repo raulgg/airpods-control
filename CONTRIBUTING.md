@@ -30,6 +30,15 @@ make test
 
 Test changes to live private-API behavior manually on supported hardware. State the macOS version and device in the pull request. Automated tests must not write device settings.
 
+### Source layout
+
+- `Sources/AirPodsControl` contains the single Swift executable module.
+- `Sources/AVBypass` contains the C source for the separately built interpose dylib.
+- `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.
+- `Tests/CLIContractTests` verifies the built executable's output and exit codes.
+
+These paths follow conventional Swift target naming, but the Makefile remains the authoritative build definition because release builds combine architectures, sign both artifacts, and install them together.
+
 ## Pull requests
 
 - Keep changes focused and explain the user-visible reason for them.

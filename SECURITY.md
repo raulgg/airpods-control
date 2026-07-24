@@ -6,7 +6,7 @@
 
 To acquire the *shared system audio context* (the object that exposes AirPods listening modes), AVFoundation checks in-process for a private entitlement, `com.apple.avfoundation.allow-system-wide-context`, by calling `SecTaskCopyValueForEntitlement`.
 
-The library [`native/bypass.c`](native/bypass.c) interposes that one function. It returns "present" when the queried entitlement is `com.apple.avfoundation.allow-system-wide-context`. Every other query goes to the real system implementation unchanged. `DYLD_INSERT_LIBRARIES` loads the interpose only into the short-lived `airpods-control` helper process. The library is not installed system-wide and stops running when the process exits.
+The library [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c) interposes that one function. It returns "present" when the queried entitlement is `com.apple.avfoundation.allow-system-wide-context`. Every other query goes to the real system implementation unchanged. `DYLD_INSERT_LIBRARIES` loads the interpose only into the short-lived `airpods-control` helper process. The library is not installed system-wide and stops running when the process exits.
 
 ## What it does not do
 
@@ -20,10 +20,10 @@ The library [`native/bypass.c`](native/bypass.c) interposes that one function. I
 The project distributes no prebuilt binaries. The interpose requires an ad-hoc-signed binary. A notarized binary with the hardened runtime would enforce library validation and block the inserted library.
 
 - You clone the repository and compile it locally with your own Command Line Tools toolchain.
-- The runtime source consists of [`native/bypass.c`](native/bypass.c), about 40 lines of C, plus [`native/main.swift`](native/main.swift), [`native/CLI.swift`](native/CLI.swift), [`native/CommandExecution.swift`](native/CommandExecution.swift), and [`native/PrivateAudio.swift`](native/PrivateAudio.swift). Review them before building. The resulting executable comes from the source you compiled.
+- The runtime source consists of [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c), about 40 lines of C, plus the Swift files under [`Sources/AirPodsControl`](Sources/AirPodsControl). Review them before building. The resulting executable comes from the source you compiled.
 - The Homebrew formula downloads a source tarball and runs the same `make`.
 
-To verify the dylib, read `native/bypass.c`. It should compare against one entitlement string and delegate every other case to `SecTaskCopyValueForEntitlement`. Report any behavior beyond that scope.
+To verify the dylib, read `Sources/AVBypass/bypass.c`. It should compare against one entitlement string and delegate every other case to `SecTaskCopyValueForEntitlement`. Report any behavior beyond that scope.
 
 ## Reporting a vulnerability
 
