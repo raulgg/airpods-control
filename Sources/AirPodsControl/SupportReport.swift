@@ -203,6 +203,9 @@ struct SupportReport {
       queryItems.append(URLQueryItem(name: "body", value: draft.body))
     }
     components?.queryItems = queryItems
+    let encodedQuery = components?.percentEncodedQuery
+    components?.percentEncodedQuery = encodedQuery?
+      .replacingOccurrences(of: "+", with: "%2B")
     return components?.url
   }
 

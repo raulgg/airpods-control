@@ -185,6 +185,35 @@ func testSupportReportIssueURL() {
   )
 }
 
+func testSupportReportIssueURLEncodesPlusSigns() {
+  let draft = SupportReportIssueDraft(
+    title: "[Compatibility] Beats Studio Buds + on macOS 26.1.0",
+    body: "### Compatibility report\n\n- Firmware: 6A300+1"
+  )
+  let selected = SupportReport.safeIssueURL(for: draft)
+  check(selected.prefilled, "a draft containing plus signs still prefills")
+  let encodedQuery = URLComponents(
+    url: selected.url,
+    resolvingAgainstBaseURL: false
+  )?.percentEncodedQuery ?? ""
+  check(
+    !encodedQuery.contains("+"),
+    "the prefilled query never carries a literal plus sign"
+  )
+
+  let encodedBody = encodedQuery
+    .components(separatedBy: "&")
+    .first { $0.hasPrefix("body=") }
+    .map { String($0.dropFirst("body=".count)) } ?? ""
+  let formDecodedBody = encodedBody
+    .replacingOccurrences(of: "+", with: " ")
+    .removingPercentEncoding
+  check(
+    formDecodedBody == draft.body,
+    "GitHub's form decoding restores the reviewed body exactly"
+  )
+}
+
 func testSupportReportRequiresConfirmationBeforeOpening() {
   let draft = SupportReportIssueDraft(
     title: "[Compatibility] AirPods",
@@ -311,5 +340,6 @@ func runSupportReportTests() {
   testSupportReportMetadataNormalization()
   testSupportReportFamilyFromModelIdentifier()
   testSupportReportIssueURL()
+  testSupportReportIssueURLEncodesPlusSigns()
   testSupportReportRequiresConfirmationBeforeOpening()
 }
