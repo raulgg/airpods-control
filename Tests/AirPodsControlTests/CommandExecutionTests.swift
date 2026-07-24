@@ -53,6 +53,15 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
     noDeviceAwareness.payload["listeningMode"] == nil,
     "Conversation Awareness payload omits listening mode"
   )
+
+  let reportInvocation = try! parseInvocation(["support-report"])
+  let noDeviceReport = CommandExecution.execute(reportInvocation) { _, _ in nil }
+  check(noDeviceReport.exitCode == 1, "missing support-report device exits one")
+  check(
+    noDeviceReport.plain.contains("No identifiable AirPods or Beats"),
+    "missing support-report device has helpful local guidance"
+  )
+  check(noDeviceReport.issueDraft == nil, "missing device does not offer issue creation")
 }
 
 func testListeningModeCommandExecution() {

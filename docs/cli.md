@@ -12,6 +12,7 @@ airpods-control [--device NAME] listening-mode list [--json] [--debug]
 airpods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
+airpods-control support-report
 airpods-control --version | -v | version
 airpods-control --help | -h
 ```
@@ -35,6 +36,9 @@ Operational commands accept `--device NAME`, `--json`, and `--debug` in any
 position. `--device` uses a case-insensitive exact name match among compatible
 output devices. It never falls back to another device. No match or multiple
 exact matches produce `no-device`.
+
+`support-report` is a separate contributor command. It accepts no options. Its
+Markdown fields and confirmation prompt are fixed.
 
 ## Listening modes
 
@@ -121,6 +125,47 @@ ok
 On hardware without Conversation Awareness, the command prints `unsupported`
 and exits `4`.
 
+## Contributor compatibility report
+
+The CLI has only been verified with AirPods Pro 3. Other AirPods may work when
+macOS exposes the same private audio capabilities. We have not verified Beats,
+but reports are welcome. The [device compatibility matrix](compatibility.md)
+tracks each command separately.
+
+Connect the device as a macOS output device, then run:
+
+```console
+$ airpods-control support-report
+### Compatibility report
+
+- Device family: AirPods
+- Model identifier: AirPodsPro2,1
+...
+
+Open a prefilled GitHub issue in your browser? [y/N]
+```
+
+The command reads only the normalized model identifier, firmware when macOS
+exposes it, connection state, advertised known listening modes and their
+current state, Conversation Awareness capability and state when available, the
+macOS version, and the CLI version. Missing values appear as `unavailable` or
+`unavailable/not reported`. The command does not guess them.
+
+It never reads the customizable device name, serial numbers, Bluetooth/MAC
+addresses, account data, or raw system dumps and logs. It does not change
+settings, interrupt audio, use the clipboard, send telemetry, or submit
+anything.
+
+The report appears in the terminal first. The command then asks whether to open
+a GitHub issue with the Markdown template and report body already filled in.
+You still edit and submit the issue. If the encoded URL is too long, the
+command leaves the report in the terminal and offers the template without a
+prefilled body.
+
+If the command cannot identify connected AirPods or Beats, it prints local
+instructions, exits `1`, and stops. Reports from other AirPods and Beats owners
+are welcome, but a report does not make a Beats device supported.
+
 ## Target a device
 
 Without `--device`, the first compatible system output device is used. To
@@ -171,6 +216,8 @@ canonical state read during the bounded settling window, the Transparency
 fallback, or JSON `null` when neither applies. Version JSON follows the same
 result convention: `{"result":"ok","version":"0.1.0"}`.
 
+`support-report` does not accept `--json`, `--debug`, or `--device`.
+
 `-h` and `--help` can appear anywhere. Help takes precedence, exits `0`, and
 never accesses the device. A recognized resource before the flag selects
 contextual help. Version flags are global only and do not accept `--device`.
@@ -213,11 +260,12 @@ contains the final observed canonical mode or `null`.
 | Code | Meaning     | When                                                       |
 | ---- | ----------- | ---------------------------------------------------------- |
 | `0`  | ok          | Command succeeded, including reads and verified writes.    |
-| `1`  | no-device   | No supported AirPods found as the current output device.   |
+| `1`  | no-device   | No supported or identifiable report device was found.      |
 | `2`  | bad-args    | Arguments are missing or malformed.                        |
 | `3`  | no-op       | A write was not verified in the bounded readback window.   |
 | `4`  | unsupported | The mode or feature is not available on the selected device. |
 
-Plain stdout uses a single token such as `ok`, `no-op`, `no-device`,
-`unsupported`, or a mode name. Scripts can branch on either that token or the
-exit code.
+Operational plain stdout uses a single token such as `ok`, `no-op`,
+`no-device`, `unsupported`, or a mode name. `support-report` instead emits its
+reviewable Markdown report or local guidance. Scripts can branch on the exit
+code.

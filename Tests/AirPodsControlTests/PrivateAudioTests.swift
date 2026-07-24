@@ -55,6 +55,35 @@ func testPrivateListeningModeTranslation() {
   check(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
 }
 
+func testSupportReportDiscoveryDoesNotReadDeviceNames() {
+  let rawDevice = FakeSupportReportRawDevice()
+  check(
+    !rawDevice.responds(to: NSSelectorFromString("name")),
+    "support-report fixture deliberately exposes no customizable name"
+  )
+  let controller = PrivateAudioController(
+    rawDevices: [rawDevice],
+    logger: DebugLogger(enabled: false),
+    includeDeviceNames: false
+  )
+  guard let device = controller.selectDevice(named: nil) else {
+    check(false, "support-report discovers an allowlisted device without a name")
+    return
+  }
+  let report = SupportReport.make(device: device)
+  check(report != nil, "name-free private adapter produces a support report")
+  check(
+    report?.markdown.contains("AirPodsReportTest1,1") == true,
+    "name-free report includes the allowlisted model identifier"
+  )
+  check(device.name.isEmpty, "support-report adapter retains no customizable name")
+  check(!device.canSetListeningMode(), "support-report fixture exposes no mode setter")
+  check(
+    !device.canSetConversationAwareness(),
+    "support-report fixture exposes no Conversation Awareness setter"
+  )
+}
+
 func testListeningModeReadbackWaitsForDelayedTarget() {
   let off = rawListeningModeValues[.off]!
   let device = scriptedPrivateAudioDevice(
@@ -251,6 +280,14 @@ func testDeviceSelectionAndCapabilities() {
   )
 
   let selected = controller.selectDevice(named: "Studio AirPods")!
+  let reportMetadata = selected.supportReportMetadata()
+  check(reportMetadata.family == .airPods, "report identifies AirPods from model metadata")
+  check(
+    reportMetadata.modelIdentifier == "AirPodsTest1,1",
+    "report reads the allowlisted model identifier"
+  )
+  check(reportMetadata.firmwareVersion == "1.0", "report reads exposed firmware")
+  check(reportMetadata.connectionState == .connected, "selected output device is connected")
   check(selected.canSetListeningMode(), "mode setter capability is detected")
   _ = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
   check(
@@ -265,6 +302,7 @@ func testDeviceSelectionAndCapabilities() {
 func runPrivateAudioTests() {
   testPrivateSelectorDiscovery()
   testPrivateListeningModeTranslation()
+  testSupportReportDiscoveryDoesNotReadDeviceNames()
   testListeningModeReadbackWaitsForDelayedTarget()
   testListeningModeReadbackReturnsImmediatelyForObservedTarget()
   testListeningModeReadbackReturnsFinalFallback()

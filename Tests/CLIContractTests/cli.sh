@@ -3,6 +3,8 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 BUILT_CLI="$ROOT/build/airpods-control"
+COMPATIBILITY_TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/compatibility-report.md"
+COMPATIBILITY_DOC="$ROOT/docs/compatibility.md"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -40,6 +42,16 @@ expect_failure() {
 
 [ -x "$BUILT_CLI" ] || fail "missing executable: run make first"
 [ ! -e "$ROOT/build/airpods" ] || fail "legacy build/airpods artifact exists"
+[ -f "$COMPATIBILITY_TEMPLATE" ] || fail "missing compatibility report issue template"
+[ -f "$COMPATIBILITY_DOC" ] || fail "missing device compatibility documentation"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  'name: Compatibility report' "compatibility template frontmatter"
+assert_contains "$(cat "$COMPATIBILITY_DOC")" \
+  '| `support-report` metadata | Pending | Pending | Exploratory |' \
+  "compatibility matrix tracks support-report verification"
+if grep -F -- '- [ ]' "$COMPATIBILITY_TEMPLATE" >/dev/null; then
+  fail "compatibility template must not contain a consent checkbox"
+fi
 
 # Excluding avbypass.dylib proves these parser-only paths return before the
 # entitlement bootstrap and private-framework lookup.
@@ -57,6 +69,7 @@ assert_contains "$("$CLI" --help)" '--debug' "global debug help"
 assert_contains "$("$CLI" --help)" '--device NAME' "global device help"
 assert_contains "$("$CLI" --help)" 'Read, set, list, or cycle listening modes.' \
   "global listening-mode command summary"
+assert_contains "$("$CLI" --help)" 'support-report' "global contributor command"
 
 assert_contains "$("$CLI" lm --help)" 'listening-mode set <mode>' "lm help"
 assert_contains "$("$CLI" listening-mode -h)" 'listening-mode list' "listening-mode help"
@@ -67,6 +80,8 @@ assert_contains "$("$CLI" conversation-awareness set on -h)" \
   'conversation-awareness set <on|off>' "conversation-awareness help"
 assert_contains "$("$CLI" --json lm set adaptive --json --help)" \
   'listening-mode set <mode>' "help precedence"
+assert_contains "$("$CLI" support-report --help)" \
+  'Builds a local compatibility report' "support-report help"
 
 assert_equal '0.1.0' "$("$CLI" --version)" "--version"
 assert_equal '0.1.0' "$("$CLI" -v)" "-v"
@@ -109,11 +124,25 @@ expect_failure 2 bad-args "$CLI" ca set true
 expect_failure 2 bad-args "$CLI" lm --version
 expect_failure 2 bad-args "$CLI" -- lm get
 expect_failure 2 bad-args "$CLI" --device AirPods version
+expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" support-report --json
+expect_failure 2 bad-args "$CLI" --device AirPods support-report
+expect_failure 2 bad-args "$CLI" support-report extra
 expect_failure 2 bad-args "$CLI" lm get --device
 expect_failure 2 bad-args "$CLI" --device One --device Two lm get
 expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" --json
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" lm get --json --json
+
+set +e
+support_report_debug_output=$(
+  "$CLI" support-report --debug 2>"$PROBE_DIR/support-report-debug.stderr"
+)
+support_report_debug_status=$?
+set -e
+assert_equal 2 "$support_report_debug_status" "support-report debug exit status"
+assert_equal bad-args "$support_report_debug_output" "support-report rejects debug"
+assert_contains "$(cat "$PROBE_DIR/support-report-debug.stderr")" \
+  'warning: cli.parse="bad-args"' "support-report debug only reports the parse error"
 
 set +e
 duplicate_debug_output=$(
@@ -148,6 +177,19 @@ expect_failure 1 \
 expect_failure 1 \
   '{"conversationAwareness":null,"device":null,"error":"no-device","result":"error"}' \
   "$CLI" ca get --json
+
+set +e
+support_report_output=$("$CLI" support-report 2>"$PROBE_DIR/support-report.stderr")
+support_report_status=$?
+set -e
+assert_equal 1 "$support_report_status" "support-report no-device exit status"
+assert_contains "$support_report_output" \
+  'No identifiable AirPods or Beats device is connected.' \
+  "support-report no-device guidance"
+assert_contains "$support_report_output" \
+  'Nothing was sent to GitHub.' "support-report does not offer issue creation"
+assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
+  "support-report no-device has no prompt"
 
 set +e
 "$CLI" --debug lm get >"$PROBE_DIR/operation.stdout" 2>"$PROBE_DIR/operation.stderr"
