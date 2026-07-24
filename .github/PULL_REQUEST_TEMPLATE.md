@@ -10,6 +10,6 @@ List the commands you ran and any manual macOS or AirPods checks.
 
 - [ ] `make test` passes.
 - [ ] Behavior changes include tests.
-- [ ] CLI help, README, and man page are synchronized where applicable.
+- [ ] Interface changes update CLI help, `docs/cli.md`, the README, and the man page together.
 - [ ] Debug output and examples contain no personal information.
 - [ ] Automated tests do not write device settings.

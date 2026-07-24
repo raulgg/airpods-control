@@ -9,7 +9,7 @@
   process.
 
 **Command outcome**
-: The complete result of command execution: plain output, exit code, and the
+: Everything produced by command execution: plain output, exit code, and the
   structured JSON payload.
 
 **Listening mode**
@@ -19,9 +19,10 @@
   listening modes until the Private Audio adapter translates them.
 
 **Compatible audio device**
-: The device interface used by command execution. It exposes the device name,
-  supported features, current canonical states, and observed write results
-  without exposing Objective-C selectors or private AVFoundation values.
+: The device interface that command execution uses. It provides the device
+  name, supported features, current canonical states, and observed write
+  results without exposing Objective-C selectors or private AVFoundation
+  values.
 
 **Private Audio adapter**
 : The production adapter for a compatible audio device. It discovers
@@ -29,6 +30,6 @@
   observes asynchronous writes through the main run loop.
 
 **Device write observation**
-: The result returned by a compatible audio device after a write attempt:
-  whether the underlying setter accepted the request and the final state that
-  was observed within the bounded settling window.
+: What a compatible audio device reports after a write attempt: whether the
+  underlying setter accepted the request and which final state was observed
+  within the bounded settling window.

@@ -12,7 +12,7 @@ INSTALL ?= install
 
 BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
-MANPAGE := docs/airpods-control.1
+MANPAGE := docs/man/airpods-control.1
 BUILD_STAMP := $(BUILD_DIR)/.built
 SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
 SWIFT_LIBRARY_SOURCES := $(filter-out Sources/AirPodsControl/main.swift,$(SWIFT_SOURCES))

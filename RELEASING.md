@@ -1,7 +1,7 @@
 # Releasing
 
-`airpods-control` publishes signed source releases from this repository. The
-Homebrew formula is maintained separately in
+`airpods-control` publishes signed source releases from this repository. Its
+Homebrew formula lives in
 [`raulgg/homebrew-tap`](https://github.com/raulgg/homebrew-tap) and builds each
 release from source. Do not add a second formula to this repository.
 
@@ -10,7 +10,7 @@ release from source. Do not add a second formula to this repository.
 1. Update the version in the CLI, contract tests, CI install assertion,
    documentation examples, and issue template. Search for the previous version
    to catch every reference.
-2. Run the complete local gate:
+2. Run all local checks:
 
    ```sh
    make clean
@@ -41,11 +41,11 @@ gh release create "vVERSION" \
   --generate-notes
 ```
 
-Never move, delete, or recreate a published tag. If released source is wrong,
-fix it and publish the next patch version.
+Never move, delete, or recreate a published tag. If a release contains the
+wrong source, fix it in the next patch version.
 
-Download the tag archive twice and byte-compare the files before calculating
-the formula checksum:
+Download the tag archive twice, compare the files byte for byte, and then
+calculate the formula checksum:
 
 ```sh
 release_archive_dir=$(mktemp -d /tmp/airpods-control-release.XXXXXX)
@@ -79,8 +79,8 @@ shasum -a 256 "$release_archive_dir/first.tar.gz"
 4. Open a tap pull request and merge it with squash only after every required
    `brew test-bot` check passes. Do not use `brew pr-pull`; this tap does not
    publish bottles.
-5. Untap the local checkout, then run the documented public installation from
-   a fresh clone:
+5. Untap the local checkout. From a fresh clone, run the documented public
+   installation:
 
    ```sh
    brew install raulgg/tap/airpods-control
@@ -90,5 +90,5 @@ shasum -a 256 "$release_archive_dir/first.tar.gz"
    ```
 
 Packaging tests must remain read-only and must never change AirPods settings.
-If a broken formula reaches `main`, correct or revert it through another
-checked pull request rather than rewriting tap history.
+If a broken formula reaches `main`, correct or revert it in another checked
+pull request. Do not rewrite the tap history.
