@@ -101,11 +101,11 @@ struct SupportReport {
       .components(separatedBy: .whitespacesAndNewlines)
       .filter { !$0.isEmpty }
       .joined(separator: " ")
-    let allowedCharacters = CharacterSet.alphanumerics.union(
-      CharacterSet(charactersIn: " .,_()+-/")
+    let allowedCharacters = CharacterSet(
+      charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,_()+-/"
     )
     guard !normalized.isEmpty,
-          normalized.count <= maximumLength,
+          normalized.unicodeScalars.count <= maximumLength,
           normalized.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) })
     else {
       return nil

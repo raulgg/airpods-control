@@ -176,6 +176,17 @@ func testSupportReportMetadataNormalization() {
     ) == nil,
     "model metadata rejects overlong values"
   )
+  check(
+    SupportReport.normalizedMetadataValue("AirPods Pro\u{0301}", maximumLength: 80) == nil,
+    "model metadata rejects non-ASCII combining marks"
+  )
+  check(
+    SupportReport.normalizedMetadataValue(
+      "AirPods" + String(repeating: "\u{034F}", count: 200_000),
+      maximumLength: 80
+    ) == nil,
+    "model metadata caps unicode scalars, not grapheme clusters"
+  )
 }
 
 func testSupportReportIssueURL() {
