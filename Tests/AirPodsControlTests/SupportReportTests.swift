@@ -203,7 +203,7 @@ func testSupportReportMetadataNormalization() {
       "AirPods" + String(repeating: "\u{034F}", count: 200_000),
       maximumLength: 80
     ) == nil,
-    "model metadata caps unicode scalars, not grapheme clusters"
+    "model metadata rejects invisible combining-mark runs of any length"
   )
 }
 
