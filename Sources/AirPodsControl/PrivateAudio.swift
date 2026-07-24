@@ -165,10 +165,7 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     logger: DebugLogger,
     includeDeviceName: Bool = true
   ) -> PrivateAudioDevice? {
-    var requiredSelectors = [availableModesSelector, currentModeSelector]
-    if includeDeviceName {
-      requiredSelectors.append(nameSelector)
-    }
+    let requiredSelectors = [nameSelector, availableModesSelector, currentModeSelector]
     for selector in requiredSelectors where !object.responds(to: selector) {
       logger.debug("device.\(index).missing_selector", NSStringFromSelector(selector))
       return nil

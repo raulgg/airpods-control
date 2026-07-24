@@ -158,6 +158,13 @@ let rawListeningModeValues: [ListeningMode: String] = [
 }
 
 @objc final class FakeSupportReportRawDevice: NSObject {
+  private(set) var nameReadCount = 0
+
+  @objc(name) func deviceName() -> String {
+    nameReadCount += 1
+    return "Custom Owner Name"
+  }
+
   @objc(modelID) func modelID() -> String {
     "BTHeadphones76,8231"
   }

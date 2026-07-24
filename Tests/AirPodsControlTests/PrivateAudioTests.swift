@@ -57,10 +57,6 @@ func testPrivateListeningModeTranslation() {
 
 func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   let rawDevice = FakeSupportReportRawDevice()
-  check(
-    !rawDevice.responds(to: NSSelectorFromString("name")),
-    "support-report fixture deliberately exposes no customizable name"
-  )
   let controller = PrivateAudioController(
     rawDevices: [rawDevice],
     logger: DebugLogger(enabled: false),
@@ -81,6 +77,14 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
     "the Bluetooth model identifier resolves to the AirPods family"
   )
   check(device.name.isEmpty, "support-report adapter retains no customizable name")
+  check(
+    rawDevice.nameReadCount == 0,
+    "support-report never invokes the customizable name selector"
+  )
+  check(
+    report?.markdown.contains("Custom Owner Name") == false,
+    "support-report output never contains the customizable name"
+  )
   check(!device.canSetListeningMode(), "support-report fixture exposes no mode setter")
   check(
     !device.canSetConversationAwareness(),
