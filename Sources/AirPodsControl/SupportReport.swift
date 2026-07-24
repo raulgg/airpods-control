@@ -62,7 +62,7 @@ struct SupportReport {
     case .none: conversationAwarenessState = "unavailable"
     }
 
-    let firmware = metadata.firmwareVersion ?? "unavailable/not reported"
+    let firmware = metadata.firmwareVersion.map { "`\($0)`" } ?? "unavailable/not reported"
     let macOS = [
       operatingSystemVersion.majorVersion,
       operatingSystemVersion.minorVersion,
@@ -73,7 +73,7 @@ struct SupportReport {
     ### Compatibility report
 
     - Device family: \(family.rawValue)
-    - Model identifier: \(modelIdentifier)
+    - Model identifier: `\(modelIdentifier)`
     - Firmware: \(firmware)
     - Connection state: \(metadata.connectionState.rawValue)
     - Advertised known listening modes: \(listeningModesValue)

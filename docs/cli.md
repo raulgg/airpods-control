@@ -139,7 +139,7 @@ $ airpods-control support-report
 ### Compatibility report
 
 - Device family: AirPods
-- Model identifier: AirPodsPro2,1
+- Model identifier: `BTHeadphones76,8231`
 ...
 
 Open a prefilled GitHub issue in your browser? [y/N]

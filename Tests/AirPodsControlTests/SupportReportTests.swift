@@ -25,8 +25,8 @@ func testSupportReportContentsAndPrivacy() {
 
   check(report != nil, "an identifiable AirPods device produces a report")
   let markdown = report?.markdown ?? ""
-  check(markdown.contains("Model identifier: AirPodsProTest2,1"), "report has model ID")
-  check(markdown.contains("Firmware: 7A1"), "report has exposed firmware")
+  check(markdown.contains("Model identifier: `AirPodsProTest2,1`"), "report has model ID")
+  check(markdown.contains("Firmware: `7A1`"), "report has exposed firmware")
   check(markdown.contains("Connection state: connected"), "report has connection state")
   check(
     markdown.contains(
@@ -131,6 +131,27 @@ func testSupportReportUnavailableValuesAndIdentification() {
     "a connected but unidentifiable device gets no reconnect advice"
   )
   check(outcome.issueDraft == nil, "a connected but unidentifiable device offers no issue")
+}
+
+func testSupportReportFencesDeviceControlledText() {
+  let hostile = FakeCompatibleAudioDevice(
+    name: "",
+    reportMetadata: SupportReportDeviceMetadata(
+      family: .airPods,
+      modelIdentifier: "airpods www.evil.example/x",
+      firmwareVersion: "www.evil.example",
+      connectionState: .connected
+    )
+  )
+  let markdown = SupportReport.make(device: hostile)?.markdown ?? ""
+  check(
+    markdown.contains("Model identifier: `airpods www.evil.example/x`"),
+    "device-controlled model text is fenced against markdown autolinks"
+  )
+  check(
+    markdown.contains("Firmware: `www.evil.example`"),
+    "device-controlled firmware text is fenced against markdown autolinks"
+  )
 }
 
 func testSupportReportMetadataNormalization() {
@@ -364,6 +385,7 @@ func testSupportReportFamilyFromModelIdentifier() {
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
   testSupportReportUnavailableValuesAndIdentification()
+  testSupportReportFencesDeviceControlledText()
   testSupportReportMetadataNormalization()
   testSupportReportFamilyFromModelIdentifier()
   testSupportReportIssueURL()
