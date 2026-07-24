@@ -90,6 +90,16 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
     !device.canSetConversationAwareness(),
     "support-report fixture exposes no Conversation Awareness setter"
   )
+
+  let namelessController = PrivateAudioController(
+    rawDevices: [FakeNamelessRawDevice()],
+    logger: DebugLogger(enabled: false),
+    includeDeviceNames: false
+  )
+  check(
+    namelessController.selectDevice(named: nil) == nil,
+    "support-report rejects devices that other commands cannot target"
+  )
 }
 
 func testListeningModeReadbackWaitsForDelayedTarget() {

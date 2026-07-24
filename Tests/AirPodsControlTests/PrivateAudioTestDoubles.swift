@@ -193,6 +193,20 @@ let rawListeningModeValues: [ListeningMode: String] = [
   }
 }
 
+@objc final class FakeNamelessRawDevice: NSObject {
+  @objc(modelID) func modelID() -> String {
+    "BTHeadphones76,8231"
+  }
+
+  @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
+    [rawListeningModeValues[.transparency]!]
+  }
+
+  @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {
+    rawListeningModeValues[.transparency]!
+  }
+}
+
 @objc final class FakeScriptedListeningModeRawDevice: NSObject {
   let reads: [String?]
   let setterAccepted: Bool
