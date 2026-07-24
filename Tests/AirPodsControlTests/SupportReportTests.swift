@@ -243,18 +243,32 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   check(output == [draft.body], "interaction prints the report for review first")
   check(errors.joined().contains("[y/N]"), "interaction explicitly asks before opening")
 
+  var openedURL: URL?
   _ = SupportReportInteraction.present(
     outcome: outcome,
     inputIsInteractive: true,
     readResponse: { "yes" },
     openURL: { url in
       openCount += 1
-      return url.absoluteString.contains("template=compatibility-report.md")
+      openedURL = url
+      return true
     },
     writeOutput: { _ in },
     writeError: { _ in }
   )
   check(openCount == 1, "affirmative confirmation opens exactly one issue draft")
+  check(
+    openedURL == SupportReport.safeIssueURL(for: draft).url,
+    "affirmative confirmation opens exactly the reviewed issue URL"
+  )
+  check(
+    openedURL?.host == SupportReport.repositoryIssuesURL.host,
+    "the opened URL stays on github.com"
+  )
+  check(
+    openedURL?.path == SupportReport.repositoryIssuesURL.path,
+    "the opened URL stays on the project's new-issue path"
+  )
 
   var noninteractiveReadCount = 0
   _ = SupportReportInteraction.present(
