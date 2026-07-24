@@ -287,9 +287,11 @@ enum CommandExecution {
   private static func unidentifiedSupportReportDeviceOutcome() -> CommandOutcome {
     CommandOutcome(
       plain: """
-      A compatible audio device is connected, but its model metadata
-      could not be read and safely included in a report.
+      A compatible audio device is connected, but it could not be identified
+      as AirPods or Beats from its model metadata.
       No report was generated. Nothing was sent to GitHub.
+      You can open a compatibility issue manually:
+      \(SupportReport.repositoryIssuesURL.absoluteString)?template=\(SupportReport.issueTemplateName)
       """,
       exitCode: 1,
       payload: ["error": "unidentified-device", "result": "error"]

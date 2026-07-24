@@ -123,8 +123,12 @@ func testSupportReportUnavailableValuesAndIdentification() {
   let outcome = CommandExecution.execute(invocation) { _, _ in unidentified }
   check(outcome.exitCode == 1, "a connected but unidentifiable device exits one")
   check(
-    outcome.plain.contains("could not be read"),
+    outcome.plain.contains("could not be identified"),
     "a connected but unidentifiable device explains the metadata failure"
+  )
+  check(
+    outcome.plain.contains("template=compatibility-report.md"),
+    "a connected but unidentifiable device gets a manual filing instruction"
   )
   check(
     !outcome.plain.contains("Connect AirPods"),
