@@ -1,5 +1,11 @@
 # airpods-control
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/airpods-control-banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset=".github/assets/airpods-control-banner-light.png">
+  <img alt="airpods-control — AirPods controls, straight from your terminal." src=".github/assets/airpods-control-banner-light.png" width="100%">
+</picture>
+
 [![CI](https://img.shields.io/github/actions/workflow/status/raulgg/airpods-control/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/raulgg/airpods-control/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/raulgg/airpods-control?style=flat-square&color=0a0a0c)](https://github.com/raulgg/airpods-control/releases/latest)
 [![Tested on macOS Tahoe 26](https://img.shields.io/badge/tested-macOS%20Tahoe%2026-0a0a0c?style=flat-square&logo=apple&logoColor=white)](#compatibility)
