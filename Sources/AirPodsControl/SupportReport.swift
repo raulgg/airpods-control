@@ -4,6 +4,7 @@ import Foundation
 enum SupportReportDeviceFamily: String {
   case airPods = "AirPods"
   case beats = "Beats (exploratory)"
+  case unknownApple = "Apple or Beats (unidentified, exploratory)"
 }
 
 enum SupportReportConnectionState: String {
@@ -112,8 +113,49 @@ struct SupportReport {
     return normalized
   }
 
+  private static let appleVendorID = 76
+  private static let bluetoothModelIDPrefix = "BTHeadphones"
+
+  // Product IDs from MagicPodsCore's AapModelIds table, cross-checked against
+  // AirPodsDesktop's AppleCP.cpp:
+  // https://github.com/steam3d/MagicPodsCore/blob/main/src/sdk/aap/enums/AapModelIds.h
+  private static let appleAudioProducts: [Int: SupportReportDeviceFamily] = [
+    0x2002: .airPods,
+    0x200A: .airPods,
+    0x200E: .airPods,
+    0x200F: .airPods,
+    0x2013: .airPods,
+    0x2014: .airPods,
+    0x2019: .airPods,
+    0x201B: .airPods,
+    0x201F: .airPods,
+    0x2024: .airPods,
+    0x2027: .airPods,
+    0x202D: .airPods,
+    0x2003: .beats,
+    0x2005: .beats,
+    0x2006: .beats,
+    0x2009: .beats,
+    0x200B: .beats,
+    0x200C: .beats,
+    0x200D: .beats,
+    0x2010: .beats,
+    0x2011: .beats,
+    0x2012: .beats,
+    0x2016: .beats,
+    0x2017: .beats,
+    0x201D: .beats,
+    0x2025: .beats,
+    0x2026: .beats,
+    0x202F: .beats,
+  ]
+
   static func family(for modelIdentifier: String?) -> SupportReportDeviceFamily? {
     guard let modelIdentifier else { return nil }
+    if let bluetoothIDs = bluetoothIdentifiers(for: modelIdentifier) {
+      guard bluetoothIDs.vendorID == appleVendorID else { return nil }
+      return appleAudioProducts[bluetoothIDs.productID] ?? .unknownApple
+    }
     let normalized = modelIdentifier.lowercased()
     if normalized.contains("airpods") {
       return .airPods
@@ -122,6 +164,30 @@ struct SupportReport {
       return .beats
     }
     return nil
+  }
+
+  private static func bluetoothIdentifiers(
+    for modelIdentifier: String
+  ) -> (vendorID: Int, productID: Int)? {
+    let prefix = modelIdentifier.prefix(bluetoothModelIDPrefix.count)
+    guard prefix.lowercased() == bluetoothModelIDPrefix.lowercased() else { return nil }
+    let fields = modelIdentifier.dropFirst(prefix.count).components(separatedBy: ",")
+    guard fields.count == 2,
+          let vendorID = decimalIdentifier(fields[0]),
+          let productID = decimalIdentifier(fields[1])
+    else {
+      return nil
+    }
+    return (vendorID, productID)
+  }
+
+  private static func decimalIdentifier(_ field: String) -> Int? {
+    guard !field.isEmpty,
+          field.allSatisfy({ $0.isASCII && $0.isNumber })
+    else {
+      return nil
+    }
+    return Int(field)
   }
 
   static func issueURL(for draft: SupportReportIssueDraft, includeBody: Bool) -> URL? {

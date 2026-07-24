@@ -269,10 +269,47 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   check(openCount == 1, "no-device path never opens an issue URL")
 }
 
+func testSupportReportFamilyFromModelIdentifier() {
+  check(
+    SupportReport.family(for: "BTHeadphones76,8231") == .airPods,
+    "the Bluetooth model identifier of AirPods Pro 3 resolves to AirPods"
+  )
+  check(
+    SupportReport.family(for: "btheadphones76,8231") == .airPods,
+    "the Bluetooth model identifier prefix is matched case-insensitively"
+  )
+  check(
+    SupportReport.family(for: "BTHeadphones76,8210") == .beats,
+    "a known Beats product ID resolves to the exploratory Beats family"
+  )
+  check(
+    SupportReport.family(for: "BTHeadphones76,60000") == .unknownApple,
+    "an unlisted Apple product ID still produces an exploratory report"
+  )
+  check(
+    SupportReport.family(for: "BTHeadphones123,456") == nil,
+    "a non-Apple vendor ID stays unidentifiable"
+  )
+  check(
+    SupportReport.family(for: "BTHeadphones76,8231,0") == nil,
+    "a malformed Bluetooth model identifier stays unidentifiable"
+  )
+  check(
+    SupportReport.family(for: "AirPodsTest1,1") == .airPods,
+    "a marketing-style model identifier still matches by name"
+  )
+  check(
+    SupportReport.family(for: "BeatsTest1,1") == .beats,
+    "a marketing-style Beats identifier still matches by name"
+  )
+  check(SupportReport.family(for: nil) == nil, "missing model metadata is unidentifiable")
+}
+
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
   testSupportReportUnavailableValuesAndIdentification()
   testSupportReportMetadataNormalization()
+  testSupportReportFamilyFromModelIdentifier()
   testSupportReportIssueURL()
   testSupportReportRequiresConfirmationBeforeOpening()
 }

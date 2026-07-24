@@ -159,7 +159,7 @@ let rawListeningModeValues: [ListeningMode: String] = [
 
 @objc final class FakeSupportReportRawDevice: NSObject {
   @objc(modelID) func modelID() -> String {
-    "AirPodsReportTest1,1"
+    "BTHeadphones76,8231"
   }
 
   @objc(firmwareVersion) func firmwareVersion() -> String {

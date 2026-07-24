@@ -73,8 +73,12 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   let report = SupportReport.make(device: device)
   check(report != nil, "name-free private adapter produces a support report")
   check(
-    report?.markdown.contains("AirPodsReportTest1,1") == true,
+    report?.markdown.contains("BTHeadphones76,8231") == true,
     "name-free report includes the allowlisted model identifier"
+  )
+  check(
+    report?.markdown.contains("Device family: AirPods") == true,
+    "the Bluetooth model identifier resolves to the AirPods family"
   )
   check(device.name.isEmpty, "support-report adapter retains no customizable name")
   check(!device.canSetListeningMode(), "support-report fixture exposes no mode setter")
