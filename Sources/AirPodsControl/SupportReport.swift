@@ -28,6 +28,8 @@ struct SupportReport {
     URL(string: "https://github.com/raulgg/airpods-control/issues/new")!
   static let issueTemplateName = "compatibility-report.md"
   static let maximumPrefilledURLLength = 6_000
+  static let maximumModelIdentifierLength = 80
+  static let maximumFirmwareVersionLength = 40
 
   let markdown: String
   let issueDraft: SupportReportIssueDraft
@@ -39,7 +41,10 @@ struct SupportReport {
   ) -> SupportReport? {
     let metadata = device.supportReportMetadata()
     guard let family = metadata.family,
-          let modelIdentifier = metadata.modelIdentifier
+          let modelIdentifier = normalizedMetadataValue(
+            metadata.modelIdentifier,
+            maximumLength: maximumModelIdentifierLength
+          )
     else {
       return nil
     }
@@ -62,7 +67,10 @@ struct SupportReport {
     case .none: conversationAwarenessState = "unavailable"
     }
 
-    let firmware = metadata.firmwareVersion.map { "`\($0)`" } ?? "unavailable/not reported"
+    let firmware = normalizedMetadataValue(
+      metadata.firmwareVersion,
+      maximumLength: maximumFirmwareVersionLength
+    ).map { "`\($0)`" } ?? "unavailable/not reported"
     let macOS = [
       operatingSystemVersion.majorVersion,
       operatingSystemVersion.minorVersion,

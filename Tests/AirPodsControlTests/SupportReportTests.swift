@@ -156,6 +156,20 @@ func testSupportReportFencesDeviceControlledText() {
     markdown.contains("Firmware: `www.evil.example`"),
     "device-controlled firmware text is fenced against markdown autolinks"
   )
+
+  let unnormalized = FakeCompatibleAudioDevice(
+    name: "",
+    reportMetadata: SupportReportDeviceMetadata(
+      family: .airPods,
+      modelIdentifier: "airpods` [CLICK](http://evil.example) `x",
+      firmwareVersion: nil,
+      connectionState: .connected
+    )
+  )
+  check(
+    SupportReport.make(device: unnormalized) == nil,
+    "make itself rejects metadata that escapes the allowlist"
+  )
 }
 
 func testSupportReportMetadataNormalization() {

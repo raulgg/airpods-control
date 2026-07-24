@@ -144,12 +144,12 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     let modelIdentifier = allowlistedString(
       selector: modelIDSelector,
       label: "modelID",
-      maximumLength: 80
+      maximumLength: SupportReport.maximumModelIdentifierLength
     )
     let firmwareVersion = allowlistedString(
       selector: firmwareVersionSelector,
       label: "firmwareVersion",
-      maximumLength: 40
+      maximumLength: SupportReport.maximumFirmwareVersionLength
     )
     return SupportReportDeviceMetadata(
       family: SupportReport.family(for: modelIdentifier),
