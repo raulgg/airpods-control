@@ -118,6 +118,19 @@ func testSupportReportUnavailableValuesAndIdentification() {
     SupportReport.make(device: unidentified) == nil,
     "unidentifiable hardware does not produce an issue report"
   )
+
+  let invocation = try! parseInvocation(["support-report"])
+  let outcome = CommandExecution.execute(invocation) { _, _ in unidentified }
+  check(outcome.exitCode == 1, "a connected but unidentifiable device exits one")
+  check(
+    outcome.plain.contains("could not be read"),
+    "a connected but unidentifiable device explains the metadata failure"
+  )
+  check(
+    !outcome.plain.contains("Connect AirPods"),
+    "a connected but unidentifiable device gets no reconnect advice"
+  )
+  check(outcome.issueDraft == nil, "a connected but unidentifiable device offers no issue")
 }
 
 func testSupportReportMetadataNormalization() {

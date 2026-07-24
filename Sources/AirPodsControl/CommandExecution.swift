@@ -49,7 +49,7 @@ enum CommandExecution {
 
     case .supportReport:
       guard let report = SupportReport.make(device: device) else {
-        return noSupportReportDeviceOutcome()
+        return unidentifiedSupportReportDeviceOutcome()
       }
       return CommandOutcome(
         plain: report.markdown,
@@ -281,6 +281,18 @@ enum CommandExecution {
       state: nil,
       error: "no-device",
       extra: extra
+    )
+  }
+
+  private static func unidentifiedSupportReportDeviceOutcome() -> CommandOutcome {
+    CommandOutcome(
+      plain: """
+      A compatible audio device is connected, but its model metadata
+      could not be read and safely included in a report.
+      No report was generated. Nothing was sent to GitHub.
+      """,
+      exitCode: 1,
+      payload: ["error": "unidentified-device", "result": "error"]
     )
   }
 
