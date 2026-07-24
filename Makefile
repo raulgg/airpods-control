@@ -14,7 +14,11 @@ BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
 MANPAGE := docs/airpods-control.1
 BUILD_STAMP := $(BUILD_DIR)/.built
-SWIFT_SOURCES := native/CLI.swift native/PrivateAudio.swift native/CommandExecution.swift native/main.swift
+SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
+SWIFT_LIBRARY_SOURCES := $(filter-out Sources/AirPodsControl/main.swift,$(SWIFT_SOURCES))
+SWIFT_TEST_SOURCES := $(sort $(wildcard Tests/AirPodsControlTests/*.swift))
+AV_BYPASS_SOURCE := Sources/AVBypass/bypass.c
+SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass
 SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
@@ -28,7 +32,7 @@ all: $(BUILD_STAMP)
 		$(MAKE) --no-print-directory _build; \
 	fi
 
-$(BUILD_STAMP): $(SWIFT_SOURCES) native/bypass.c Makefile
+$(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(AV_BYPASS_SOURCE) Makefile
 	@$(MAKE) --no-print-directory _build
 
 _build:
@@ -41,7 +45,7 @@ _build:
 		arch="$$1"; \
 		"$(CLANG)" -O2 -arch "$$arch" \
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -dynamiclib \
-			-o "$$tmp/avbypass.$$arch.dylib" native/bypass.c \
+			-o "$$tmp/avbypass.$$arch.dylib" "$(AV_BYPASS_SOURCE)" \
 			-framework CoreFoundation -framework Security && \
 		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
@@ -85,11 +89,11 @@ _build:
 	echo "built: $(BINARY) ($$("$(LIPO)" -archs "$(BINARY)")) + avbypass.dylib"
 
 test: all
-	./tests/cli.sh
+	./Tests/CLIContractTests/cli.sh
 	"$(SWIFTC)" -Onone -parse-as-library \
 		-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 		-o "$(SWIFT_TEST_BINARY)" \
-		native/CLI.swift native/PrivateAudio.swift native/CommandExecution.swift tests/SwiftTests.swift
+		$(SWIFT_LIBRARY_SOURCES) $(SWIFT_TEST_SOURCES)
 	"$(SWIFT_TEST_BINARY)"
 
 install: all

@@ -1,11 +1,19 @@
 import Darwin
 import Foundation
 
-let normalListeningModeRawValue = "AVOutputDeviceBluetoothListeningModeNormal"
+private let listeningModeRawValues: [ListeningMode: String] = [
+  .off: "AVOutputDeviceBluetoothListeningModeNormal",
+  .transparency: "AVOutputDeviceBluetoothListeningModeAudioTransparency",
+  .adaptive: "AVOutputDeviceBluetoothListeningModeAutomatic",
+  .noiseCancellation: "AVOutputDeviceBluetoothListeningModeActiveNoiseCancellation",
+]
+private let listeningModesByRawValue = Dictionary(
+  uniqueKeysWithValues: listeningModeRawValues.map { ($1, $0) }
+)
 
-private let standardListeningModeReadbackAttempts = 16
+private let standardWriteReadbackAttempts = 16
 private let offListeningModeReadbackAttempts = 30
-private let listeningModeReadbackDelay: useconds_t = 50_000
+private let privateAudioReadbackDelay: useconds_t = 50_000
 
 // AVFoundation delivers route-state changes through the main run loop. A
 // blocking sleep can leave the output-device snapshot stale until process exit.
@@ -21,11 +29,6 @@ private let setModeSelector = NSSelectorFromString("setCurrentBluetoothListening
 private let supportsCASelector = NSSelectorFromString("supportsConversationDetection")
 private let caEnabledSelector = NSSelectorFromString("isConversationDetectionEnabled")
 private let setCASelector = NSSelectorFromString("setConversationDetectionEnabled:error:")
-
-struct ListeningModeWriteOutcome {
-  let setterAccepted: Bool
-  let observedRawMode: String?
-}
 
 @objc private protocol ListeningModeSetterShim {
   @objc(setCurrentBluetoothListeningMode:error:)
@@ -110,8 +113,8 @@ enum PrivateAudioDiscovery {
   }
 }
 
-final class AudioDevice {
-  let object: AnyObject
+final class PrivateAudioDevice: CompatibleAudioDevice {
+  private let object: AnyObject
   let name: String
   private let logger: DebugLogger
 
@@ -121,7 +124,11 @@ final class AudioDevice {
     self.logger = logger
   }
 
-  static func compatible(object: AnyObject, index: Int, logger: DebugLogger) -> AudioDevice? {
+  static func compatible(
+    object: AnyObject,
+    index: Int,
+    logger: DebugLogger
+  ) -> PrivateAudioDevice? {
     let requiredSelectors = [nameSelector, availableModesSelector, currentModeSelector]
     for selector in requiredSelectors where !object.responds(to: selector) {
       logger.debug("device.\(index).missing_selector", NSStringFromSelector(selector))
@@ -148,10 +155,10 @@ final class AudioDevice {
     logger.debug("device.\(index).name", name)
     logger.debug("device.\(index).compatible", true)
     logger.debug("device.\(index).available_modes", modes.joined(separator: ","))
-    return AudioDevice(object: object, name: name, logger: logger)
+    return PrivateAudioDevice(object: object, name: name, logger: logger)
   }
 
-  func availableListeningModes() -> [String] {
+  private func availableRawListeningModes() -> [String] {
     guard object.responds(to: availableModesSelector),
           let value = object.perform(availableModesSelector)?.takeUnretainedValue(),
           let modes = value as? [String]
@@ -163,7 +170,11 @@ final class AudioDevice {
     return modes
   }
 
-  func currentListeningMode() -> String? {
+  func availableListeningModes() -> [ListeningMode] {
+    availableRawListeningModes().compactMap { listeningModesByRawValue[$0] }
+  }
+
+  private func currentRawListeningMode() -> String? {
     guard object.responds(to: currentModeSelector),
           let value = object.perform(currentModeSelector)?.takeUnretainedValue(),
           let mode = value as? String
@@ -175,13 +186,17 @@ final class AudioDevice {
     return mode
   }
 
+  func currentListeningMode() -> ListeningMode? {
+    currentRawListeningMode().flatMap { listeningModesByRawValue[$0] }
+  }
+
   func canSetListeningMode() -> Bool {
     let available = object.responds(to: setModeSelector)
     logger.debug("selector.setCurrentBluetoothListeningMode:error:", available)
     return available
   }
 
-  func setListeningMode(_ mode: String) -> Bool? {
+  private func setRawListeningMode(_ mode: String) -> Bool? {
     guard canSetListeningMode() else { return nil }
     var error: NSError?
     let setter = unsafeBitCast(object, to: ListeningModeSetterShim.self)
@@ -193,35 +208,38 @@ final class AudioDevice {
     return accepted
   }
 
-  func setListeningModeAndReadBack(_ target: String) -> ListeningModeWriteOutcome {
+  func setListeningModeAndReadBack(
+    _ target: ListeningMode
+  ) -> DeviceWriteObservation<ListeningMode> {
     setListeningModeAndReadBack(target, wait: waitForPrivateAudioUpdate)
   }
 
   func setListeningModeAndReadBack(
-    _ target: String,
+    _ target: ListeningMode,
     wait: (useconds_t) -> Void
-  ) -> ListeningModeWriteOutcome {
-    let settleThroughDeadline = target == normalListeningModeRawValue
+  ) -> DeviceWriteObservation<ListeningMode> {
+    let rawTarget = listeningModeRawValues[target]!
+    let settleThroughDeadline = target == .off
     let attemptLimit = settleThroughDeadline
       ? offListeningModeReadbackAttempts
-      : standardListeningModeReadbackAttempts
+      : standardWriteReadbackAttempts
 
-    let setterAccepted = setListeningMode(target) == true
-    var observed = currentListeningMode()
+    let setterAccepted = setRawListeningMode(rawTarget) == true
+    var observedRawMode = currentRawListeningMode()
     logger.debug("verify.listening_mode.attempt", 0)
 
-    if observed != target || settleThroughDeadline {
+    if observedRawMode != rawTarget || settleThroughDeadline {
       for attempt in 1...attemptLimit {
-        wait(listeningModeReadbackDelay)
-        observed = currentListeningMode()
+        wait(privateAudioReadbackDelay)
+        observedRawMode = currentRawListeningMode()
         logger.debug("verify.listening_mode.attempt", attempt)
-        if observed == target, !settleThroughDeadline { break }
+        if observedRawMode == rawTarget, !settleThroughDeadline { break }
       }
     }
 
-    return ListeningModeWriteOutcome(
+    return DeviceWriteObservation(
       setterAccepted: setterAccepted,
-      observedRawMode: observed
+      observed: observedRawMode.flatMap { listeningModesByRawValue[$0] }
     )
   }
 
@@ -253,7 +271,7 @@ final class AudioDevice {
     return available
   }
 
-  func setConversationAwareness(_ enabled: Bool) -> Bool? {
+  private func setConversationAwareness(_ enabled: Bool) -> Bool? {
     guard canSetConversationAwareness() else { return nil }
     var error: NSError?
     let setter = unsafeBitCast(object, to: ConversationAwarenessSetterShim.self)
@@ -264,21 +282,50 @@ final class AudioDevice {
     }
     return accepted
   }
+
+  func setConversationAwarenessAndReadBack(
+    _ target: Bool
+  ) -> DeviceWriteObservation<Bool> {
+    setConversationAwarenessAndReadBack(target, wait: waitForPrivateAudioUpdate)
+  }
+
+  func setConversationAwarenessAndReadBack(
+    _ target: Bool,
+    wait: (useconds_t) -> Void
+  ) -> DeviceWriteObservation<Bool> {
+    let setterAccepted = setConversationAwareness(target) == true
+    var observed = conversationAwarenessState()
+    logger.debug("verify.conversation_awareness.attempt", 0)
+
+    if observed != target {
+      for attempt in 1...standardWriteReadbackAttempts {
+        wait(privateAudioReadbackDelay)
+        observed = conversationAwarenessState()
+        logger.debug("verify.conversation_awareness.attempt", attempt)
+        if observed == target { break }
+      }
+    }
+
+    return DeviceWriteObservation(
+      setterAccepted: setterAccepted,
+      observed: observed
+    )
+  }
 }
 
 final class PrivateAudioController {
-  private let devices: [AudioDevice]
+  private let devices: [PrivateAudioDevice]
   private let logger: DebugLogger
 
   init(rawDevices: [AnyObject], logger: DebugLogger) {
     self.logger = logger
     devices = rawDevices.enumerated().compactMap { index, object in
-      AudioDevice.compatible(object: object, index: index, logger: logger)
+      PrivateAudioDevice.compatible(object: object, index: index, logger: logger)
     }
     logger.info("compatible_device_count", devices.count)
   }
 
-  func selectDevice(named requestedName: String?) -> AudioDevice? {
+  func selectDevice(named requestedName: String?) -> PrivateAudioDevice? {
     guard let requestedName else {
       guard let selected = devices.first else {
         logger.warning("device_selection", "no-compatible-device")

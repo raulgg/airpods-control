@@ -86,7 +86,7 @@ func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
 func bootstrapAndSelectAudioDevice(
   named requestedName: String?,
   logger: DebugLogger
-) -> AudioDevice? {
+) -> (any CompatibleAudioDevice)? {
   ensureBypass(logger: logger)
 
   guard let rawDevices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {

@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 struct CommandOutcome {
@@ -23,7 +22,7 @@ enum CommandExecution {
     resolveDevice: (
       _ requestedName: String?,
       _ logger: DebugLogger
-    ) -> AudioDevice?
+    ) -> (any CompatibleAudioDevice)?
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
     logger.debug("cli.command", invocation.command.debugName)
@@ -46,63 +45,61 @@ enum CommandExecution {
       preconditionFailure("version handled before device resolution")
 
     case .listeningModeGet:
-      let mode = canonicalListeningMode(device.currentListeningMode())
+      let mode = device.currentListeningMode()
       return resourceOutcome(
         resource: .listeningMode,
         deviceName: device.name,
-        plain: mode ?? "unknown",
+        plain: mode?.rawValue ?? "unknown",
         result: "ok",
-        state: mode
+        state: mode?.rawValue
       )
 
     case .listeningModeList:
-      let current = canonicalListeningMode(device.currentListeningMode())
+      let current = device.currentListeningMode()
       let availableModes = Set(device.availableListeningModes())
-      let tokens = modeTokenOrder.filter { token in
-        tokenToAV[token].map { availableModes.contains($0) } ?? false
-      }
+      let modes = ListeningMode.allCases.filter { availableModes.contains($0) }
+      let tokens = modes.map(\.rawValue)
       return resourceOutcome(
         resource: .listeningMode,
         deviceName: device.name,
         plain: tokens.joined(separator: ","),
         result: "ok",
-        state: current,
+        state: current?.rawValue,
         extra: ["supportedListeningModes": tokens]
       )
 
-    case let .listeningModeSet(token, avMode):
-      let currentRaw = device.currentListeningMode()
-      let current = canonicalListeningMode(currentRaw)
+    case let .listeningModeSet(mode):
+      let current = device.currentListeningMode()
       let availableModes = Set(device.availableListeningModes())
 
-      guard availableModes.contains(avMode), device.canSetListeningMode() else {
+      guard availableModes.contains(mode), device.canSetListeningMode() else {
         return resourceOutcome(
           resource: .listeningMode,
           deviceName: device.name,
           plain: "unsupported",
           exitCode: 4,
           result: "error",
-          state: current,
+          state: current?.rawValue,
           error: "unsupported"
         )
       }
 
-      if currentRaw == avMode {
+      if current == mode {
         return resourceOutcome(
           resource: .listeningMode,
           deviceName: device.name,
           plain: "ok",
           result: "ok",
-          state: token
+          state: mode.rawValue
         )
       }
 
-      let outcome = device.setListeningModeAndReadBack(avMode)
+      let observation = device.setListeningModeAndReadBack(mode)
       let resolution = resolveListeningModeWrite(
-        requestedToken: token,
-        setterAccepted: outcome.setterAccepted,
-        observedRawMode: outcome.observedRawMode,
-        transparencySupported: availableModes.contains(tokenToAV["transparency"]!)
+        requested: mode,
+        setterAccepted: observation.setterAccepted,
+        observed: observation.observed,
+        transparencySupported: availableModes.contains(.transparency)
       )
       if resolution.inferredOffFallback {
         logger.debug("verify.listening_mode.inferred_off_fallback", true)
@@ -114,7 +111,7 @@ enum CommandExecution {
           deviceName: device.name,
           plain: "ok",
           result: "ok",
-          state: resolution.state
+          state: resolution.state?.rawValue
         )
       }
       return resourceOutcome(
@@ -123,41 +120,37 @@ enum CommandExecution {
         plain: "no-op",
         exitCode: 3,
         result: "no-op",
-        state: resolution.state
+        state: resolution.state?.rawValue
       )
 
     case let .listeningModeCycle(requested):
-      let currentRaw = device.currentListeningMode()
-      let current = canonicalListeningMode(currentRaw)
+      let current = device.currentListeningMode()
       let availableModes = Set(device.availableListeningModes())
-      let base = requested ?? modeTokenOrder.filter { $0 != "off" }
-      let cycleTokens = base.filter { token in
-        tokenToAV[token].map { availableModes.contains($0) } ?? false
-      }
+      let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
+      let cycleModes = base.filter { availableModes.contains($0) }
 
-      guard cycleTokens.count >= 2, device.canSetListeningMode() else {
+      guard cycleModes.count >= 2, device.canSetListeningMode() else {
         return resourceOutcome(
           resource: .listeningMode,
           deviceName: device.name,
           plain: "unsupported",
           exitCode: 4,
           result: "error",
-          state: current,
+          state: current?.rawValue,
           error: "unsupported"
         )
       }
 
-      let targetToken = nextCycleMode(current: current, cycleTokens: cycleTokens)
-      let targetAV = tokenToAV[targetToken]!
-      logger.debug("cycle.set", cycleTokens.joined(separator: ","))
-      logger.debug("cycle.target", targetToken)
+      let target = ListeningMode.next(current: current, within: cycleModes)
+      logger.debug("cycle.set", cycleModes.map(\.rawValue).joined(separator: ","))
+      logger.debug("cycle.target", target.rawValue)
 
-      let outcome = device.setListeningModeAndReadBack(targetAV)
+      let observation = device.setListeningModeAndReadBack(target)
       let resolution = resolveListeningModeWrite(
-        requestedToken: targetToken,
-        setterAccepted: outcome.setterAccepted,
-        observedRawMode: outcome.observedRawMode,
-        transparencySupported: availableModes.contains(tokenToAV["transparency"]!)
+        requested: target,
+        setterAccepted: observation.setterAccepted,
+        observed: observation.observed,
+        transparencySupported: availableModes.contains(.transparency)
       )
       if resolution.inferredOffFallback {
         logger.debug("verify.listening_mode.inferred_off_fallback", true)
@@ -167,9 +160,9 @@ enum CommandExecution {
         return resourceOutcome(
           resource: .listeningMode,
           deviceName: device.name,
-          plain: targetToken,
+          plain: target.rawValue,
           result: "ok",
-          state: resolution.state
+          state: resolution.state?.rawValue
         )
       }
       return resourceOutcome(
@@ -178,7 +171,7 @@ enum CommandExecution {
         plain: "no-op",
         exitCode: 3,
         result: "no-op",
-        state: resolution.state
+        state: resolution.state?.rawValue
       )
 
     case .conversationAwarenessGet:
@@ -231,13 +224,9 @@ enum CommandExecution {
         )
       }
 
-      let outcome = setAndObserveConversationAwareness(
-        device: device,
-        target: target,
-        logger: logger
-      )
-      let observed = outcome.observed.map { $0 ? "on" : "off" }
-      if outcome.verified {
+      let observation = device.setConversationAwarenessAndReadBack(target)
+      let observed = observation.observed.map { $0 ? "on" : "off" }
+      if observation.observed == target {
         return resourceOutcome(
           resource: .conversationAwareness,
           deviceName: device.name,
@@ -301,24 +290,5 @@ enum CommandExecution {
       exitCode: exitCode,
       payload: payload
     )
-  }
-
-  private static func setAndObserveConversationAwareness(
-    device: AudioDevice,
-    target: Bool,
-    logger: DebugLogger
-  ) -> (verified: Bool, observed: Bool?) {
-    guard device.setConversationAwareness(target) != nil else {
-      return (false, device.conversationAwarenessState())
-    }
-
-    var observed: Bool?
-    for attempt in 1...16 {
-      usleep(50_000)
-      observed = device.conversationAwarenessState()
-      logger.debug("verify.conversation_awareness.attempt", attempt)
-      if observed == target { return (true, observed) }
-    }
-    return (false, observed)
   }
 }

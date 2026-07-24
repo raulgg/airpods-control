@@ -2,56 +2,6 @@ import Foundation
 
 let VERSION = "0.1.0"
 
-let tokenToAV: [String: String] = [
-  "off": normalListeningModeRawValue,
-  "transparency": "AVOutputDeviceBluetoothListeningModeAudioTransparency",
-  "adaptive": "AVOutputDeviceBluetoothListeningModeAutomatic",
-  "noise-cancellation": "AVOutputDeviceBluetoothListeningModeActiveNoiseCancellation",
-]
-
-let modeAliases: [String: String] = [
-  "anc": "noise-cancellation",
-  "nc": "noise-cancellation",
-  "trans": "transparency",
-  "automatic": "adaptive",
-  "auto": "adaptive",
-]
-
-let modeTokenOrder = ["off", "transparency", "adaptive", "noise-cancellation"]
-let avToToken = Dictionary(uniqueKeysWithValues: tokenToAV.map { ($1, $0) })
-
-func canonicalListeningMode(_ rawMode: String?) -> String? {
-  rawMode.flatMap { avToToken[$0] }
-}
-
-struct ListeningModeWriteResolution {
-  let verified: Bool
-  let state: String?
-  let inferredOffFallback: Bool
-}
-
-func resolveListeningModeWrite(
-  requestedToken: String,
-  setterAccepted: Bool,
-  observedRawMode: String?,
-  transparencySupported: Bool
-) -> ListeningModeWriteResolution {
-  let verified = observedRawMode == tokenToAV[requestedToken]
-  let observedState = canonicalListeningMode(observedRawMode)
-  let inferredOffFallback =
-    requestedToken == "off"
-    && !verified
-    && setterAccepted
-    && transparencySupported
-    && observedState != "transparency"
-  let state = inferredOffFallback ? "transparency" : observedState
-  return ListeningModeWriteResolution(
-    verified: verified,
-    state: state,
-    inferredOffFallback: inferredOffFallback
-  )
-}
-
 enum CLIResource {
   case listeningMode
   case conversationAwareness
@@ -67,11 +17,11 @@ enum CLIResource {
 enum CLICommand {
   case version
   case listeningModeGet
-  case listeningModeSet(token: String, avMode: String)
+  case listeningModeSet(ListeningMode)
   case listeningModeList
   // Requested cycle tokens in canonical order; nil means the default set
   // (every available mode except off).
-  case listeningModeCycle(requested: [String]?)
+  case listeningModeCycle(requested: [ListeningMode]?)
   case conversationAwarenessGet
   case conversationAwarenessSet(Bool)
 
@@ -107,39 +57,6 @@ struct CLIInvocation {
 }
 
 struct CLIParseError: Error {}
-
-struct DebugLogger {
-  let enabled: Bool
-
-  func debug(_ key: String, _ value: Any?) {
-    write(level: "debug", key: key, value: value)
-  }
-
-  func info(_ key: String, _ value: Any?) {
-    write(level: "info", key: key, value: value)
-  }
-
-  func warning(_ key: String, _ value: Any?) {
-    write(level: "warning", key: key, value: value)
-  }
-
-  private func write(level: String, key: String, value: Any?) {
-    guard enabled else { return }
-    let rendered: String
-    switch value {
-    case nil:
-      rendered = "null"
-    case let string as String:
-      rendered = String(reflecting: string)
-    case let bool as Bool:
-      rendered = bool ? "true" : "false"
-    default:
-      rendered = String(describing: value!)
-    }
-    let line = "\(level): \(key)=\(rendered)\n"
-    FileHandle.standardError.write(Data(line.utf8))
-  }
-}
 
 let globalHelp = """
 Usage:
@@ -238,40 +155,21 @@ func helpText(for rawArgs: [String]) -> String? {
   }
 }
 
-func canonicalModeToken(_ input: String) -> String? {
-  if tokenToAV[input] != nil { return input }
-  return modeAliases[input]
-}
-
 // Parses a --modes value into distinct canonical tokens in canonical order.
 // Empty or unknown tokens and sets of fewer than two distinct modes are
 // parse errors.
-func parseCycleModes(_ raw: String) throws -> [String] {
+func parseCycleModes(_ raw: String) throws -> [ListeningMode] {
   let tokens = try raw
     .split(separator: ",", omittingEmptySubsequences: false)
-    .map { piece -> String in
-      guard let canonical = canonicalModeToken(String(piece)) else {
+    .map { piece -> ListeningMode in
+      guard let mode = ListeningMode(token: String(piece)) else {
         throw CLIParseError()
       }
-      return canonical
+      return mode
     }
   let unique = Set(tokens)
   guard unique.count >= 2 else { throw CLIParseError() }
-  return modeTokenOrder.filter { unique.contains($0) }
-}
-
-// Advances through the canonical mode order from the current mode, wrapping,
-// to the next mode in the cycle set — a current mode outside the set folds
-// into the same order. An unknown current mode starts at the set's first mode.
-func nextCycleMode(current: String?, cycleTokens: [String]) -> String {
-  guard let current, let start = modeTokenOrder.firstIndex(of: current) else {
-    return cycleTokens[0]
-  }
-  for step in 1...modeTokenOrder.count {
-    let candidate = modeTokenOrder[(start + step) % modeTokenOrder.count]
-    if cycleTokens.contains(candidate) { return candidate }
-  }
-  return cycleTokens[0]
+  return ListeningMode.allCases.filter { unique.contains($0) }
 }
 
 func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
@@ -279,7 +177,7 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   var jsonOutput = false
   var debugEnabled = false
   var requestedDeviceName: String?
-  var requestedCycleModes: [String]?
+  var requestedCycleModes: [ListeningMode]?
   var index = 0
 
   while index < rawArgs.count {
@@ -340,12 +238,11 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
 
     case "set":
       guard positional.count == 3,
-            let canonical = canonicalModeToken(positional[2]),
-            let avMode = tokenToAV[canonical]
+            let mode = ListeningMode(token: positional[2])
       else {
         throw CLIParseError()
       }
-      command = .listeningModeSet(token: canonical, avMode: avMode)
+      command = .listeningModeSet(mode)
 
     case "list":
       guard positional.count == 2 else { throw CLIParseError() }

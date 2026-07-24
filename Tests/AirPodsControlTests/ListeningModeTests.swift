@@ -1,0 +1,93 @@
+func testListeningModeVocabulary() {
+  check(
+    ListeningMode.allCases.map(\.rawValue)
+      == ["off", "transparency", "adaptive", "noise-cancellation"],
+    "listening modes retain canonical order"
+  )
+  check(ListeningMode(token: "off") == .off, "canonical Off token parses")
+  check(ListeningMode(token: "anc") == .noiseCancellation, "ANC alias parses")
+  check(ListeningMode(token: "normal") == nil, "private raw names are not public tokens")
+}
+
+func testObservedOffFallbackResolution() {
+  let resolution = resolveListeningModeWrite(
+    requested: .off,
+    setterAccepted: true,
+    observed: .transparency,
+    transparencySupported: true
+  )
+
+  check(resolution.state == .transparency, "observed Off fallback reports Transparency")
+  check(!resolution.inferredOffFallback, "observed Off fallback is not inferred")
+}
+
+func testOffFallbackResolutionSeams() {
+  let inferenceCases: [(String, ListeningMode?)] = [
+    ("noise cancellation", .noiseCancellation),
+    ("Adaptive", .adaptive),
+    ("missing", nil),
+  ]
+
+  let verified = resolveListeningModeWrite(
+    requested: .off,
+    setterAccepted: false,
+    observed: .off,
+    transparencySupported: true
+  )
+  check(verified.verified, "observed Off verifies regardless of setter result")
+  check(verified.state == .off, "verified Off reports Off")
+  check(!verified.inferredOffFallback, "verified Off is not inferred")
+
+  for (description, observed) in inferenceCases {
+    let inferred = resolveListeningModeWrite(
+      requested: .off,
+      setterAccepted: true,
+      observed: observed,
+      transparencySupported: true
+    )
+    check(!inferred.verified, "accepted Off does not verify \(description)")
+    check(inferred.state == .transparency, "accepted Off infers \(description) fallback")
+    check(inferred.inferredOffFallback, "accepted Off marks \(description) inference")
+  }
+
+  let rejected = resolveListeningModeWrite(
+    requested: .off,
+    setterAccepted: false,
+    observed: .noiseCancellation,
+    transparencySupported: true
+  )
+  check(rejected.state == .noiseCancellation, "rejected Off preserves observed state")
+  check(!rejected.inferredOffFallback, "rejected Off is not inferred")
+
+  let rejectedUnknown = resolveListeningModeWrite(
+    requested: .off,
+    setterAccepted: false,
+    observed: nil,
+    transparencySupported: true
+  )
+  check(rejectedUnknown.state == nil, "rejected Off preserves unknown state as null")
+
+  let unsupported = resolveListeningModeWrite(
+    requested: .off,
+    setterAccepted: true,
+    observed: .noiseCancellation,
+    transparencySupported: false
+  )
+  check(unsupported.state == .noiseCancellation, "unsupported fallback preserves state")
+  check(!unsupported.inferredOffFallback, "unsupported fallback is not inferred")
+
+  let nonOff = resolveListeningModeWrite(
+    requested: .adaptive,
+    setterAccepted: true,
+    observed: .noiseCancellation,
+    transparencySupported: true
+  )
+  check(nonOff.state == .noiseCancellation, "non-Off preserves observed state")
+  check(!nonOff.inferredOffFallback, "non-Off writes never infer Transparency")
+}
+
+func runListeningModeTests() {
+  testListeningModeVocabulary()
+  testObservedOffFallbackResolution()
+  testOffFallbackResolutionSeams()
+}
