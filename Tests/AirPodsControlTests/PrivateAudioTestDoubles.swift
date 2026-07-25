@@ -57,6 +57,8 @@ let rawListeningModeValues: [ListeningMode: String] = [
   var conversationAwarenessEnabled: Bool
   let appliesListeningModeAsynchronously: Bool
   let appliesConversationAwarenessWrite: Bool
+  let modelIdentifier: String
+  let firmware: String
   var listeningModeSetCount = 0
   var conversationAwarenessSetCount = 0
 
@@ -67,7 +69,9 @@ let rawListeningModeValues: [ListeningMode: String] = [
     conversationAwarenessSupported: Bool = true,
     conversationAwarenessEnabled: Bool = false,
     appliesListeningModeAsynchronously: Bool = false,
-    appliesConversationAwarenessWrite: Bool = true
+    appliesConversationAwarenessWrite: Bool = true,
+    modelIdentifier: String = "AirPodsTest1,1",
+    firmware: String = "1.0"
   ) {
     outputName = name
     self.modes = modes
@@ -76,10 +80,20 @@ let rawListeningModeValues: [ListeningMode: String] = [
     self.conversationAwarenessEnabled = conversationAwarenessEnabled
     self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
+    self.modelIdentifier = modelIdentifier
+    self.firmware = firmware
   }
 
   @objc(name) func deviceName() -> String {
     outputName
+  }
+
+  @objc(modelID) func modelID() -> String {
+    modelIdentifier
+  }
+
+  @objc(firmwareVersion) func firmwareVersion() -> String {
+    firmware
   }
 
   @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
@@ -130,8 +144,62 @@ let rawListeningModeValues: [ListeningMode: String] = [
     outputName
   }
 
+  @objc(modelID) func modelID() -> String {
+    "AirPodsReadOnly1,1"
+  }
+
   @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
     Array(rawListeningModeValues.values)
+  }
+
+  @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {
+    rawListeningModeValues[.transparency]!
+  }
+}
+
+@objc final class FakeSupportReportRawDevice: NSObject {
+  private(set) var nameReadCount = 0
+
+  @objc(name) func deviceName() -> String {
+    nameReadCount += 1
+    return "Custom Owner Name"
+  }
+
+  @objc(modelID) func modelID() -> String {
+    "BTHeadphones76,8231"
+  }
+
+  @objc(firmwareVersion) func firmwareVersion() -> String {
+    "2.0"
+  }
+
+  @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
+    [
+      rawListeningModeValues[.transparency]!,
+      rawListeningModeValues[.noiseCancellation]!,
+    ]
+  }
+
+  @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {
+    rawListeningModeValues[.transparency]!
+  }
+
+  @objc(supportsConversationDetection) func supportsConversationDetection() -> Bool {
+    true
+  }
+
+  @objc(isConversationDetectionEnabled) func isConversationDetectionEnabled() -> Bool {
+    false
+  }
+}
+
+@objc final class FakeNamelessRawDevice: NSObject {
+  @objc(modelID) func modelID() -> String {
+    "BTHeadphones76,8231"
+  }
+
+  @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
+    [rawListeningModeValues[.transparency]!]
   }
 
   @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {

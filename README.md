@@ -44,7 +44,8 @@ operation and exits. It does not poll in the background or automate the UI.
 ## Requirements
 
 - macOS (developed and tested on Tahoe 26).
-- A supported pair of AirPods connected as an output device.
+- A compatible pair of AirPods connected as an output device. See
+  [device compatibility](docs/compatibility.md).
 - Command Line Tools (`clang` and `swiftc`) to build from source. Install them
   with `xcode-select --install`; full Xcode is not required.
 
@@ -109,6 +110,7 @@ write verification, and exit codes. After installation, you can also run
 ## Documentation
 
 - [CLI reference](docs/cli.md)
+- [Device compatibility](docs/compatibility.md)
 - [Security and trust model](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
 
@@ -140,6 +142,31 @@ of sending an unrecognized selector.
 
 Use `--debug` to distinguish a missing private selector from an unavailable
 device or hardware feature.
+
+The CLI has only been verified with AirPods Pro 3. Other AirPods may work when
+macOS exposes the same private audio capabilities. We have not verified Beats,
+but reports are welcome. See the
+[device and capability matrix](docs/compatibility.md).
+
+To share compatibility details:
+
+1. Connect AirPods as a macOS output device.
+2. Run `airpods-control support-report`.
+3. Read the report. You can then open a prefilled GitHub issue, edit it, and
+   submit it.
+
+The command reads only the model identifier, firmware when macOS exposes it,
+connection state, advertised capabilities and current states when available,
+the macOS version, and the CLI version. It never reads the customizable device
+name, serial numbers, Bluetooth/MAC addresses, account data, or raw logs and
+system dumps.
+
+It also does not change device settings, interrupt audio, use the clipboard,
+send telemetry, or submit a report. If it cannot identify a connected device,
+it prints a message and stops without opening the browser.
+
+Reports from other AirPods and Beats owners are welcome. A report does not make
+a Beats device supported.
 
 ## Credits
 

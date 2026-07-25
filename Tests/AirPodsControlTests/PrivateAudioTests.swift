@@ -55,6 +55,53 @@ func testPrivateListeningModeTranslation() {
   check(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
 }
 
+func testSupportReportDiscoveryDoesNotReadDeviceNames() {
+  let rawDevice = FakeSupportReportRawDevice()
+  let controller = PrivateAudioController(
+    rawDevices: [rawDevice],
+    logger: DebugLogger(enabled: false),
+    includeDeviceNames: false
+  )
+  guard let device = controller.selectDevice(named: nil) else {
+    check(false, "support-report discovers an allowlisted device without a name")
+    return
+  }
+  let report = SupportReport.make(device: device)
+  check(report != nil, "name-free private adapter produces a support report")
+  check(
+    report?.markdown.contains("BTHeadphones76,8231") == true,
+    "name-free report includes the allowlisted model identifier"
+  )
+  check(
+    report?.markdown.contains("Device family: AirPods") == true,
+    "the Bluetooth model identifier resolves to the AirPods family"
+  )
+  check(device.name.isEmpty, "support-report adapter retains no customizable name")
+  check(
+    rawDevice.nameReadCount == 0,
+    "support-report never invokes the customizable name selector"
+  )
+  check(
+    report?.markdown.contains("Custom Owner Name") == false,
+    "support-report output never contains the customizable name"
+  )
+  check(!device.canSetListeningMode(), "support-report fixture exposes no mode setter")
+  check(
+    !device.canSetConversationAwareness(),
+    "support-report fixture exposes no Conversation Awareness setter"
+  )
+
+  let namelessController = PrivateAudioController(
+    rawDevices: [FakeNamelessRawDevice()],
+    logger: DebugLogger(enabled: false),
+    includeDeviceNames: false
+  )
+  check(
+    namelessController.selectDevice(named: nil) == nil,
+    "support-report rejects devices that other commands cannot target"
+  )
+}
+
 func testListeningModeReadbackWaitsForDelayedTarget() {
   let off = rawListeningModeValues[.off]!
   let device = scriptedPrivateAudioDevice(
@@ -251,6 +298,14 @@ func testDeviceSelectionAndCapabilities() {
   )
 
   let selected = controller.selectDevice(named: "Studio AirPods")!
+  let reportMetadata = selected.supportReportMetadata()
+  check(reportMetadata.family == .airPods, "report identifies AirPods from model metadata")
+  check(
+    reportMetadata.modelIdentifier == "AirPodsTest1,1",
+    "report reads the allowlisted model identifier"
+  )
+  check(reportMetadata.firmwareVersion == "1.0", "report reads exposed firmware")
+  check(reportMetadata.connectionState == .connected, "selected output device is connected")
   check(selected.canSetListeningMode(), "mode setter capability is detected")
   _ = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
   check(
@@ -265,6 +320,7 @@ func testDeviceSelectionAndCapabilities() {
 func runPrivateAudioTests() {
   testPrivateSelectorDiscovery()
   testPrivateListeningModeTranslation()
+  testSupportReportDiscoveryDoesNotReadDeviceNames()
   testListeningModeReadbackWaitsForDelayedTarget()
   testListeningModeReadbackReturnsImmediatelyForObservedTarget()
   testListeningModeReadbackReturnsFinalFallback()

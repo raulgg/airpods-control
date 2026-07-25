@@ -4,15 +4,18 @@ struct CommandOutcome {
   let plain: String
   let exitCode: Int32
   let payload: [String: Any]
+  let issueDraft: SupportReportIssueDraft?
 
   init(
     plain: String,
     exitCode: Int32 = 0,
-    payload: [String: Any]
+    payload: [String: Any],
+    issueDraft: SupportReportIssueDraft? = nil
   ) {
     self.plain = plain
     self.exitCode = exitCode
     self.payload = payload
+    self.issueDraft = issueDraft
   }
 }
 
@@ -43,6 +46,16 @@ enum CommandExecution {
     switch invocation.command {
     case .version:
       preconditionFailure("version handled before device resolution")
+
+    case .supportReport:
+      guard let report = SupportReport.make(device: device) else {
+        return unidentifiedSupportReportDeviceOutcome()
+      }
+      return CommandOutcome(
+        plain: report.markdown,
+        payload: ["result": "ok"],
+        issueDraft: report.issueDraft
+      )
 
     case .listeningModeGet:
       let mode = device.currentListeningMode()
@@ -247,6 +260,9 @@ enum CommandExecution {
   }
 
   private static func noDeviceOutcome(for command: CLICommand) -> CommandOutcome {
+    if case .supportReport = command {
+      return noSupportReportDeviceOutcome()
+    }
     guard let resource = command.resource else {
       preconditionFailure("version does not require a device")
     }
@@ -265,6 +281,32 @@ enum CommandExecution {
       state: nil,
       error: "no-device",
       extra: extra
+    )
+  }
+
+  private static func unidentifiedSupportReportDeviceOutcome() -> CommandOutcome {
+    CommandOutcome(
+      plain: """
+      A compatible audio device is connected, but it could not be identified
+      as AirPods or Beats from its model metadata.
+      No report was generated. Nothing was sent to GitHub.
+      You can open a compatibility issue manually:
+      \(SupportReport.repositoryIssuesURL.absoluteString)?template=\(SupportReport.issueTemplateName)
+      """,
+      exitCode: 1,
+      payload: ["error": "unidentified-device", "result": "error"]
+    )
+  }
+
+  private static func noSupportReportDeviceOutcome() -> CommandOutcome {
+    CommandOutcome(
+      plain: """
+      No identifiable AirPods or Beats device is connected.
+      Connect AirPods as a macOS output device and run `airpods-control support-report` again.
+      Nothing was sent to GitHub.
+      """,
+      exitCode: 1,
+      payload: ["error": "no-device", "result": "error"]
     )
   }
 

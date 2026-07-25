@@ -6,6 +6,7 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var conversationAwarenessSupported: Bool?
   var conversationAwarenessEnabled: Bool?
   var appliesConversationAwarenessWrite: Bool
+  var reportMetadata: SupportReportDeviceMetadata
   var listeningModeSetCount = 0
   var conversationAwarenessSetCount = 0
 
@@ -16,7 +17,13 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     appliesListeningModeWrite: Bool = true,
     conversationAwarenessSupported: Bool? = true,
     conversationAwarenessEnabled: Bool? = false,
-    appliesConversationAwarenessWrite: Bool = true
+    appliesConversationAwarenessWrite: Bool = true,
+    reportMetadata: SupportReportDeviceMetadata = SupportReportDeviceMetadata(
+      family: .airPods,
+      modelIdentifier: "AirPodsTest1,1",
+      firmwareVersion: "1.0",
+      connectionState: .connected
+    )
   ) {
     self.name = name
     self.listeningModes = listeningModes
@@ -25,6 +32,11 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     self.conversationAwarenessSupported = conversationAwarenessSupported
     self.conversationAwarenessEnabled = conversationAwarenessEnabled
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
+    self.reportMetadata = reportMetadata
+  }
+
+  func supportReportMetadata() -> SupportReportDeviceMetadata {
+    reportMetadata
   }
 
   func availableListeningModes() -> [ListeningMode] {

@@ -16,6 +16,7 @@ enum CLIResource {
 
 enum CLICommand {
   case version
+  case supportReport
   case listeningModeGet
   case listeningModeSet(ListeningMode)
   case listeningModeList
@@ -27,7 +28,7 @@ enum CLICommand {
 
   var resource: CLIResource? {
     switch self {
-    case .version:
+    case .version, .supportReport:
       return nil
     case .listeningModeGet, .listeningModeSet, .listeningModeList, .listeningModeCycle:
       return .listeningMode
@@ -39,6 +40,7 @@ enum CLICommand {
   var debugName: String {
     switch self {
     case .version: return "version"
+    case .supportReport: return "support-report"
     case .listeningModeGet: return "listening-mode.get"
     case .listeningModeSet: return "listening-mode.set"
     case .listeningModeList: return "listening-mode.list"
@@ -61,12 +63,18 @@ struct CLIParseError: Error {}
 let globalHelp = """
 Usage:
   airpods-control [--device NAME] <resource> <command> [--json] [--debug]
+  airpods-control support-report
   airpods-control --version | -v | version
   airpods-control --help | -h
 
 Resources:
   listening-mode, lm            Read, set, list, or cycle listening modes.
   conversation-awareness, ca    Read or set Conversation Awareness.
+
+Contributor command:
+  support-report
+               Build a local compatibility report. Open a prefilled GitHub
+               issue only after confirmation.
 
 Global options:
   --device NAME
@@ -136,13 +144,27 @@ Options:
   --help, -h   Print this help and exit without accessing the device.
 """
 
+let supportReportHelp = """
+Usage:
+  airpods-control support-report
+
+Builds a local compatibility report by reading existing device and macOS
+metadata. It does not change device settings, interrupt audio, use the
+clipboard, send telemetry, or submit anything.
+
+The command never reads the customizable device name, serial numbers,
+Bluetooth/MAC addresses, account data, or raw system dumps and logs. Check the
+report before choosing whether to open a prefilled GitHub issue.
+"""
+
 func helpText(for rawArgs: [String]) -> String? {
   guard let helpIndex = rawArgs.firstIndex(where: { ["--help", "-h"].contains($0) }) else {
     return nil
   }
 
   let resource = rawArgs[..<helpIndex].first { argument in
-    ["listening-mode", "lm", "conversation-awareness", "ca"].contains(argument)
+    ["listening-mode", "lm", "conversation-awareness", "ca", "support-report"]
+      .contains(argument)
   }
 
   switch resource {
@@ -150,6 +172,8 @@ func helpText(for rawArgs: [String]) -> String? {
     return listeningModeHelp
   case "conversation-awareness", "ca":
     return conversationAwarenessHelp
+  case "support-report":
+    return supportReportHelp
   default:
     return globalHelp
   }
@@ -222,6 +246,22 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       command: .version,
       jsonOutput: jsonOutput,
       debugEnabled: debugEnabled,
+      requestedDeviceName: nil
+    )
+  }
+
+  if positional == ["support-report"] {
+    guard requestedDeviceName == nil,
+          requestedCycleModes == nil,
+          !jsonOutput,
+          !debugEnabled
+    else {
+      throw CLIParseError()
+    }
+    return CLIInvocation(
+      command: .supportReport,
+      jsonOutput: false,
+      debugEnabled: false,
       requestedDeviceName: nil
     )
   }

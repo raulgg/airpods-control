@@ -46,6 +46,9 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .RB [ --debug ]
 .br
 .B airpods-control
+.B support-report
+.br
+.B airpods-control
 .RB [ --version | -v | version ]
 .RB [ --help | -h ]
 .SH DESCRIPTION
@@ -117,6 +120,29 @@ and
 .B no-op
 contract as listening mode.
 .SS GLOBAL
+.TP
+.B support-report
+Build a local compatibility report from existing device and macOS metadata.
+The command reads only the normalized model identifier, firmware when macOS
+exposes it, connection state, advertised known listening modes and their
+current state, Conversation Awareness capability and state when available,
+the macOS version, and the CLI version. Missing data is marked unavailable or
+not reported. The command does not guess it.
+.IP
+It never reads the customizable device name, serial numbers, Bluetooth/MAC
+addresses, account data, or raw system dumps and logs. It does not change
+device settings, interrupt audio, use the clipboard, send telemetry, or submit
+anything.
+.IP
+The command prints the report before asking whether to open a GitHub issue with
+the Markdown template and report body already filled in. The contributor still
+edits and submits the issue. If the encoded URL is too long, the report stays
+in the terminal and the command offers the template without a prefilled body.
+.IP
+If the command cannot identify connected AirPods or Beats, it prints local
+instructions and stops. The CLI has only been verified with AirPods Pro 3.
+Other AirPods may work when macOS exposes the same private audio capabilities.
+Beats reports are welcome, but Beats support has not been verified.
 .TP
 .BR --version ", " -v ", " version
 Print the version and exit.
@@ -192,7 +218,7 @@ device selection, raw state, capability checks, writes, and read-back attempts.
 Success.
 .TP
 .B 1
-No supported AirPods found as the current output device (no-device).
+No supported or identifiable report device was found (no-device).
 .TP
 .B 2
 Missing or malformed arguments (bad-args).
@@ -237,8 +263,19 @@ variants and checks every required selector before invocation. It fails safe
 or
 .BR no-device )
 rather than crashing when selectors are missing.
+.PP
+.B support-report
+accepts no
+.BR --device ,
+.BR --json ,
+or
+.B --debug
+option. The report fields and confirmation prompt are fixed.
 .SH SEE ALSO
 Project documentation: https://github.com/raulgg/airpods-control
+.PP
+Device compatibility:
+https://github.com/raulgg/airpods-control/blob/main/docs/compatibility.md
 .SH AUTHOR
 Raul.
 Not affiliated with Apple. AirPods is a trademark of Apple Inc.

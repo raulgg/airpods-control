@@ -85,7 +85,8 @@ func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
 
 func bootstrapAndSelectAudioDevice(
   named requestedName: String?,
-  logger: DebugLogger
+  logger: DebugLogger,
+  includeDeviceNames: Bool = true
 ) -> (any CompatibleAudioDevice)? {
   ensureBypass(logger: logger)
 
@@ -93,7 +94,11 @@ func bootstrapAndSelectAudioDevice(
     return nil
   }
 
-  return PrivateAudioController(rawDevices: rawDevices, logger: logger)
+  return PrivateAudioController(
+    rawDevices: rawDevices,
+    logger: logger,
+    includeDeviceNames: includeDeviceNames
+  )
     .selectDevice(named: requestedName)
 }
 
@@ -128,6 +133,21 @@ do {
 
 let outcome = CommandExecution.execute(
   invocation,
-  resolveDevice: bootstrapAndSelectAudioDevice
+  resolveDevice: { requestedName, logger in
+    let includeDeviceNames: Bool
+    if case .supportReport = invocation.command {
+      includeDeviceNames = false
+    } else {
+      includeDeviceNames = true
+    }
+    return bootstrapAndSelectAudioDevice(
+      named: requestedName,
+      logger: logger,
+      includeDeviceNames: includeDeviceNames
+    )
+  }
 )
+if case .supportReport = invocation.command {
+  exit(SupportReportInteraction.present(outcome: outcome))
+}
 finish(outcome, jsonOutput: invocation.jsonOutput)

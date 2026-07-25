@@ -6,6 +6,13 @@ requests are welcome.
 ## Before opening an issue
 
 - Search existing issues first.
+- For a compatibility report, connect AirPods and run
+  `airpods-control support-report`. Check the local report before choosing
+  whether to open and edit a GitHub issue.
+- Beats owners can use the same command. We welcome the reports, but have not
+  verified Beats support.
+- Check the [device compatibility matrix](docs/compatibility.md) for verified
+  capabilities and candidates that still need testing.
 - For a bug, include the macOS version, AirPods model, command, expected result,
   actual result, and exit code.
 - Re-run the command with `--debug` when possible and attach stderr. Redact
@@ -38,7 +45,9 @@ must not require AirPods or write device settings.
 
 Test changes to live private-API behavior manually on supported hardware.
 State the macOS version and device in the pull request. Automated tests must
-not write device settings.
+not write device settings. Update
+[`docs/compatibility.md`](docs/compatibility.md) when a hardware check changes
+a device or capability status.
 
 ### Source layout
 

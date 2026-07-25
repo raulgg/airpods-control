@@ -29,6 +29,8 @@ private let setModeSelector = NSSelectorFromString("setCurrentBluetoothListening
 private let supportsCASelector = NSSelectorFromString("supportsConversationDetection")
 private let caEnabledSelector = NSSelectorFromString("isConversationDetectionEnabled")
 private let setCASelector = NSSelectorFromString("setConversationDetectionEnabled:error:")
+private let modelIDSelector = NSSelectorFromString("modelID")
+private let firmwareVersionSelector = NSSelectorFromString("firmwareVersion")
 
 @objc private protocol ListeningModeSetterShim {
   @objc(setCurrentBluetoothListeningMode:error:)
@@ -124,10 +126,44 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     self.logger = logger
   }
 
+  private func allowlistedString(
+    selector: Selector,
+    label: String,
+    maximumLength: Int
+  ) -> String? {
+    guard object.responds(to: selector),
+          let value = object.perform(selector)?.takeUnretainedValue() as? String
+    else {
+      logger.debug("selector.\(label)", "unavailable")
+      return nil
+    }
+    return SupportReport.normalizedMetadataValue(value, maximumLength: maximumLength)
+  }
+
+  func supportReportMetadata() -> SupportReportDeviceMetadata {
+    let modelIdentifier = allowlistedString(
+      selector: modelIDSelector,
+      label: "modelID",
+      maximumLength: SupportReport.maximumModelIdentifierLength
+    )
+    let firmwareVersion = allowlistedString(
+      selector: firmwareVersionSelector,
+      label: "firmwareVersion",
+      maximumLength: SupportReport.maximumFirmwareVersionLength
+    )
+    return SupportReportDeviceMetadata(
+      family: SupportReport.family(for: modelIdentifier),
+      modelIdentifier: modelIdentifier,
+      firmwareVersion: firmwareVersion,
+      connectionState: .connected
+    )
+  }
+
   static func compatible(
     object: AnyObject,
     index: Int,
-    logger: DebugLogger
+    logger: DebugLogger,
+    includeDeviceName: Bool = true
   ) -> PrivateAudioDevice? {
     let requiredSelectors = [nameSelector, availableModesSelector, currentModeSelector]
     for selector in requiredSelectors where !object.responds(to: selector) {
@@ -135,12 +171,18 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       return nil
     }
 
-    guard let nameValue = object.perform(nameSelector)?.takeUnretainedValue(),
-          let name = nameValue as? String,
-          !name.isEmpty
-    else {
-      logger.debug("device.\(index).name", "unavailable")
-      return nil
+    let name: String
+    if includeDeviceName {
+      guard let nameValue = object.perform(nameSelector)?.takeUnretainedValue(),
+            let value = nameValue as? String,
+            !value.isEmpty
+      else {
+        logger.debug("device.\(index).name", "unavailable")
+        return nil
+      }
+      name = value
+    } else {
+      name = ""
     }
 
     guard let modesValue = object.perform(availableModesSelector)?.takeUnretainedValue(),
@@ -148,11 +190,15 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
           !modes.isEmpty
     else {
       logger.debug("device.\(index).compatible", false)
-      logger.debug("device.\(index).name", name)
+      if includeDeviceName {
+        logger.debug("device.\(index).name", name)
+      }
       return nil
     }
 
-    logger.debug("device.\(index).name", name)
+    if includeDeviceName {
+      logger.debug("device.\(index).name", name)
+    }
     logger.debug("device.\(index).compatible", true)
     logger.debug("device.\(index).available_modes", modes.joined(separator: ","))
     return PrivateAudioDevice(object: object, name: name, logger: logger)
@@ -316,11 +362,22 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
 final class PrivateAudioController {
   private let devices: [PrivateAudioDevice]
   private let logger: DebugLogger
+  private let includesDeviceNames: Bool
 
-  init(rawDevices: [AnyObject], logger: DebugLogger) {
+  init(
+    rawDevices: [AnyObject],
+    logger: DebugLogger,
+    includeDeviceNames: Bool = true
+  ) {
     self.logger = logger
+    includesDeviceNames = includeDeviceNames
     devices = rawDevices.enumerated().compactMap { index, object in
-      PrivateAudioDevice.compatible(object: object, index: index, logger: logger)
+      PrivateAudioDevice.compatible(
+        object: object,
+        index: index,
+        logger: logger,
+        includeDeviceName: includeDeviceNames
+      )
     }
     logger.info("compatible_device_count", devices.count)
   }
@@ -331,8 +388,13 @@ final class PrivateAudioController {
         logger.warning("device_selection", "no-compatible-device")
         return nil
       }
-      logger.info("selected_device", selected.name)
+      logger.info("selected_device", includesDeviceNames ? selected.name : "name-not-read")
       return selected
+    }
+
+    guard includesDeviceNames else {
+      logger.warning("device_selection", "name-selection-disabled")
+      return nil
     }
 
     let matches = devices.filter {

@@ -6,6 +6,8 @@ struct DeviceWriteObservation<State> {
 protocol CompatibleAudioDevice {
   var name: String { get }
 
+  func supportReportMetadata() -> SupportReportDeviceMetadata
+
   func availableListeningModes() -> [ListeningMode]
   func currentListeningMode() -> ListeningMode?
   func canSetListeningMode() -> Bool

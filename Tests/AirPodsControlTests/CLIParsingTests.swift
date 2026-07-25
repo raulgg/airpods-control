@@ -40,6 +40,24 @@ func testCLIParsing() {
   expectParseFailure(["lm", "get", "--device"], "missing device name")
   expectParseFailure(["--debug", "--debug", "lm", "get"], "duplicate debug")
   expectParseFailure(["--device", "AirPods", "version"], "device is invalid for version")
+
+  do {
+    let invocation = try parseInvocation(["support-report"])
+    if case .supportReport = invocation.command {
+      check(true, "support-report parses as its contributor command")
+    } else {
+      check(false, "support-report parses as its contributor command")
+    }
+  } catch {
+    check(false, "support-report parses successfully")
+  }
+  expectParseFailure(["support-report", "extra"], "support-report takes no arguments")
+  expectParseFailure(["support-report", "--json"], "support-report rejects JSON output")
+  expectParseFailure(["support-report", "--debug"], "support-report rejects debug output")
+  expectParseFailure(
+    ["--device", "AirPods", "support-report"],
+    "support-report rejects raw-name device selection"
+  )
 }
 
 func testCycleParsing() {
