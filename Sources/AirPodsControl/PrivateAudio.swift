@@ -14,6 +14,7 @@ private let listeningModesByRawValue = Dictionary(
 private let standardWriteReadbackAttempts = 16
 private let offListeningModeReadbackAttempts = 30
 private let privateAudioReadbackDelay: useconds_t = 50_000
+private let listeningModeEffectDelay: useconds_t = 2_000_000
 
 // AVFoundation delivers route-state changes through the main run loop. A
 // blocking sleep can leave the output-device snapshot stale until process exit.
@@ -30,7 +31,6 @@ private let supportsCASelector = NSSelectorFromString("supportsConversationDetec
 private let caEnabledSelector = NSSelectorFromString("isConversationDetectionEnabled")
 private let setCASelector = NSSelectorFromString("setConversationDetectionEnabled:error:")
 private let modelIDSelector = NSSelectorFromString("modelID")
-private let firmwareVersionSelector = NSSelectorFromString("firmwareVersion")
 
 @objc private protocol ListeningModeSetterShim {
   @objc(setCurrentBluetoothListeningMode:error:)
@@ -146,16 +146,14 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       label: "modelID",
       maximumLength: SupportReport.maximumModelIdentifierLength
     )
-    let firmwareVersion = allowlistedString(
-      selector: firmwareVersionSelector,
-      label: "firmwareVersion",
-      maximumLength: SupportReport.maximumFirmwareVersionLength
-    )
+    let unrecognizedModes = availableRawListeningModes().filter {
+      listeningModesByRawValue[$0] == nil
+    }
     return SupportReportDeviceMetadata(
       family: SupportReport.family(for: modelIdentifier),
       modelIdentifier: modelIdentifier,
-      firmwareVersion: firmwareVersion,
-      connectionState: .connected
+      unrecognizedListeningModes: unrecognizedModes,
+      listeningModeQueryAnswered: currentRawListeningMode() != nil
     )
   }
 
@@ -258,6 +256,10 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode> {
     setListeningModeAndReadBack(target, wait: waitForPrivateAudioUpdate)
+  }
+
+  func waitForListeningModeEffect() {
+    waitForPrivateAudioUpdate(listeningModeEffectDelay)
   }
 
   func setListeningModeAndReadBack(
@@ -384,6 +386,10 @@ final class PrivateAudioController {
 
   func selectDevice(named requestedName: String?) -> PrivateAudioDevice? {
     guard let requestedName else {
+      if !includesDeviceNames, devices.count != 1 {
+        logger.warning("device_selection", "unique-name-free-device-required")
+        return nil
+      }
       guard let selected = devices.first else {
         logger.warning("device_selection", "no-compatible-device")
         return nil

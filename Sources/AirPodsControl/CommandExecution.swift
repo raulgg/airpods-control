@@ -25,7 +25,30 @@ enum CommandExecution {
     resolveDevice: (
       _ requestedName: String?,
       _ logger: DebugLogger
-    ) -> (any CompatibleAudioDevice)?
+    ) -> (any CompatibleAudioDevice)?,
+    requestWriteTestConsent: (SupportReportWriteTestPlan) -> Bool = { _ in false }
+  ) -> CommandOutcome {
+    execute(
+      invocation,
+      resolveDevice: resolveDevice,
+      runSupportReportWriteTests: { plan, device in
+        SupportReportWriteTester.runInterruptibly(plan: plan, device: device)
+      },
+      requestWriteTestConsent: requestWriteTestConsent
+    )
+  }
+
+  static func execute(
+    _ invocation: CLIInvocation,
+    resolveDevice: (
+      _ requestedName: String?,
+      _ logger: DebugLogger
+    ) -> (any CompatibleAudioDevice)?,
+    runSupportReportWriteTests: (
+      _ plan: SupportReportWriteTestPlan,
+      _ device: any CompatibleAudioDevice
+    ) -> SupportReportWriteTestResults,
+    requestWriteTestConsent: (SupportReportWriteTestPlan) -> Bool = { _ in false }
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
     logger.debug("cli.command", invocation.command.debugName)
@@ -47,14 +70,38 @@ enum CommandExecution {
     case .version:
       preconditionFailure("version handled before device resolution")
 
-    case .supportReport:
-      guard let report = SupportReport.make(device: device) else {
+    case let .supportReport(writeTestsPreference):
+      // Identify the device before consenting to or running any write.
+      guard let preflightReport = SupportReport.make(device: device) else {
         return unidentifiedSupportReportDeviceOutcome()
+      }
+      let writeTestPlan = SupportReportWriteTestPlan.make(device: device)
+      let runWriteTests: Bool
+      switch writeTestsPreference {
+      case .always: runWriteTests = true
+      case .never: runWriteTests = false
+      case .ask: runWriteTests = requestWriteTestConsent(writeTestPlan)
+      }
+      let writeTests = runWriteTests
+        ? runSupportReportWriteTests(writeTestPlan, device)
+        : nil
+      let report = writeTests.map(preflightReport.including(writeTests:))
+        ?? preflightReport
+      let restoreFailed = writeTests?.fullyRestored == false
+      let interruptedSignal = writeTests?.interruptedBySignal
+      let result = interruptedSignal == nil
+        ? (restoreFailed ? "no-op" : "ok")
+        : "interrupted"
+      var payload: [String: Any] = ["result": result]
+      if let interruptedSignal {
+        payload["signal"] = interruptedSignal
       }
       return CommandOutcome(
         plain: report.markdown,
-        payload: ["result": "ok"],
-        issueDraft: report.issueDraft
+        exitCode: interruptedSignal.map { 128 + $0 }
+          ?? (restoreFailed ? 3 : 0),
+        payload: payload,
+        issueDraft: interruptedSignal == nil ? report.issueDraft : nil
       )
 
     case .listeningModeGet:
@@ -301,8 +348,9 @@ enum CommandExecution {
   private static func noSupportReportDeviceOutcome() -> CommandOutcome {
     CommandOutcome(
       plain: """
-      No identifiable AirPods or Beats device is connected.
-      Connect AirPods as a macOS output device and run `airpods-control support-report` again.
+      No unique AirPods or Beats report device is available.
+      Connect exactly one compatible AirPods or Beats device as a macOS output device,
+      then run `airpods-control support-report` again.
       Nothing was sent to GitHub.
       """,
       exitCode: 1,

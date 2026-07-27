@@ -145,6 +145,9 @@ let outcome = CommandExecution.execute(
       logger: logger,
       includeDeviceNames: includeDeviceNames
     )
+  },
+  requestWriteTestConsent: { plan in
+    SupportReportInteraction.requestWriteTestConsent(plan: plan)
   }
 )
 if case .supportReport = invocation.command {

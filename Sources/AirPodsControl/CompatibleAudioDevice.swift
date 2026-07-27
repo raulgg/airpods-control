@@ -14,6 +14,7 @@ protocol CompatibleAudioDevice {
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode>
+  func waitForListeningModeEffect()
 
   func supportsConversationAwareness() -> Bool?
   func conversationAwarenessState() -> Bool?
@@ -21,4 +22,8 @@ protocol CompatibleAudioDevice {
   func setConversationAwarenessAndReadBack(
     _ target: Bool
   ) -> DeviceWriteObservation<Bool>
+}
+
+extension CompatibleAudioDevice {
+  func waitForListeningModeEffect() {}
 }

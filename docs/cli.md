@@ -12,7 +12,7 @@ airpods-control [--device NAME] listening-mode list [--json] [--debug]
 airpods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
-airpods-control support-report
+airpods-control support-report [--with-write-tests | --no-write-tests]
 airpods-control --version | -v | version
 airpods-control --help | -h
 ```
@@ -37,8 +37,11 @@ position. `--device` uses a case-insensitive exact name match among compatible
 output devices. It never falls back to another device. No match or multiple
 exact matches produce `no-device`.
 
-`support-report` is a separate contributor command. It accepts no options. Its
-Markdown fields and confirmation prompt are fixed.
+`support-report` is a separate contributor command. It accepts only
+`--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
+its write-test consent question in advance. The compatibility-report field
+schema is fixed; the consent prompt and write-test result rows depend on the
+captured device plan and its outcomes.
 
 ## Listening modes
 
@@ -132,39 +135,154 @@ macOS exposes the same private audio capabilities. We have not verified Beats,
 but reports are welcome. The [device compatibility matrix](compatibility.md)
 tracks each command separately.
 
-Connect the device as a macOS output device, then run:
+Connect exactly one compatible AirPods or Beats device as a macOS output
+device, then run:
 
 ```console
 $ airpods-control support-report
+This report can also test write support on your device:
+ - switch through advertised listening modes recognized by this CLI: off, transparency, adaptive (holding each for about two seconds)
+ - restore the captured initial listening mode (noise-cancellation) if needed
+ - toggle Conversation Awareness away from the captured initial state and back
+...
+Run the write tests? [y/N] n
+Write tests skipped. The report below is read-only.
+
 ### Compatibility report
 
 - Device family: AirPods
-- Model identifier: `BTHeadphones76,8231`
+- Model: AirPods Pro 3
+- Model identifier: `BTHeadphones76,8231` (Bluetooth product ID 0x2027)
+- Advertised known listening modes: off, transparency, adaptive, noise-cancellation
+- Other advertised listening modes: none
+- Listening-mode query: answers with a recognized mode
+- Listening-mode setter: exposed, not tested by this report
 ...
+- Write tests: not run
 
 Open a prefilled GitHub issue in your browser? [y/N]
 ```
 
-The command reads only the normalized model identifier, firmware when macOS
-exposes it, connection state, advertised known listening modes and their
-current state, Conversation Awareness capability and state when available, the
-macOS version, and the CLI version. Missing values appear as `unavailable` or
-`unavailable/not reported`. The command does not guess them.
+The read-only compatibility report includes only the normalized model
+identifier, the advertised listening modes, the advertised Conversation
+Awareness capability, whether the listening-mode and Conversation Awareness
+queries answer, whether macOS exposes their setters, the macOS version, and the
+CLI version. The model name is resolved locally: the model identifier embeds
+the Bluetooth product ID, and the CLI maps known product IDs to model names
+(see the [device compatibility matrix](compatibility.md)).
 
-It never reads the customizable device name, serial numbers, Bluetooth/MAC
-addresses, account data, or raw system dumps and logs. It does not change
-settings, interrupt audio, use the clipboard, send telemetry, or submit
-anything.
+An advertised listening mode that this CLI version does not recognize appears
+verbatim under `Other advertised listening modes`, so a report can reveal
+capabilities the CLI does not support yet. At most six are listed, and a mode
+name outside the report's character allowlist is dropped. Missing values appear
+as `unavailable/not reported`. The command does not guess them.
 
-The report appears in the terminal first. The command then asks whether to open
-a GitHub issue with the Markdown template and report body already filled in.
-You still edit and submit the issue. If the encoded URL is too long, the
-command leaves the report in the terminal and offers the template without a
-prefilled body.
+The read-only report says whether queries answer and setters exist, but it does
+not include the setting values returned by those queries and never invokes a
+setter. A consented run reads setting values locally only to plan, verify, and
+restore its writes. If restoration cannot be verified, terminal-only output
+names the final state so it can be restored manually. The prefilled issue omits
+initial-state and restoration identifiers.
 
-If the command cannot identify connected AirPods or Beats, it prints local
-instructions, exits `1`, and stops. Reports from other AirPods and Beats owners
-are welcome, but a report does not make a Beats device supported.
+### Consented write tests
+
+When at least one write test can be planned safely, an interactive
+`support-report` captures the initial settings and advertised capabilities,
+displays that plan, and asks for consent. The default answer is no. Declining
+produces the read-only report, marked `Write tests: not run`. The captured plan
+does not change after it is disclosed. If a setting changes while consent is
+pending, that setting is skipped rather than replaced with a different write.
+
+The listening-mode plan contains the advertised modes recognized by this CLI.
+It attempts each noninitial mode and, if the state changed, restores the
+captured initial mode last. All listening-mode writes are skipped if the setter
+is missing, the initial mode is unreadable or not advertised, or there is no
+alternate recognized advertised mode to test. Each completed listening-mode
+write is held for about two seconds before the next write or before the report
+is printed.
+
+Conversation Awareness is toggled away from the captured initial state and
+back. It is skipped if its setter or initial state is unavailable. Both
+features use the same bounded readback verification as their operational
+commands.
+
+The tests may be disruptive: mode switches are audible, noise control changes
+while the device is worn, and Conversation Awareness toggles briefly. Do not
+run them during a call. Consent only if you accept this.
+
+After normal completion or a setter error, the command makes one best-effort
+restoration attempt if needed. An accepted write whose readback does not verify
+is reported as a `no-op` and does not stop the remaining tests. A setter
+rejection is reported as `setter error` and stops the remaining tests for that
+setting; restoration setter errors and restoration no-ops remain distinct in
+the report.
+
+The terminal always states the restoration outcome. `Initial state restored:
+yes` indicates success; otherwise it names the final state, gives a manual-fix
+hint, and exits `3`. An externally delivered SIGINT or SIGTERM caught during
+the tests stops further writes, attempts restoration first, prints any
+restoration warning, and then exits `130` or `143`, respectively. SIGKILL, a
+process crash, or power loss cannot guarantee restoration. The CLI does not
+generate thread-directed signals; those are outside this process-signal
+guarantee. An interrupted run does not offer or print an issue-draft URL. A
+consented report adds a `Write tests (run with consent)` section:
+
+```console
+$ airpods-control support-report --with-write-tests
+### Compatibility report
+...
+
+### Write tests (run with consent)
+
+- `listening-mode set off`: verified
+- `listening-mode set transparency`: verified
+- `listening-mode set adaptive`: verified
+- `listening-mode set noise-cancellation` (restoration): verified
+- `conversation-awareness set`: verified round trip
+Initial state restored: yes
+...
+```
+
+Terminal output identifies every per-mode verdict and may identify the
+restoration write; it also always includes restoration status. To prevent the
+initial mode from being inferred through result order or an omitted row, the
+prefilled GitHub issue records only that listening-mode write tests ran. It
+keeps the Conversation Awareness verdict but omits named per-mode verdicts,
+restoration status, and the local creation note.
+
+`--with-write-tests` answers the consent question with yes and is the only
+way to run the tests when standard input is not interactive, for example
+under a script. `--no-write-tests` answers it with no. Without a flag, a
+noninteractive run skips the tests and notes the flag on stderr.
+
+It never reads the customizable device name, firmware version, serial numbers,
+Bluetooth/MAC addresses, account data, or raw system dumps and logs. A
+read-only report does not change device settings or intentionally interrupt
+audio. Consented write tests temporarily change the settings in the captured
+plan. Regardless of the write-test choice, the command never uses the
+clipboard, sends telemetry, or submits anything.
+
+Because `support-report` neither reads customizable names nor accepts
+`--device`, it requires exactly one compatible output device. With zero or
+multiple compatible devices it exits `1` before a report, prompt, or write.
+
+After any completed write-test prompt and run, the report appears in the
+terminal before the issue-opening question. You still edit and submit the
+issue. If the encoded URL is too long, the command leaves the report in the
+terminal and offers the template without a prefilled body.
+
+The issue-opening question is asked only when standard input is interactive.
+For a completed run under a script, pipeline, or CI, the command prints the
+report and writes the ready-to-open issue-draft URL to stderr without prompting
+or opening a browser, then returns the report outcome: normally `0`, or `3`
+when consented write tests cannot restore the initial settings. Unless the
+length cap above applies, the URL carries the prefilled issue body, not the
+terminal-only restoration details.
+
+If the command cannot select one unique identifiable AirPods or Beats device,
+it prints local instructions, exits `1`, and stops. Reports from other AirPods
+and Beats owners are welcome, but a report does not make a Beats device
+supported.
 
 ## Target a device
 
@@ -175,6 +293,10 @@ select one explicitly:
 $ airpods-control --device "My AirPods Pro" listening-mode get
 transparency
 ```
+
+`support-report` is the privacy-preserving exception: it does not read device
+names or accept `--device`, so it requires exactly one compatible output
+device.
 
 Names are matched exactly but case-insensitively. Substrings are not accepted,
 so `--device "My"` will not silently select `"My AirPods Pro"`.
@@ -216,7 +338,8 @@ canonical state read during the bounded settling window, the Transparency
 fallback, or JSON `null` when neither applies. Version JSON follows the same
 result convention: `{"result":"ok","version":"0.1.0"}`.
 
-`support-report` does not accept `--json`, `--debug`, or `--device`.
+`support-report` does not accept `--json`, `--debug`, or `--device`. Its only
+options are `--with-write-tests` and `--no-write-tests`.
 
 `-h` and `--help` can appear anywhere. Help takes precedence, exits `0`, and
 never accesses the device. A recognized resource before the flag selects
@@ -260,10 +383,12 @@ contains the final observed canonical mode or `null`.
 | Code | Meaning     | When                                                       |
 | ---- | ----------- | ---------------------------------------------------------- |
 | `0`  | ok          | Command succeeded, including reads and verified writes.    |
-| `1`  | no-device   | No supported or identifiable report device was found.      |
+| `1`  | no-device   | No supported target was selected, or no unique identifiable report device was available. |
 | `2`  | bad-args    | Arguments are missing or malformed.                        |
-| `3`  | no-op       | A write was not verified in the bounded readback window.   |
+| `3`  | no-op       | A write was not verified in the bounded window, or write tests could not restore the initial state. |
 | `4`  | unsupported | The mode or feature is not available on the selected device. |
+| `130` | interrupted | An externally delivered SIGINT was caught during the tests and restoration was attempted. |
+| `143` | terminated | An externally delivered SIGTERM was caught during the tests and restoration was attempted. |
 
 Operational plain stdout uses a single token such as `ok`, `no-op`,
 `no-device`, `unsupported`, or a mode name. `support-report` instead emits its

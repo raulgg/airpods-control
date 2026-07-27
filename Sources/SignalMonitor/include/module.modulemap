@@ -1,0 +1,4 @@
+module SignalMonitor {
+  header "SignalMonitor.h"
+  export *
+}
