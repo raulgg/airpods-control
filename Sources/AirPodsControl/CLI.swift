@@ -14,8 +14,6 @@ enum CLIResource {
   }
 }
 
-// How support-report decides whether to run the consented write tests.
-// .ask defers to an interactive consent prompt once a device is resolved.
 enum WriteTestsPreference {
   case ask
   case always
@@ -156,11 +154,11 @@ let supportReportHelp = """
 Usage:
   airpods-control support-report [--with-write-tests | --no-write-tests]
 
-Builds a local compatibility report by reading existing device and macOS
-metadata. If at least one write test can be planned safely, an interactive run
-first displays the captured plan and asks for consent. Declining produces a
-read-only report. Exactly one compatible output device must be available;
-the command does not read device names or choose arbitrarily among devices.
+Build a local compatibility report from device and macOS metadata. When the
+command can plan at least one write test safely, an interactive run shows the
+plan and asks for consent. Declining produces a read-only report. Exactly one
+compatible output device must be available; the command does not read device
+names or choose arbitrarily among devices.
 
 The optional tests switch through the advertised listening modes recognized by
 this CLI and toggle Conversation Awareness away from the captured initial state
@@ -183,11 +181,11 @@ Options:
                Skip the write tests and the consent question.
 
 A read-only report does not change device settings or intentionally interrupt
-audio. Regardless of the write-test choice, the command never reads the
-customizable device name, firmware version, serial numbers, Bluetooth/MAC
-addresses, account data, or raw system dumps and logs. It also never uses the
-clipboard, sends telemetry, or submits anything. Check the report before
-choosing whether to open a prefilled GitHub issue.
+audio. The command does not read the customizable device name, firmware
+version, serial numbers, Bluetooth/MAC addresses, account data, or raw system
+dumps and logs. It never uses the clipboard, sends telemetry, or submits
+anything. Check the report before choosing whether to open a prefilled GitHub
+issue.
 """
 
 func helpText(for rawArgs: [String]) -> String? {
@@ -328,7 +326,6 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
     )
   }
 
-  // The write-test flags belong to support-report alone.
   guard !withWriteTests, !noWriteTests else { throw CLIParseError() }
 
   guard positional.count >= 2 else { throw CLIParseError() }

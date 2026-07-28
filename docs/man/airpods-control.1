@@ -139,8 +139,9 @@ reported. The command does not guess it.
 The read-only report does not include the setting values returned by the
 queries and never invokes a setter. A consented run reads setting values
 locally only to plan, verify, and restore its writes. If restoration cannot be
-verified, terminal-only output names the final state so it can be restored
-manually.
+verified, the report names the final state so it can be restored manually. The
+prefilled issue includes the same per-mode verdicts but omits the restoration
+outcome.
 .IP
 When at least one write test can be planned safely, an interactive run captures
 the initial settings and advertised capabilities, displays that plan, and asks
@@ -173,12 +174,9 @@ guarantee restoration. The CLI does not generate thread-directed signals;
 those are outside this process-signal guarantee. An interrupted run does not
 offer or print an issue-draft URL.
 .IP
-Terminal output identifies every per-mode verdict, may identify the restoration
-write, and always includes restoration status. To prevent the initial mode from
-being inferred through result order or an omitted row, the prefilled GitHub
-issue records only that listening-mode write tests ran. It keeps the
-Conversation Awareness verdict but omits named per-mode verdicts, restoration
-status, and the local creation note.
+The prefilled GitHub issue includes every per-mode verdict but omits the
+restoration status and local creation note. Neither report labels the row that
+restored the initial state.
 .B --with-write-tests
 answers the consent question with yes and is the only way to run the tests
 noninteractively;
@@ -189,8 +187,8 @@ It never reads the customizable device name, firmware version, serial numbers,
 Bluetooth/MAC addresses, account data, or raw system dumps and logs. A
 read-only report does not change device settings or intentionally interrupt
 audio. Consented write tests temporarily change the settings in the captured
-plan. Regardless of the write-test choice, the command never uses the
-clipboard, sends telemetry, or submits anything.
+plan. The command never uses the clipboard, sends telemetry, or submits
+anything.
 .IP
 Because
 .B support-report
@@ -210,8 +208,8 @@ For a completed run under a script, pipeline, or CI, the command prints the
 report and writes the ready-to-open issue draft URL to standard error without
 prompting or opening a browser, then returns the report outcome: normally 0,
 or 3 if consented write tests could not restore the initial settings. Unless
-the length cap above applies, that URL carries the prefilled issue body, not
-terminal-only restoration details.
+the length cap above applies, that URL carries the report body with write-test
+verdicts but without restoration status.
 .IP
 If the command cannot select one unique identifiable AirPods or Beats device,
 it prints local instructions and stops. The CLI has only been verified with

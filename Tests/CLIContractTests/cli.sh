@@ -81,7 +81,7 @@ assert_contains "$("$CLI" conversation-awareness set on -h)" \
 assert_contains "$("$CLI" --json lm set adaptive --json --help)" \
   'listening-mode set <mode>' "help precedence"
 assert_contains "$("$CLI" support-report --help)" \
-  'Builds a local compatibility report' "support-report help"
+  'Build a local compatibility report' "support-report help"
 assert_contains "$("$CLI" support-report --help)" \
   '--with-write-tests' "support-report consent flag help"
 assert_contains "$("$CLI" support-report --help)" \

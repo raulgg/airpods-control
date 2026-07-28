@@ -107,8 +107,14 @@ func testWriteTesterContinuesAfterNoOp() {
   )
   let report = SupportReport.make(device: device, writeTests: results)
   check(
-    report?.issueDraft.body.contains("state never changed from initial") == false,
-    "the issue body omits the marker that identifies the initial mode"
+    report?.issueDraft.body.contains("- `listening-mode set off`: no-op") == true,
+    "the issue body includes the detailed no-op result"
+  )
+  check(
+    report?.issueDraft.body.contains(
+      "- `listening-mode set noise-cancellation`: verified"
+    ) == true,
+    "the issue body includes the final mode-write result without a restoration label"
   )
 }
 

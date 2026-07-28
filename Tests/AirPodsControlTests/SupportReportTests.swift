@@ -107,6 +107,16 @@ func testSupportReportContentsAndPrivacy() {
     outcome.issueDraft?.body.contains("Created locally by") == false,
     "the issue body omits the local-only footer"
   )
+  check(
+    outcome.issueDraft?.body.hasSuffix(
+      """
+      ### Notes (optional)
+
+      Add any other compatibility details that are safe to publish.
+      """
+    ) == true,
+    "the prefilled issue retains the editable notes section from the issue template"
+  )
 }
 
 func testSupportReportUnavailableValuesAndIdentification() {
@@ -641,6 +651,10 @@ func testSupportReportWriteTestConsent() {
   check(prompt.contains("Run the write tests? [y/N]"), "consent is an explicit question")
   check(prompt.contains("may be disruptive"), "consent warns about disruption")
   check(
+    prompt.contains("After you confirm, the command will run only the checks listed above."),
+    "consent makes the fixed scope clear"
+  )
+  check(
     prompt.contains("best-effort attempt to restore"),
     "consent accurately describes restoration as best effort"
   )
@@ -789,29 +803,51 @@ func testSupportReportWriteTestsCommandFlow() {
     !outcome.plain.contains("Write tests: not run"),
     "a consented report has no not-run marker"
   )
+  let localOnlyFooter =
+    "\n\nCreated locally by `airpods-control support-report`. Check it before submitting."
+  let completeReport = outcome.plain.replacingOccurrences(of: localOnlyFooter, with: "")
+  let issueReport = completeReport.replacingOccurrences(
+    of: "\n\nInitial state restored: yes",
+    with: ""
+  )
+  check(
+    outcome.issueDraft?.body.hasPrefix(issueReport + "\n\n### Notes (optional)") == true,
+    "the prefilled issue contains the write results without restoration status"
+  )
+  check(
+    outcome.issueDraft.map { SupportReport.safeIssueURL(for: $0).prefilled } == true,
+    "a four-mode write report fits in the prefilled issue URL"
+  )
   check(
     outcome.issueDraft?.body.contains("Initial state restored:") == false,
-    "the issue body omits the local restoration status"
+    "the issue body omits the restoration status"
   )
   check(
     outcome.issueDraft?.body.contains(
       "- Listening-mode write tests: run; per-mode verdicts omitted for state privacy"
+    ) == false,
+    "the issue body does not replace detailed write results with a summary"
+  )
+  check(
+    outcome.issueDraft?.body.contains(
+      "- `listening-mode set noise-cancellation`: verified"
     ) == true,
-    "the issue body records the test without state-identifying mode details"
+    "the issue body includes the final mode-write verdict without a restoration label"
   )
   check(
-    outcome.issueDraft?.body.contains("(restoration)") == false,
-    "the issue body does not identify the initial mode through a restoration marker"
-  )
-  check(
-    outcome.issueDraft?.body.contains("`listening-mode set ") == false,
-    "the issue body omits every named mode-result row"
+    outcome.issueDraft?.body.contains("- `listening-mode set off`: verified") == true,
+    "the issue body includes each named mode-result row"
   )
   check(
     outcome.plain.contains(
-      "- `listening-mode set noise-cancellation` (restoration): verified"
+      "- `listening-mode set noise-cancellation`: verified"
     ),
-    "the initial mode is verified only as the completed restoration"
+    "the terminal includes the final mode-write verdict without a restoration label"
+  )
+  check(
+    !outcome.plain.contains("(restoration)")
+      && outcome.issueDraft?.body.contains("(restoration)") == false,
+    "neither report uses a restoration label"
   )
   check(
     outcome.issueDraft?.body.contains("Created locally by") == false,
@@ -861,7 +897,7 @@ func testSupportReportWriteTestsCommandFlow() {
   )
 }
 
-func testSupportReportIssueBodyCannotInferAnUnwrittenInitialMode() {
+func testSupportReportIssueBodyIncludesCompleteModeResults() {
   func issueBody(initialMode: ListeningMode) -> String {
     let device = FakeCompatibleAudioDevice(
       name: "",
@@ -885,16 +921,16 @@ func testSupportReportIssueBodyCannotInferAnUnwrittenInitialMode() {
   let adaptiveInitial = issueBody(initialMode: .adaptive)
 
   check(
-    transparencyInitial == adaptiveInitial,
-    "the issue body is identical when only the unwritten initial mode differs"
+    transparencyInitial != adaptiveInitial,
+    "the issue body preserves the state-dependent mode results shown locally"
   )
   check(
-    !transparencyInitial.contains("`listening-mode set "),
-    "no missing named result can identify the unwritten initial mode"
+    transparencyInitial.contains("- `listening-mode set adaptive`: no-op"),
+    "the issue body includes the attempted alternate mode"
   )
 }
 
-func testSupportReportIssueBodyHidesStateDependentModeSkipReasons() {
+func testSupportReportIssueBodyIncludesStateDependentModeSkipReasons() {
   let device = FakeCompatibleAudioDevice(
     name: "",
     listeningModes: [.off, .transparency, .adaptive],
@@ -910,14 +946,14 @@ func testSupportReportIssueBodyHidesStateDependentModeSkipReasons() {
     "the local report keeps the actionable mode skip reason"
   )
   check(
-    !report.issueDraft.body.contains("initial mode is not advertised"),
-    "the issue draft omits a skip reason that identifies the missing initial mode"
+    report.issueDraft.body.contains("initial mode is not advertised"),
+    "the issue draft includes the actionable mode skip reason"
   )
   check(
-    report.issueDraft.body.contains(
+    !report.issueDraft.body.contains(
       "- Listening-mode write tests: skipped; reason available in local output"
     ),
-    "the issue draft retains a privacy-safe skip marker"
+    "the issue draft does not replace the skip reason with a generic marker"
   )
 }
 
@@ -1235,7 +1271,7 @@ func testSupportReportWriteTestsRestoreFailure() {
   )
   check(
     outcome.issueDraft?.body.contains("Initial state restored:") == false,
-    "a failed restoration remains local rather than entering the issue body"
+    "a failed restoration and manual fix remain terminal-only"
   )
   check(outcome.issueDraft != nil, "a failed restoration still offers the issue draft")
 }
@@ -1308,8 +1344,8 @@ func runSupportReportTests() {
   testSupportReportFamilyFromModelIdentifier()
   testSupportReportWriteTestConsent()
   testSupportReportWriteTestsCommandFlow()
-  testSupportReportIssueBodyCannotInferAnUnwrittenInitialMode()
-  testSupportReportIssueBodyHidesStateDependentModeSkipReasons()
+  testSupportReportIssueBodyIncludesCompleteModeResults()
+  testSupportReportIssueBodyIncludesStateDependentModeSkipReasons()
   testSupportReportRunsOnlyTheConsentedWritePlan()
   testSupportReportSkipsCapabilitiesRemovedDuringConsent()
   testSupportReportSkipsASetterOrSupportRemovedDuringConsent()

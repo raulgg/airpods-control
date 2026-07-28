@@ -144,11 +144,11 @@ struct SupportReport {
       inputs.conversationAwarenessSetterExposed, tested: setterTested
     )
     let writeTestsSummaryLine = writeTests == nil ? "\n- Write tests: not run" : ""
-    let localWriteTestsSection = writeTests.map {
-      "\n\n" + writeTestsSection($0, includeRestoration: true)
+    let renderedWriteTestsSection = writeTests.map {
+      "\n\n" + writeTestsSection($0)
     } ?? ""
-    let issueWriteTestsSection = writeTests.map {
-      "\n\n" + writeTestsSection($0, includeRestoration: false)
+    let localRestorationStatus = writeTests.map {
+      "\n\nInitial state restored: \(restoredValue($0))"
     } ?? ""
 
     let compatibilityReport = """
@@ -167,9 +167,16 @@ struct SupportReport {
     - macOS: \(inputs.macOS)
     - airpods-control: \(VERSION)
     """
-    let markdown = compatibilityReport + localWriteTestsSection
+    let markdown = compatibilityReport + renderedWriteTestsSection
+      + localRestorationStatus
       + "\n\nCreated locally by `airpods-control support-report`. Check it before submitting."
-    let issueBody = compatibilityReport + issueWriteTestsSection
+    let issueBody = compatibilityReport + renderedWriteTestsSection + """
+
+
+    ### Notes (optional)
+
+    Add any other compatibility details that are safe to publish.
+    """
 
     return SupportReport(
       markdown: markdown,
@@ -187,24 +194,11 @@ struct SupportReport {
   }
 
   private static func writeTestsSection(
-    _ results: SupportReportWriteTestResults,
-    includeRestoration: Bool
+    _ results: SupportReportWriteTestResults
   ) -> String {
     var lines: [String] = []
     if let reason = results.modeTestsSkippedReason {
-      if includeRestoration {
-        lines.append("- `listening-mode set`: skipped (\(reason))")
-      } else {
-        lines.append(
-          "- Listening-mode write tests: skipped; "
-            + "reason available in local output"
-        )
-      }
-    } else if !includeRestoration {
-      lines.append(
-        "- Listening-mode write tests: run; "
-          + "per-mode verdicts omitted for state privacy"
-      )
+      lines.append("- `listening-mode set`: skipped (\(reason))")
     } else {
       for result in results.modeResults {
         lines.append(
@@ -215,12 +209,12 @@ struct SupportReport {
         lines.append("- Remaining listening-mode tests: skipped after setter error")
       }
       if let restoration = results.listeningModeRestorationResult {
-        let label = "- `listening-mode set \(restoration.mode.rawValue)`"
-        let context = includeRestoration ? " (restoration)" : ""
-        lines.append("\(label)\(context): \(modeVerdict(restoration))")
+        lines.append(
+          "- `listening-mode set \(restoration.mode.rawValue)`: "
+            + modeVerdict(restoration)
+        )
       }
-      if includeRestoration,
-         results.initialModeTestSkipped,
+      if results.initialModeTestSkipped,
          let initialMode = results.initialListeningMode
       {
         lines.append(
@@ -247,13 +241,11 @@ struct SupportReport {
       lines.append("- `conversation-awareness set`: \(verdict)")
     }
     let section = "### Write tests (run with consent)\n\n" + lines.joined(separator: "\n")
-    guard includeRestoration else { return section }
     let interruption = results.interruptedBySignal.map {
       "\n\nWrite tests interrupted by \(signalName($0)); "
         + "remaining exploratory writes skipped."
     } ?? ""
     return section + interruption
-      + "\n\nInitial state restored: \(restoredValue(results))"
   }
 
   private static func modeVerdict(
@@ -510,7 +502,7 @@ enum SupportReportInteraction {
     changes while the device is worn, and Conversation Awareness toggles
     briefly. Do not run them during a call.
 
-    This plan was captured before the prompt and will not expand after consent.
+    After you confirm, the command will run only the checks listed above.
     If a setting changes while you answer, that setting is skipped. After
     testing, the command makes a best-effort attempt to restore each captured
     initial setting. A setter error stops the remaining tests for that setting.

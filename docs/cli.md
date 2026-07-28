@@ -39,9 +39,8 @@ exact matches produce `no-device`.
 
 `support-report` is a separate contributor command. It accepts only
 `--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
-its write-test consent question in advance. The compatibility-report field
-schema is fixed; the consent prompt and write-test result rows depend on the
-captured device plan and its outcomes.
+its write-test consent question in advance. The report has a fixed set of
+fields. The consent prompt and result rows depend on the device.
 
 ## Listening modes
 
@@ -171,18 +170,17 @@ CLI version. The model name is resolved locally: the model identifier embeds
 the Bluetooth product ID, and the CLI maps known product IDs to model names
 (see the [device compatibility matrix](compatibility.md)).
 
-An advertised listening mode that this CLI version does not recognize appears
-verbatim under `Other advertised listening modes`, so a report can reveal
-capabilities the CLI does not support yet. At most six are listed, and a mode
-name outside the report's character allowlist is dropped. Missing values appear
-as `unavailable/not reported`. The command does not guess them.
+Unknown advertised listening modes appear verbatim under `Other advertised
+listening modes`. The report lists at most six and drops names outside its
+character allowlist. Missing values appear as `unavailable/not reported`. The
+command does not guess them.
 
 The read-only report says whether queries answer and setters exist, but it does
 not include the setting values returned by those queries and never invokes a
 setter. A consented run reads setting values locally only to plan, verify, and
-restore its writes. If restoration cannot be verified, terminal-only output
-names the final state so it can be restored manually. The prefilled issue omits
-initial-state and restoration identifiers.
+restore its writes. If restoration cannot be verified, the report names the
+final state so it can be restored manually. The prefilled issue includes the
+same per-mode verdicts but omits the restoration outcome.
 
 ### Consented write tests
 
@@ -237,18 +235,15 @@ $ airpods-control support-report --with-write-tests
 - `listening-mode set off`: verified
 - `listening-mode set transparency`: verified
 - `listening-mode set adaptive`: verified
-- `listening-mode set noise-cancellation` (restoration): verified
+- `listening-mode set noise-cancellation`: verified
 - `conversation-awareness set`: verified round trip
 Initial state restored: yes
 ...
 ```
 
-Terminal output identifies every per-mode verdict and may identify the
-restoration write; it also always includes restoration status. To prevent the
-initial mode from being inferred through result order or an omitted row, the
-prefilled GitHub issue records only that listening-mode write tests ran. It
-keeps the Conversation Awareness verdict but omits named per-mode verdicts,
-restoration status, and the local creation note.
+The prefilled GitHub issue includes every per-mode verdict but omits the
+restoration status and local creation note. Neither report labels the row that
+restored the initial state.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example
@@ -259,25 +254,25 @@ It never reads the customizable device name, firmware version, serial numbers,
 Bluetooth/MAC addresses, account data, or raw system dumps and logs. A
 read-only report does not change device settings or intentionally interrupt
 audio. Consented write tests temporarily change the settings in the captured
-plan. Regardless of the write-test choice, the command never uses the
-clipboard, sends telemetry, or submits anything.
+plan. The command never uses the clipboard, sends telemetry, or submits
+anything.
 
-Because `support-report` neither reads customizable names nor accepts
-`--device`, it requires exactly one compatible output device. With zero or
-multiple compatible devices it exits `1` before a report, prompt, or write.
+`support-report` does not read customizable names or accept `--device`, so it
+requires exactly one compatible output device. With zero or multiple compatible
+devices it exits `1` before a report, prompt, or write.
 
-After any completed write-test prompt and run, the report appears in the
-terminal before the issue-opening question. You still edit and submit the
-issue. If the encoded URL is too long, the command leaves the report in the
-terminal and offers the template without a prefilled body.
+After the write-test prompt and any tests finish, the report appears in the
+terminal before the issue-opening question. You still edit and submit the issue.
+If the encoded URL is too long, the command leaves the report in the terminal
+and offers the template without a prefilled body.
 
 The issue-opening question is asked only when standard input is interactive.
 For a completed run under a script, pipeline, or CI, the command prints the
 report and writes the ready-to-open issue-draft URL to stderr without prompting
 or opening a browser, then returns the report outcome: normally `0`, or `3`
 when consented write tests cannot restore the initial settings. Unless the
-length cap above applies, the URL carries the prefilled issue body, not the
-terminal-only restoration details.
+length cap above applies, the URL carries the report body with write-test
+verdicts but without restoration status.
 
 If the command cannot select one unique identifiable AirPods or Beats device,
 it prints local instructions, exits `1`, and stops. Reports from other AirPods
@@ -294,9 +289,8 @@ $ airpods-control --device "My AirPods Pro" listening-mode get
 transparency
 ```
 
-`support-report` is the privacy-preserving exception: it does not read device
-names or accept `--device`, so it requires exactly one compatible output
-device.
+Unlike operational commands, `support-report` does not read device names or
+accept `--device`. It requires exactly one compatible output device.
 
 Names are matched exactly but case-insensitively. Substrings are not accepted,
 so `--device "My"` will not silently select `"My AirPods Pro"`.

@@ -50,10 +50,6 @@ struct SupportReportWriteTestPlan {
     conversationAwarenessSkippedReason == nil
   }
 
-  var hasWrites: Bool {
-    willTestListeningModes || willTestConversationAwareness
-  }
-
   static func make(device: any CompatibleAudioDevice) -> SupportReportWriteTestPlan {
     let advertised = Set(device.availableListeningModes())
     let orderedModes = ListeningMode.allCases.filter { advertised.contains($0) }

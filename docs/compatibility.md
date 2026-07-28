@@ -31,15 +31,13 @@ We have tested the existing CLI commands on AirPods Pro 3. We have not yet run
 
 ## Candidates pending verification
 
-These devices are worth testing because Apple or Beats documents listening
-modes similar to those used by the CLI. We do not yet know whether macOS
-exposes those controls through the same private API.
+Apple or Beats documents listening modes for these devices, but we do not know
+whether macOS exposes the controls through the same private API.
 
 ### AirPods
 
-AirPods come first on the test list. Apple gives some hardware variants
-different model identifiers, so we track them separately in case macOS exposes
-them differently.
+Apple gives some AirPods hardware variants different model identifiers. The
+table tracks them separately in case macOS exposes them differently.
 
 | Model | Model identifiers | Bluetooth product ID | Documented capabilities | Status |
 | --- | --- | --- | --- | --- |
@@ -89,10 +87,10 @@ real-device reports to see what the private macOS interface returns.
 | Beats Studio Buds | A2512, A2513, A2514 | 0x2011 | ANC and Transparency listening modes | Exploratory |
 | Beats Studio3 Wireless | A1914 | 0x2009 | Pure ANC can be switched on and off, but Transparency is not documented | Exploratory |
 
-The first round of testing does not include models without documented listening
-modes, such as AirPods 1 through 3, AirPods 4 without ANC, Beats Solo 4, Beats
-Solo Buds, and Powerbeats Pro 1. If macOS unexpectedly exposes compatible
-controls for one of them, its report is still useful.
+The table omits models without documented listening modes, such as AirPods 1
+through 3, AirPods 4 without ANC, Beats Solo 4, Beats Solo Buds, and Powerbeats
+Pro 1. A report is still useful if macOS exposes compatible controls for one of
+them.
 
 The CLI currently selects only devices for which macOS reports available
 listening modes and a current mode. It checks Conversation Awareness after
@@ -130,10 +128,10 @@ then exits `130` or `143`, respectively.
 
 Mark a write capability as **Verified** only from an individual `verified`
 verdict, not a `no-op` or `setter error`, or after testing the command manually
-on real hardware and recording the device and macOS version. Named
-listening-mode verdicts and restoration status stay in terminal output; the
-prefilled issue records only that those tests ran, so the captured initial mode
-cannot be inferred from result order or a missing row.
+on real hardware and recording the device and macOS version. The prefilled
+issue includes the same named listening-mode verdicts but omits the restoration
+outcome. Mode-result rows do not explicitly label which write restored the
+initial state.
 
 If the report says the model is not recognized by this CLI version, the model
 identifier line still carries the decoded Bluetooth product ID whenever the
