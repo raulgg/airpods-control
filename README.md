@@ -158,9 +158,9 @@ To share compatibility details:
    submit it.
 
 The report is built locally and shown to you before anything else happens. It
-contains only a fixed set of compatibility metadata; it never reads the
+contains only a fixed set of compatibility metadata. It never reads the
 customizable device name, firmware version, serial numbers, Bluetooth/MAC
-addresses, account data, or raw logs and system dumps, and it never uses the
+addresses, account data, or raw logs and system dumps. It never uses the
 clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub
 issue is always your explicit choice. The
 [CLI reference](docs/cli.md#contributor-compatibility-report) documents the
@@ -169,12 +169,12 @@ exact report contents and privacy rules.
 The optional write tests run only with your consent (the interactive question
 or `--with-write-tests`). They temporarily switch through the advertised
 listening modes recognized by this CLI, toggle Conversation Awareness, and
-then make a best-effort attempt to restore the captured initial settings; the
-terminal names the final state whenever restoration cannot be verified. The
-tests can be disruptive: mode switches are audible and noise control changes
-while the device is worn, so do not run them during a call, and consent only
-if you accept that. Without consent, `support-report` does not change device
-settings or intentionally interrupt audio. See the
+then try to restore the captured initial settings. The terminal names the
+final state whenever restoration cannot be verified. The tests may be
+disruptive: mode switches are audible and noise control changes while the
+device is worn. Do not run them during a call. Consent only if you accept
+this. Without consent, `support-report` does not change device settings or
+intentionally interrupt audio. See the
 [CLI reference](docs/cli.md#consented-write-tests) for the exact plan, skip
 rules, verdict vocabulary, restoration behavior, and exit codes.
 

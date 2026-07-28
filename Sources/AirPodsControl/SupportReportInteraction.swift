@@ -47,8 +47,8 @@ enum SupportReportInteraction {
 
     After you confirm, the command will run only the checks listed above.
     If a setting changes while you answer, that setting is skipped. After
-    testing, the command makes a best-effort attempt to restore each captured
-    initial setting. A setter error stops the remaining tests for that setting.
+    testing, the command tries to restore each captured initial setting.
+    A setter error stops the remaining tests for that setting.
     The report always states the restoration outcome and names the final state
     when restoration is unverified. Answer yes only if you accept this.
 

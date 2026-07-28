@@ -20,7 +20,7 @@ func testSupportReportWriteTestConsent() {
     "consent makes the fixed scope clear"
   )
   check(
-    prompt.contains("best-effort attempt to restore"),
+    prompt.contains("tries to restore"),
     "consent accurately describes restoration as best effort"
   )
   check(

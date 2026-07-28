@@ -208,8 +208,8 @@ The tests may be disruptive: mode switches are audible, noise control changes
 while the device is worn, and Conversation Awareness toggles briefly. Do not
 run them during a call. Consent only if you accept this.
 
-After normal completion or a setter error, the command makes one best-effort
-restoration attempt if needed. An accepted write whose readback does not verify
+After normal completion or a setter error, the command makes one restoration
+attempt if needed. An accepted write whose readback does not verify
 is reported as a `no-op` and does not stop the remaining tests. A setter
 rejection is reported as `setter error` and stops the remaining tests for that
 setting; restoration setter errors and restoration no-ops remain distinct in

@@ -167,8 +167,8 @@ cannot be restored safely, that setting is skipped without writing. The tests
 can be disruptive: mode switches are audible and noise control changes while
 the device is worn.
 
-After normal completion or a setter error, the command makes a best-effort
-restoration attempt. An unverified restoration reports the final state and
+After normal completion or a setter error, the command makes one restoration
+attempt. An unverified restoration reports the final state and
 exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the
 tests prints an interrupt notice on stderr, attempts restoration first, then
 exits 129, 130, or 143, respectively, without offering an issue draft.
