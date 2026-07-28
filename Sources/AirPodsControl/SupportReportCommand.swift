@@ -1,8 +1,6 @@
 import Foundation
 
-// The support-report workflow: identify the device, plan the write tests,
-// resolve consent, run what was consented to, and render the captured
-// snapshot into a command outcome. Like every command it only returns that
+// The support-report workflow. Like every command it only returns an
 // outcome; prompting, printing, and process exit stay outside execution.
 struct SupportReportCommand {
   let requestWriteTestConsent: (SupportReportWriteTestPlan) -> Bool
@@ -28,8 +26,6 @@ struct SupportReportCommand {
     self.runWriteTests = runWriteTests
   }
 
-  // How a report run ended, derived once from the write-test results. A run
-  // without write tests always completes.
   private enum Disposition {
     case completed
     case restorationFailed

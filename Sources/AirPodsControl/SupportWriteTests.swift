@@ -52,8 +52,7 @@ struct SupportReportWriteTestPlan {
     conversationAwarenessSkippedReason == nil
   }
 
-  // Marks every capability that would still run as skipped for the given
-  // reason, preserving the more specific reasons recorded by planning.
+  // Preserves the more specific reasons already recorded by planning.
   func skippingAll(reason: String) -> SupportReportWriteTestPlan {
     SupportReportWriteTestPlan(
       initialListeningMode: initialListeningMode,
@@ -115,9 +114,6 @@ struct SupportReportWriteTestPlan {
   }
 }
 
-// One bounded write-and-readback attempt: whether the setter accepted the
-// request and whether the state observed within the settling window matched
-// the requested value.
 struct WriteAttempt<State: Equatable> {
   let setterAccepted: Bool
   let verified: Bool
@@ -134,24 +130,18 @@ extension WriteAttempt {
   }
 }
 
-// The exclusive outcome of one capability's write tests: either nothing was
-// written for the stated reason, or the tests ran and produced a result.
 enum CapabilityWriteTestOutcome<Run> {
   case skipped(reason: String)
   case ran(Run)
 }
 
-// Whether a capability's state needed a restoration write after its tests.
 enum RestorationOutcome<Attempt> {
-  // The readback never left the captured initial state, so no restoration
-  // write ran.
+  // The readback never left the initial state, so no restoration write ran.
   case stateNeverChanged
   case attempted(Attempt)
 }
 
 struct SupportReportWriteTestResults {
-  // One tested listening mode: the write attempt plus the context needed to
-  // qualify its verdict.
   struct ListeningModeTest {
     let mode: ListeningMode
     let write: WriteAttempt<ListeningMode>
@@ -199,8 +189,6 @@ struct SupportReportWriteTestResults {
     }
   }
 
-  // Records a signal that surfaced only after the final checkpoint, when
-  // every write and restoration attempt had already finished.
   func recordingLateSignal(_ signalNumber: Int32?) -> SupportReportWriteTestResults {
     guard interruptedBySignal == nil, let signalNumber else { return self }
     return SupportReportWriteTestResults(
@@ -212,15 +200,13 @@ struct SupportReportWriteTestResults {
 }
 
 enum SupportReportWriteTester {
-  // Announced on stderr so an interrupted run shows feedback before the
-  // remaining holds and restoration writes, without touching the stdout
-  // report contract.
+  // On stderr: an interrupted run needs feedback before the remaining holds
+  // and restoration writes, and stdout carries the report.
   static let interruptionNotice =
     "Interrupt caught; restoring initial settings...\n"
 
-  // Each accepted mode write is held so a wearer can hear the change before
-  // the next write — the "about two seconds" promised by the consent prompt
-  // and the docs.
+  // Held so a wearer hears each change: the "about two seconds" the consent
+  // prompt and the docs promise.
   static let listeningModeHold: TimeInterval = 2
 
   static func run(device: any CompatibleAudioDevice) -> SupportReportWriteTestResults {
@@ -234,9 +220,8 @@ enum SupportReportWriteTester {
     writeError: (String) -> Void = { fputs($0, stderr) }
   ) -> SupportReportWriteTestResults {
     var interruptedBySignal: Int32?
-    // Checkpoint: polls for a termination signal until one is latched. The
-    // nil guard makes the nil-to-signal transition unique, so the notice is
-    // written exactly once, before any restoration write that follows.
+    // The nil guard makes the nil-to-signal transition unique, so the notice
+    // is written exactly once, before any restoration write that follows.
     func observeInterruption() -> Int32? {
       if interruptedBySignal == nil {
         interruptedBySignal = interruptionSignal()
@@ -288,9 +273,7 @@ enum SupportReportWriteTester {
     return results.recordingLateSignal(monitor.disarm())
   }
 
-  // Revalidates the consented plan against the live device, walks the
-  // noninitial advertised modes, and restores the initial mode if the state
-  // moved. Early returns keep skipping and running mutually exclusive.
+  // Revalidates the consented plan against the live device before writing.
   private static func testListeningModes(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
@@ -359,8 +342,7 @@ enum SupportReportWriteTester {
     )
   }
 
-  // Revalidates the consented plan, toggles Conversation Awareness away from
-  // the captured initial state, and writes it back if the state moved.
+  // Revalidates the consented plan against the live device before writing.
   private static func testConversationAwareness(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
