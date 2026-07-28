@@ -50,8 +50,12 @@ func testWriteTesterVerifiesAndRestores() {
   check(results.fullyRestored, "a fully applying device reports full restoration")
   check(device.listeningModeSetCount == 4, "each advertised mode is written once")
   check(
-    device.listeningModeEffectWaitCount == 4,
+    device.settleIntervals.count == 4,
     "each accepted mode is held before the next write"
+  )
+  check(
+    device.settleIntervals.allSatisfy { $0 == 2 },
+    "each mode is held for the documented two seconds"
   )
   check(
     device.conversationAwarenessSetCount == 2,
@@ -71,6 +75,7 @@ func testWriteTesterContinuesAfterNoOp() {
   device.listeningModeWriteOverride = {
     $0 == .off ? .transparency : $0
   }
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
   let modeRun = results.listeningModes.testRun
 
@@ -94,7 +99,7 @@ func testWriteTesterContinuesAfterNoOp() {
     "restoration is recorded separately from exploratory tests"
   )
   check(
-    device.listeningModeEffectWaitCount == 3,
+    device.settleIntervals.count == 3,
     "an accepted no-op is still held before testing the next mode"
   )
   check(
@@ -109,15 +114,15 @@ func testWriteTesterContinuesAfterNoOp() {
     results.conversationAwareness.testRun?.restored == true,
     "an unchanged Conversation Awareness state counts as restored"
   )
-  let report = SupportReport.make(device: device, writeTests: results)
+  let report = SupportReport.render(snapshot, writeTests: results)
   check(
-    report?.issueDraft.body.contains("- `listening-mode set off`: no-op") == true,
+    report.issueDraft.body.contains("- `listening-mode set off`: no-op"),
     "the issue body includes the detailed no-op result"
   )
   check(
-    report?.issueDraft.body.contains(
+    report.issueDraft.body.contains(
       "- `listening-mode set noise-cancellation`: verified"
-    ) == true,
+    ),
     "the issue body includes the final mode-write result without a restoration label"
   )
 }
@@ -134,6 +139,7 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
   device.listeningModeWriteOverride = {
     $0 == .off ? .transparency : $0
   }
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
   let modeRun = results.listeningModes.testRun
 
@@ -155,7 +161,7 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
     "restoration only runs from a different state, so it is never flagged"
   )
 
-  let body = SupportReport.make(device: device, writeTests: results)?.issueDraft.body ?? ""
+  let body = SupportReport.render(snapshot, writeTests: results).issueDraft.body
   check(
     body.contains(
       "- `listening-mode set transparency`: "
@@ -181,7 +187,7 @@ func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
     appliesListeningModeWrite: false,
     conversationAwarenessSupported: false
   )
-  device.listeningModeEffect = {
+  device.settleEffect = {
     device.listeningMode = device.lastListeningModeTarget
   }
 
@@ -199,7 +205,7 @@ func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
     "the initial mode is verified only after its restoration hold"
   )
   check(
-    device.listeningModeEffectWaitCount == 2,
+    device.settleIntervals.count == 2,
     "the tester waits for both the exploratory transition and final restoration"
   )
   check(
@@ -217,6 +223,7 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
   )
   device.listeningModeSetterAccepted = { $0 != .adaptive }
 
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
   let modeRun = results.listeningModes.testRun
 
@@ -233,7 +240,7 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
     "a setter error is followed only by one restoration attempt"
   )
   check(
-    device.listeningModeEffectWaitCount == 3,
+    device.settleIntervals.count == 3,
     "the accepted test, rejected test, and restoration are all held"
   )
   check(
@@ -244,7 +251,7 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
     modeRun?.restoration.attempted?.mode == .noiseCancellation,
     "restoration is recorded after the interrupted tests"
   )
-  let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
+  let report = SupportReport.render(snapshot, writeTests: results).markdown
   check(
     report.contains("- `listening-mode set adaptive`: setter error"),
     "the report distinguishes a setter error from a no-op"
@@ -264,8 +271,9 @@ func testWriteTesterReportsConversationAwarenessSetterError() {
   )
   device.conversationAwarenessSetterAccepted = { _ in false }
 
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
+  let report = SupportReport.render(snapshot, writeTests: results).markdown
 
   check(
     device.conversationAwarenessSetCount == 1,
@@ -286,8 +294,9 @@ func testWriteTesterReportsConversationAwarenessRestorationSetterError() {
   )
   device.conversationAwarenessSetterAccepted = { target in target }
 
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
+  let report = SupportReport.render(snapshot, writeTests: results).markdown
 
   check(
     results.conversationAwareness.testRun?.restored == false,
@@ -405,12 +414,13 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
     conversationAwarenessEnabled: false
   )
   var caughtSignal: Int32?
-  device.listeningModeEffect = {
+  device.settleEffect = {
     if device.listeningModeSetCount == 1 {
       caughtSignal = SIGINT
     }
   }
 
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let plan = SupportReportWriteTestPlan.make(device: device)
   let results = SupportReportWriteTester.run(
     plan: plan,
@@ -418,7 +428,7 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
     interruptionSignal: { caughtSignal },
     writeError: { _ in }
   )
-  let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
+  let report = SupportReport.render(snapshot, writeTests: results).markdown
 
   check(
     results.interruptedBySignal == SIGINT,
@@ -463,7 +473,7 @@ func testRunInterruptiblyRestoresAfterARealSignalDuringModeHold() {
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false
   )
-  device.listeningModeEffect = {
+  device.settleEffect = {
     if device.listeningModeSetCount == 1 {
       check(
         kill(getpid(), SIGINT) == 0,
@@ -651,7 +661,7 @@ func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
   var caughtSignal: Int32?
   var notices: [String] = []
   var noticesBeforeRestorationWrite: Int?
-  device.listeningModeEffect = {
+  device.settleEffect = {
     if device.listeningModeSetCount == 1 {
       caughtSignal = SIGINT
     }
@@ -698,7 +708,7 @@ func testWriteTesterInterruptionNoticeDefaultsToStandardError() {
     conversationAwarenessSupported: false
   )
   var caughtSignal: Int32?
-  device.listeningModeEffect = { caughtSignal = SIGINT }
+  device.settleEffect = { caughtSignal = SIGINT }
 
   guard let capture = tmpfile() else {
     check(false, "a temporary stderr capture file can be created")

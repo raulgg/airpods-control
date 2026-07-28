@@ -1,3 +1,5 @@
+import Foundation
+
 extension SupportReportDeviceMetadata {
   // Defaults to AirPods Pro 3 (`BTHeadphones76,8231`, Bluetooth product ID
   // 0x2027), the verified baseline device. Tests pass only the fields they
@@ -33,11 +35,12 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   // When set, a listening-mode write lands on the returned mode instead of
   // the requested one (nil = the device reports no mode after the write).
   var listeningModeWriteOverride: ((ListeningMode) -> ListeningMode?)?
-  var listeningModeEffect: (() -> Void)?
+  // Runs on each settle, simulating state that changes during the hold.
+  var settleEffect: (() -> Void)?
   var conversationAwarenessStateEffect: (() -> Void)?
   var lastListeningModeTarget: ListeningMode?
   var listeningModeSetCount = 0
-  var listeningModeEffectWaitCount = 0
+  var settleIntervals: [TimeInterval] = []
   var conversationAwarenessSetCount = 0
 
   init(
@@ -98,9 +101,9 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     )
   }
 
-  func waitForListeningModeEffect() {
-    listeningModeEffectWaitCount += 1
-    listeningModeEffect?()
+  func settle(for interval: TimeInterval) {
+    settleIntervals.append(interval)
+    settleEffect?()
   }
 
   func supportsConversationAwareness() -> Bool? {

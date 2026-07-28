@@ -26,29 +26,7 @@ enum CommandExecution {
       _ requestedName: String?,
       _ logger: DebugLogger
     ) -> (any CompatibleAudioDevice)?,
-    requestWriteTestConsent: (SupportReportWriteTestPlan) -> Bool = { _ in false }
-  ) -> CommandOutcome {
-    execute(
-      invocation,
-      resolveDevice: resolveDevice,
-      runSupportReportWriteTests: { plan, device in
-        SupportReportWriteTester.runInterruptibly(plan: plan, device: device)
-      },
-      requestWriteTestConsent: requestWriteTestConsent
-    )
-  }
-
-  static func execute(
-    _ invocation: CLIInvocation,
-    resolveDevice: (
-      _ requestedName: String?,
-      _ logger: DebugLogger
-    ) -> (any CompatibleAudioDevice)?,
-    runSupportReportWriteTests: (
-      _ plan: SupportReportWriteTestPlan,
-      _ device: any CompatibleAudioDevice
-    ) -> SupportReportWriteTestResults,
-    requestWriteTestConsent: (SupportReportWriteTestPlan) -> Bool = { _ in false }
+    supportReport: SupportReportCommand = SupportReportCommand()
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
     logger.debug("cli.command", invocation.command.debugName)
@@ -71,38 +49,7 @@ enum CommandExecution {
       preconditionFailure("version handled before device resolution")
 
     case let .supportReport(writeTestsPreference):
-      // Identify the device before consenting to or running any write.
-      guard let preflightReport = SupportReport.make(device: device) else {
-        return unidentifiedSupportReportDeviceOutcome()
-      }
-      let writeTestPlan = SupportReportWriteTestPlan.make(device: device)
-      let runWriteTests: Bool
-      switch writeTestsPreference {
-      case .always: runWriteTests = true
-      case .never: runWriteTests = false
-      case .ask: runWriteTests = requestWriteTestConsent(writeTestPlan)
-      }
-      let writeTests = runWriteTests
-        ? runSupportReportWriteTests(writeTestPlan, device)
-        : nil
-      let report = writeTests.map(preflightReport.including(writeTests:))
-        ?? preflightReport
-      let restoreFailed = writeTests?.fullyRestored == false
-      let interruptedSignal = writeTests?.interruptedBySignal
-      let result = interruptedSignal == nil
-        ? (restoreFailed ? "no-op" : "ok")
-        : "interrupted"
-      var payload: [String: Any] = ["result": result]
-      if let interruptedSignal {
-        payload["signal"] = interruptedSignal
-      }
-      return CommandOutcome(
-        plain: report.markdown,
-        exitCode: interruptedSignal.map { 128 + $0 }
-          ?? (restoreFailed ? 3 : 0),
-        payload: payload,
-        issueDraft: interruptedSignal == nil ? report.issueDraft : nil
-      )
+      return supportReport.outcome(writeTests: writeTestsPreference, device: device)
 
     case .listeningModeGet:
       let mode = device.currentListeningMode()
@@ -308,7 +255,7 @@ enum CommandExecution {
 
   private static func noDeviceOutcome(for command: CLICommand) -> CommandOutcome {
     if case .supportReport = command {
-      return noSupportReportDeviceOutcome()
+      return SupportReportCommand.noDeviceOutcome()
     }
     guard let resource = command.resource else {
       preconditionFailure("version does not require a device")
@@ -328,33 +275,6 @@ enum CommandExecution {
       state: nil,
       error: "no-device",
       extra: extra
-    )
-  }
-
-  private static func unidentifiedSupportReportDeviceOutcome() -> CommandOutcome {
-    CommandOutcome(
-      plain: """
-      A compatible audio device is connected, but it could not be identified
-      as AirPods or Beats from its model metadata.
-      No report was generated. Nothing was sent to GitHub.
-      You can open a compatibility issue manually:
-      \(SupportReport.repositoryIssuesURL.absoluteString)?template=\(SupportReport.issueTemplateName)
-      """,
-      exitCode: 1,
-      payload: ["error": "unidentified-device", "result": "error"]
-    )
-  }
-
-  private static func noSupportReportDeviceOutcome() -> CommandOutcome {
-    CommandOutcome(
-      plain: """
-      No unique AirPods or Beats report device is available.
-      Connect exactly one compatible AirPods or Beats device as a macOS output device,
-      then run `airpods-control support-report` again.
-      Nothing was sent to GitHub.
-      """,
-      exitCode: 1,
-      payload: ["error": "no-device", "result": "error"]
     )
   }
 

@@ -10,7 +10,7 @@ func testSupportReportContentsAndPrivacy() {
     conversationAwarenessEnabled: false,
     reportMetadata: .fixture()
   )
-  let report = SupportReport.make(
+  let report = passiveSupportReport(
     device: device,
     operatingSystemVersion: OperatingSystemVersion(
       majorVersion: 26,
@@ -129,7 +129,7 @@ func testSupportReportUnavailableValuesAndIdentification() {
   )
   unavailable.exposesListeningModeSetter = false
   unavailable.exposesConversationAwarenessSetter = false
-  let report = SupportReport.make(device: unavailable)
+  let report = passiveSupportReport(device: unavailable)
   let markdown = report?.markdown ?? ""
   check(report != nil, "an identifiable Beats device produces an exploratory report")
   check(markdown.contains("Beats (exploratory)"), "Beats report is marked exploratory")
@@ -175,7 +175,7 @@ func testSupportReportUnavailableValuesAndIdentification() {
     )
   )
   check(
-    SupportReport.make(device: unidentified) == nil,
+    SupportReportSnapshot.capture(device: unidentified) == nil,
     "unidentifiable hardware does not produce an issue report"
   )
 
@@ -205,7 +205,7 @@ func testSupportReportFencesDeviceControlledText() {
       unrecognizedListeningModes: ["www.evil.example/mode"]
     )
   )
-  let markdown = SupportReport.make(device: hostile)?.markdown ?? ""
+  let markdown = passiveSupportReport(device: hostile)?.markdown ?? ""
   check(
     markdown.contains("Model identifier: `airpods www.evil.example/x`"),
     "device-controlled model text is fenced against markdown autolinks"
@@ -222,8 +222,8 @@ func testSupportReportFencesDeviceControlledText() {
     )
   )
   check(
-    SupportReport.make(device: unnormalized) == nil,
-    "make itself rejects metadata that escapes the allowlist"
+    SupportReportSnapshot.capture(device: unnormalized) == nil,
+    "capture itself rejects metadata that escapes the allowlist"
   )
 
   let hostileModes = FakeCompatibleAudioDevice(
@@ -232,7 +232,7 @@ func testSupportReportFencesDeviceControlledText() {
       unrecognizedListeningModes: ["mode` [CLICK](http://evil.example) `x"]
     )
   )
-  let hostileModesMarkdown = SupportReport.make(device: hostileModes)?.markdown ?? ""
+  let hostileModesMarkdown = passiveSupportReport(device: hostileModes)?.markdown ?? ""
   check(
     hostileModesMarkdown.contains("Other advertised listening modes: none"),
     "a mode name that escapes the allowlist is dropped, not printed"
@@ -248,7 +248,7 @@ func testSupportReportUnrecognizedListeningModes() {
       unrecognizedListeningModes: ["AVOutputDeviceBluetoothListeningModeHearingAid"]
     )
   )
-  let markdown = SupportReport.make(device: device)?.markdown ?? ""
+  let markdown = passiveSupportReport(device: device)?.markdown ?? ""
   check(
     markdown.contains(
       "Other advertised listening modes: `AVOutputDeviceBluetoothListeningModeHearingAid`"
@@ -264,7 +264,7 @@ func testSupportReportUnrecognizedListeningModes() {
     name: "",
     reportMetadata: .fixture(unrecognizedListeningModes: (1...8).map { "Mode\($0)" })
   )
-  let noisyMarkdown = SupportReport.make(device: noisy)?.markdown ?? ""
+  let noisyMarkdown = passiveSupportReport(device: noisy)?.markdown ?? ""
   check(
     noisyMarkdown.contains("`Mode6`, and 2 more"),
     "overlong unrecognized-mode lists are capped with an explicit count"
@@ -278,7 +278,7 @@ func testSupportReportUnrecognizedListeningModes() {
     name: "",
     reportMetadata: .fixture(unrecognizedListeningModes: (1...6).map { "Mode\($0)" })
   )
-  let exactMarkdown = SupportReport.make(device: exact)?.markdown ?? ""
+  let exactMarkdown = passiveSupportReport(device: exact)?.markdown ?? ""
   check(
     exactMarkdown.contains("`Mode1`, `Mode2`, `Mode3`, `Mode4`, `Mode5`, `Mode6`\n"),
     "exactly six unrecognized modes are all listed"
@@ -297,7 +297,7 @@ func testSupportReportUnknownAppleProduct() {
       modelIdentifier: "BTHeadphones76,60000"
     )
   )
-  let report = SupportReport.make(
+  let report = passiveSupportReport(
     device: device,
     operatingSystemVersion: OperatingSystemVersion(
       majorVersion: 26,
@@ -329,32 +329,32 @@ func testSupportReportUnknownAppleProduct() {
 
 func testSupportReportMetadataNormalization() {
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       "  AirPodsPro2,1   (USB-C) ",
       maximumLength: 80
     ) == "AirPodsPro2,1 (USB-C)",
     "model metadata trims and collapses whitespace"
   )
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       "AirPodsPro2,1\n- account: exposed",
       maximumLength: 80
     ) == nil,
     "model metadata rejects Markdown punctuation outside the allowlist"
   )
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       String(repeating: "A", count: 81),
       maximumLength: 80
     ) == nil,
     "model metadata rejects overlong values"
   )
   check(
-    SupportReport.normalizedMetadataValue("AirPods Pro\u{0301}", maximumLength: 80) == nil,
+    SupportReportSnapshot.normalizedMetadataValue("AirPods Pro\u{0301}", maximumLength: 80) == nil,
     "model metadata rejects non-ASCII combining marks"
   )
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       "AirPods" + String(repeating: "\u{034F}", count: 200_000),
       maximumLength: 80
     ) == nil,
@@ -530,82 +530,6 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   check(openCount == 1, "no-device path never opens an issue URL")
 }
 
-func testSupportReportFamilyFromModelIdentifier() {
-  check(
-    SupportReport.family(for: "BTHeadphones76,8231") == .airPods,
-    "the Bluetooth model identifier of AirPods Pro 3 resolves to AirPods"
-  )
-  check(
-    SupportReport.family(for: "btheadphones76,8231") == .airPods,
-    "the Bluetooth model identifier prefix is matched case-insensitively"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones76,8210") == .beats,
-    "a known Beats product ID resolves to the exploratory Beats family"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones76,60000") == .unknownApple,
-    "an unlisted Apple product ID still produces an exploratory report"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones123,456") == nil,
-    "a non-Apple vendor ID stays unidentifiable"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones76,8231,0") == nil,
-    "a malformed Bluetooth model identifier stays unidentifiable"
-  )
-  check(
-    SupportReport.family(for: "AirPodsTest1,1") == .airPods,
-    "a marketing-style model identifier still matches by name"
-  )
-  check(
-    SupportReport.family(for: "BeatsTest1,1") == .beats,
-    "a marketing-style Beats identifier still matches by name"
-  )
-  check(SupportReport.family(for: nil) == nil, "missing model metadata is unidentifiable")
-
-  let pro3 = SupportReport.product(for: "BTHeadphones76,8231")
-  check(pro3?.modelName == "AirPods Pro 3", "product ID 0x2027 resolves to AirPods Pro 3")
-  check(pro3?.bluetoothProductID == 0x2027, "the decimal product field decodes to hex")
-
-  let fitPro = SupportReport.product(for: "BTHeadphones76,8210")
-  check(
-    fitPro?.modelName == "Beats Fit Pro",
-    "product ID 0x2012 resolves to Beats Fit Pro"
-  )
-
-  let unknown = SupportReport.product(for: "BTHeadphones76,60000")
-  check(unknown?.family == .unknownApple, "an unlisted Apple product ID stays exploratory")
-  check(unknown?.modelName == nil, "an unlisted Apple product ID has no model name")
-  check(
-    unknown?.bluetoothProductID == 60000,
-    "an unlisted Apple product ID is still decoded for the report"
-  )
-
-  let marketing = SupportReport.product(for: "AirPodsTest1,1")
-  check(
-    marketing?.modelName == nil && marketing?.bluetoothProductID == nil,
-    "a marketing-style identifier resolves a family without inventing a product"
-  )
-
-  check(SupportReport.hexProductID(0x2F) == "0x002F", "hex product IDs are zero-padded")
-  check(SupportReport.hexProductID(60000) == "0xEA60", "hex product IDs use uppercase hex")
-
-  check(
-    SupportReport.family(for: "BTHeadphones76,4294975527") == nil,
-    "an oversized product field is rejected instead of truncated to 32 bits"
-  )
-  check(
-    SupportReport.product(for: "BTHeadphones76,65536") == nil,
-    "product fields above 0xFFFF are rejected"
-  )
-  check(
-    SupportReport.product(for: "BTHeadphones76,65535")?.family == .unknownApple,
-    "the 16-bit boundary product ID is still decoded"
-  )
-}
-
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
   testSupportReportUnavailableValuesAndIdentification()
@@ -613,7 +537,6 @@ func runSupportReportTests() {
   testSupportReportUnknownAppleProduct()
   testSupportReportFencesDeviceControlledText()
   testSupportReportMetadataNormalization()
-  testSupportReportFamilyFromModelIdentifier()
   testSupportReportIssueURL()
   testSupportReportIssueURLEncodesPlusSigns()
   testSupportReportRequiresConfirmationBeforeOpening()

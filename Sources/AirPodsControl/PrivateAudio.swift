@@ -14,7 +14,6 @@ private let listeningModesByRawValue = Dictionary(
 private let standardWriteReadbackAttempts = 16
 private let offListeningModeReadbackAttempts = 30
 private let privateAudioReadbackDelay: useconds_t = 50_000
-private let listeningModeEffectDelay: useconds_t = 2_000_000
 
 // AVFoundation delivers route-state changes through the main run loop. A
 // blocking sleep can leave the output-device snapshot stale until process exit.
@@ -137,20 +136,20 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       logger.debug("selector.\(label)", "unavailable")
       return nil
     }
-    return SupportReport.normalizedMetadataValue(value, maximumLength: maximumLength)
+    return SupportReportSnapshot.normalizedMetadataValue(value, maximumLength: maximumLength)
   }
 
   func supportReportMetadata() -> SupportReportDeviceMetadata {
     let modelIdentifier = allowlistedString(
       selector: modelIDSelector,
       label: "modelID",
-      maximumLength: SupportReport.maximumModelIdentifierLength
+      maximumLength: SupportReportSnapshot.maximumModelIdentifierLength
     )
     let unrecognizedModes = availableRawListeningModes().filter {
       listeningModesByRawValue[$0] == nil
     }
     return SupportReportDeviceMetadata(
-      family: SupportReport.family(for: modelIdentifier),
+      family: AppleAudioProducts.family(for: modelIdentifier),
       modelIdentifier: modelIdentifier,
       unrecognizedListeningModes: unrecognizedModes,
       listeningModeQueryAnswered: currentRawListeningMode() != nil
@@ -258,8 +257,8 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     setListeningModeAndReadBack(target, wait: waitForPrivateAudioUpdate)
   }
 
-  func waitForListeningModeEffect() {
-    waitForPrivateAudioUpdate(listeningModeEffectDelay)
+  func settle(for interval: TimeInterval) {
+    waitForPrivateAudioUpdate(useconds_t(interval * 1_000_000))
   }
 
   func setListeningModeAndReadBack(

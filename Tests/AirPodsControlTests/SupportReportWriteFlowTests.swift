@@ -128,10 +128,10 @@ func testSupportReportWriteTestsCommandFlow() {
   let outcome = CommandExecution.execute(
     consented,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       consentRequests += 1
       return false
-    }
+    })
   )
   check(consentRequests == 0, "--with-write-tests never asks again")
   check(outcome.exitCode == 0, "a restored write-test run succeeds")
@@ -216,10 +216,10 @@ func testSupportReportWriteTestsCommandFlow() {
   let skippedOutcome = CommandExecution.execute(
     skipped,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       check(false, "--no-write-tests never asks")
       return true
-    }
+    })
   )
   check(
     skippedOutcome.plain.contains("- Write tests: not run"),
@@ -239,10 +239,10 @@ func testSupportReportWriteTestsCommandFlow() {
   let askedOutcome = CommandExecution.execute(
     asked,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       askCount += 1
       return true
-    }
+    })
   )
   check(askCount == 1, "the default invocation asks for consent exactly once")
   check(
@@ -261,9 +261,9 @@ func testSupportReportIssueBodyIncludesCompleteModeResults() {
       conversationAwarenessSupported: false,
       reportMetadata: .fixture()
     )
-    let preflight = SupportReport.make(device: device)!
+    let snapshot = SupportReportSnapshot.capture(device: device)!
     let results = SupportReportWriteTester.run(device: device)
-    return preflight.including(writeTests: results).issueDraft.body
+    return SupportReport.render(snapshot, writeTests: results).issueDraft.body
   }
 
   let transparencyInitial = issueBody(initialMode: .transparency)
@@ -288,9 +288,9 @@ func testSupportReportIssueBodyDoesNotNameTheUntestedInitialMode() {
     conversationAwarenessSupported: false,
     reportMetadata: .fixture()
   )
-  let preflight = SupportReport.make(device: device)!
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let body = preflight.including(writeTests: results).issueDraft.body
+  let body = SupportReport.render(snapshot, writeTests: results).issueDraft.body
 
   check(
     results.listeningModes.testRun?.restoration.stateNeverChanged == true,
@@ -316,9 +316,9 @@ func testSupportReportIssueBodyIncludesStateDependentModeSkipReasons() {
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
   )
-  let preflight = SupportReport.make(device: device)!
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let report = preflight.including(writeTests: results)
+  let report = SupportReport.render(snapshot, writeTests: results)
 
   check(
     report.markdown.contains("initial mode is not advertised"),
@@ -344,12 +344,12 @@ func testSupportReportRunsOnlyTheConsentedWritePlan() {
   let outcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       device.listeningModes.append(.noiseCancellation)
       device.conversationAwarenessSupported = true
       device.conversationAwarenessEnabled = false
       return true
-    }
+    })
   )
 
   check(
@@ -386,11 +386,11 @@ func testSupportReportSkipsCapabilitiesRemovedDuringConsent() {
   let outcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       device.listeningModes = [.transparency]
       device.exposesConversationAwarenessSetter = false
       return true
-    }
+    })
   )
 
   check(
@@ -428,13 +428,15 @@ func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
   let modeOutcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in modeDevice },
-    runSupportReportWriteTests: { plan, device in
-      SupportReportWriteTester.run(plan: plan, device: device)
-    },
-    requestWriteTestConsent: { _ in
-      modeDevice.exposesListeningModeSetter = false
-      return true
-    }
+    supportReport: SupportReportCommand(
+      requestWriteTestConsent: { _ in
+        modeDevice.exposesListeningModeSetter = false
+        return true
+      },
+      runWriteTests: { plan, device in
+        SupportReportWriteTester.run(plan: plan, device: device)
+      }
+    )
   )
 
   check(
@@ -459,13 +461,15 @@ func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
   let awarenessOutcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in awarenessDevice },
-    runSupportReportWriteTests: { plan, device in
-      SupportReportWriteTester.run(plan: plan, device: device)
-    },
-    requestWriteTestConsent: { _ in
-      awarenessDevice.conversationAwarenessSupported = false
-      return true
-    }
+    supportReport: SupportReportCommand(
+      requestWriteTestConsent: { _ in
+        awarenessDevice.conversationAwarenessSupported = false
+        return true
+      },
+      runWriteTests: { plan, device in
+        SupportReportWriteTester.run(plan: plan, device: device)
+      }
+    )
   )
 
   check(
@@ -494,10 +498,10 @@ func testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() {
   let outcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       device.listeningMode = .adaptive
       return true
-    }
+    })
   )
 
   check(
@@ -530,10 +534,10 @@ func testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() {
   let outcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in device },
-    requestWriteTestConsent: { _ in
+    supportReport: SupportReportCommand(requestWriteTestConsent: { _ in
       device.conversationAwarenessEnabled = true
       return true
-    }
+    })
   )
 
   check(
@@ -561,7 +565,7 @@ func testSupportReportPreservesThePreflightSnapshotDuringWrites() {
     conversationAwarenessSupported: false,
     reportMetadata: .fixture()
   )
-  device.listeningModeEffect = {
+  device.settleEffect = {
     device.reportMetadata = .fixture(
       family: nil,
       modelIdentifier: nil,
@@ -628,7 +632,7 @@ func testSupportReportInterruptedWriteTestsUseSignalExit() {
     reportMetadata: .fixture()
   )
   var caughtSignal: Int32?
-  device.listeningModeEffect = {
+  device.settleEffect = {
     if device.listeningModeSetCount == 1 {
       caughtSignal = SIGTERM
     }
@@ -638,14 +642,14 @@ func testSupportReportInterruptedWriteTestsUseSignalExit() {
   let outcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in device },
-    runSupportReportWriteTests: { plan, resolvedDevice in
+    supportReport: SupportReportCommand(runWriteTests: { plan, resolvedDevice in
       SupportReportWriteTester.run(
         plan: plan,
         device: resolvedDevice,
         interruptionSignal: { caughtSignal },
         writeError: { _ in }
       )
-    }
+    })
   )
 
   check(outcome.exitCode == 143, "SIGTERM produces the conventional shell exit status")
@@ -682,7 +686,7 @@ func testSupportReportHangupWriteTestsUseSignalExit() {
     reportMetadata: .fixture()
   )
   var caughtSignal: Int32?
-  device.listeningModeEffect = {
+  device.settleEffect = {
     if device.listeningModeSetCount == 1 {
       caughtSignal = SIGHUP
     }
@@ -692,14 +696,14 @@ func testSupportReportHangupWriteTestsUseSignalExit() {
   let outcome = CommandExecution.execute(
     invocation,
     resolveDevice: { _, _ in device },
-    runSupportReportWriteTests: { plan, resolvedDevice in
+    supportReport: SupportReportCommand(runWriteTests: { plan, resolvedDevice in
       SupportReportWriteTester.run(
         plan: plan,
         device: resolvedDevice,
         interruptionSignal: { caughtSignal },
         writeError: { _ in }
       )
-    }
+    })
   )
 
   check(outcome.exitCode == 129, "SIGHUP produces the conventional shell exit status")

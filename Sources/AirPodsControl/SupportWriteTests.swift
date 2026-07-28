@@ -3,6 +3,7 @@
 // last listening-mode write restores the initial mode.
 
 import Darwin
+import Foundation
 import SignalMonitor
 
 final class SupportReportTerminationMonitor {
@@ -217,6 +218,11 @@ enum SupportReportWriteTester {
   static let interruptionNotice =
     "Interrupt caught; restoring initial settings...\n"
 
+  // Each accepted mode write is held so a wearer can hear the change before
+  // the next write — the "about two seconds" promised by the consent prompt
+  // and the docs.
+  static let listeningModeHold: TimeInterval = 2
+
   static func run(device: any CompatibleAudioDevice) -> SupportReportWriteTestResults {
     run(plan: SupportReportWriteTestPlan.make(device: device), device: device)
   }
@@ -423,7 +429,7 @@ enum SupportReportWriteTester {
     // its readback can then match without demonstrating a transition.
     let modeBeforeWrite = device.currentListeningMode()
     let observation = device.setListeningModeAndReadBack(target)
-    device.waitForListeningModeEffect()
+    device.settle(for: listeningModeHold)
     let settledMode = device.currentListeningMode()
     let resolution = resolveListeningModeWrite(
       requested: target,

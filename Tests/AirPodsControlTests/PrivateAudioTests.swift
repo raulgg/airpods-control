@@ -66,7 +66,7 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
     check(false, "support-report discovers an allowlisted device without a name")
     return
   }
-  let report = SupportReport.make(device: device)
+  let report = passiveSupportReport(device: device)
   check(report != nil, "name-free private adapter produces a support report")
   check(
     report?.markdown.contains("BTHeadphones76,8231") == true,
@@ -374,7 +374,7 @@ func testSupportReportMetadataForUnrecognizedModes() {
     mode: "AVOutputDeviceBluetoothListeningModeFuture",
     modelIdentifier: "BTHeadphones76,8231"
   )
-  let report = SupportReport.make(device: privateAudioDevice(allUnknown))
+  let report = passiveSupportReport(device: privateAudioDevice(allUnknown))
   let markdown = report?.markdown ?? ""
   check(report != nil, "a device advertising only unknown modes still reports")
   check(
