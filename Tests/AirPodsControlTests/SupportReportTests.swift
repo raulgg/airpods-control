@@ -1340,7 +1340,8 @@ func testSupportReportInterruptedWriteTestsUseSignalExit() {
       SupportReportWriteTester.run(
         plan: plan,
         device: resolvedDevice,
-        interruptionSignal: { caughtSignal }
+        interruptionSignal: { caughtSignal },
+        writeError: { _ in }
       )
     }
   )
@@ -1369,6 +1370,56 @@ func testSupportReportInterruptedWriteTestsUseSignalExit() {
   )
 }
 
+func testSupportReportHangupWriteTestsUseSignalExit() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    listeningModes: [.transparency, .adaptive, .noiseCancellation],
+    listeningMode: .noiseCancellation,
+    conversationAwarenessSupported: true,
+    conversationAwarenessEnabled: false,
+    reportMetadata: SupportReportDeviceMetadata(
+      family: .airPods,
+      modelIdentifier: "BTHeadphones76,8231",
+      unrecognizedListeningModes: [],
+      listeningModeQueryAnswered: true
+    )
+  )
+  var caughtSignal: Int32?
+  device.listeningModeEffect = {
+    if device.listeningModeSetCount == 1 {
+      caughtSignal = SIGHUP
+    }
+  }
+
+  let invocation = try! parseInvocation(["support-report", "--with-write-tests"])
+  let outcome = CommandExecution.execute(
+    invocation,
+    resolveDevice: { _, _ in device },
+    runSupportReportWriteTests: { plan, resolvedDevice in
+      SupportReportWriteTester.run(
+        plan: plan,
+        device: resolvedDevice,
+        interruptionSignal: { caughtSignal },
+        writeError: { _ in }
+      )
+    }
+  )
+
+  check(outcome.exitCode == 129, "SIGHUP produces the conventional shell exit status")
+  check(
+    outcome.payload["signal"] as? Int32 == SIGHUP,
+    "the outcome records the caught hangup signal"
+  )
+  check(
+    outcome.plain.contains("Write tests interrupted by SIGHUP"),
+    "the interrupted local report names SIGHUP"
+  )
+  check(
+    device.currentListeningMode() == .noiseCancellation,
+    "the command restores the initial mode before returning the hangup exit"
+  )
+}
+
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
   testSupportReportUnavailableValuesAndIdentification()
@@ -1390,6 +1441,7 @@ func runSupportReportTests() {
   testSupportReportPreservesThePreflightSnapshotDuringWrites()
   testSupportReportWriteTestsRestoreFailure()
   testSupportReportInterruptedWriteTestsUseSignalExit()
+  testSupportReportHangupWriteTestsUseSignalExit()
   testSupportReportIssueURL()
   testSupportReportIssueURLEncodesPlusSigns()
   testSupportReportRequiresConfirmationBeforeOpening()

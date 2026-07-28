@@ -188,9 +188,10 @@ cannot be restored safely, that setting is skipped without writing. Each
 listening mode is held for about two seconds before the next write. After
 normal completion or a setter error, the command makes a best-effort
 restoration attempt. An unverified restoration names the final state and exits
-`3`. An externally delivered SIGINT or SIGTERM caught during these tests stops
-further writes, attempts restoration first, suppresses the issue-opening
-prompt, and then exits `130` or `143`, respectively. The tests can be
+`3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during these
+tests stops further writes, prints an interrupt notice on stderr, attempts
+restoration first, suppresses the issue-opening prompt, and then exits `129`,
+`130`, or `143`, respectively. The tests can be
 disruptive (audible switches, noise control changes while worn), so consent
 only if you accept that. See the
 [CLI reference](docs/cli.md#consented-write-tests) for details.

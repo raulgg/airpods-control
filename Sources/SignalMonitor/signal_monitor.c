@@ -20,6 +20,7 @@ enum {
 };
 
 static _Atomic int signal_state;
+static struct sigaction previous_sighup_action;
 static struct sigaction previous_sigint_action;
 static struct sigaction previous_sigterm_action;
 static bool monitor_installed;
@@ -90,10 +91,10 @@ static int register_signal_event_queue(void) {
     return errno;
   }
 
-  struct kevent changes[2];
+  struct kevent changes[3];
   EV_SET(
       &changes[0],
-      SIGINT,
+      SIGHUP,
       EVFILT_SIGNAL,
       EV_ADD | EV_ENABLE,
       0,
@@ -101,13 +102,21 @@ static int register_signal_event_queue(void) {
       NULL);
   EV_SET(
       &changes[1],
+      SIGINT,
+      EVFILT_SIGNAL,
+      EV_ADD | EV_ENABLE,
+      0,
+      0,
+      NULL);
+  EV_SET(
+      &changes[2],
       SIGTERM,
       EVFILT_SIGNAL,
       EV_ADD | EV_ENABLE,
       0,
       0,
       NULL);
-  if (kevent(event_queue, changes, 2, NULL, 0, NULL) != 0) {
+  if (kevent(event_queue, changes, 3, NULL, 0, NULL) != 0) {
     int error = errno;
     (void)close(event_queue);
     return error;
@@ -122,7 +131,7 @@ static int drain_signal_event_queue(void) {
     return 0;
   }
 
-  struct kevent events[2];
+  struct kevent events[3];
   struct timespec timeout = {0};
   int event_count;
   do {
@@ -131,7 +140,7 @@ static int drain_signal_event_queue(void) {
         NULL,
         0,
         events,
-        2,
+        3,
         &timeout);
   } while (event_count < 0 && errno == EINTR);
 
@@ -140,7 +149,9 @@ static int drain_signal_event_queue(void) {
   }
   for (int index = 0; index < event_count; index++) {
     int signal_number = (int)events[index].ident;
-    if (signal_number == SIGINT || signal_number == SIGTERM) {
+    if (signal_number == SIGHUP
+        || signal_number == SIGINT
+        || signal_number == SIGTERM) {
       return signal_number;
     }
   }
@@ -186,6 +197,7 @@ int airpods_control_signal_monitor_install(void) {
   struct sigaction action = {0};
   action.sa_handler = record_termination_signal;
   sigemptyset(&action.sa_mask);
+  sigaddset(&action.sa_mask, SIGHUP);
   sigaddset(&action.sa_mask, SIGINT);
   sigaddset(&action.sa_mask, SIGTERM);
 
@@ -198,6 +210,22 @@ int airpods_control_signal_monitor_install(void) {
     int error = errno;
     int caught = atomic_exchange_explicit(
         &signal_state, monitor_closing, memory_order_relaxed);
+    (void)sigaction(SIGINT, &previous_sigint_action, NULL);
+    if (caught <= monitor_open) {
+      caught = drain_signal_event_queue();
+    }
+    caught = finalize_signal_state(caught);
+    close_signal_event_queue();
+    if (caught > monitor_open) {
+      _exit(128 + caught);
+    }
+    return error;
+  }
+  if (sigaction(SIGHUP, &action, &previous_sighup_action) != 0) {
+    int error = errno;
+    int caught = atomic_exchange_explicit(
+        &signal_state, monitor_closing, memory_order_relaxed);
+    (void)sigaction(SIGTERM, &previous_sigterm_action, NULL);
     (void)sigaction(SIGINT, &previous_sigint_action, NULL);
     if (caught <= monitor_open) {
       caught = drain_signal_event_queue();
@@ -236,10 +264,11 @@ int airpods_control_signal_monitor_disarm(void) {
     if (state > monitor_open) {
       caught = state;
     }
-    // Restore each complete action while the other signal is still captured.
+    // Restore each complete action while the other signals are still captured.
     // A newly selected signal uses its prior disposition. EVFILT_SIGNAL records
     // process-directed delivery before handler selection, so the final drain
     // also accounts for a monitor handler already selected on another thread.
+    (void)sigaction(SIGHUP, &previous_sighup_action, NULL);
     (void)sigaction(SIGTERM, &previous_sigterm_action, NULL);
     (void)sigaction(SIGINT, &previous_sigint_action, NULL);
     if (caught == 0) {

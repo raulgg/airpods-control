@@ -221,12 +221,14 @@ bare `verified`.
 
 The terminal always states the restoration outcome. `Initial state restored:
 yes` indicates success; otherwise it names the final state, gives a manual-fix
-hint, and exits `3`. An externally delivered SIGINT or SIGTERM caught during
-the tests stops further writes, attempts restoration first, prints any
-restoration warning, and then exits `130` or `143`, respectively. SIGKILL, a
-process crash, or power loss cannot guarantee restoration. The CLI does not
-generate thread-directed signals; those are outside this process-signal
-guarantee. An interrupted run does not offer or print an issue-draft URL. A
+hint, and exits `3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught
+during the tests stops further writes, prints `Interrupt caught; restoring
+initial settings...` on stderr, attempts restoration first, prints any
+restoration warning, and then exits `129`, `130`, or `143`, respectively.
+SIGKILL, a process crash, or power loss cannot guarantee restoration. The CLI
+does not generate thread-directed signals; those are outside this
+process-signal guarantee. An interrupted run does not offer or print an
+issue-draft URL. A
 consented report adds a `Write tests (run with consent)` section:
 
 ```console
@@ -385,6 +387,7 @@ contains the final observed canonical mode or `null`.
 | `2`  | bad-args    | Arguments are missing or malformed.                        |
 | `3`  | no-op       | A write was not verified in the bounded window, or write tests could not restore the initial state. |
 | `4`  | unsupported | The mode or feature is not available on the selected device. |
+| `129` | hangup | An externally delivered SIGHUP was caught during the tests and restoration was attempted. |
 | `130` | interrupted | An externally delivered SIGINT was caught during the tests and restoration was attempted. |
 | `143` | terminated | An externally delivered SIGTERM was caught during the tests and restoration was attempted. |
 

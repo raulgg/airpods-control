@@ -287,6 +287,7 @@ struct SupportReport {
 
   private static func signalName(_ signalNumber: Int32) -> String {
     switch signalNumber {
+    case SIGHUP: return "SIGHUP"
     case SIGINT: return "SIGINT"
     case SIGTERM: return "SIGTERM"
     default: return "signal \(signalNumber)"

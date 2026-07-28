@@ -169,9 +169,9 @@ the device is worn.
 
 After normal completion or a setter error, the command makes a best-effort
 restoration attempt. An unverified restoration reports the final state and
-exits 3. An externally delivered SIGINT or SIGTERM caught during the tests
-attempts restoration first, then exits 130 or 143, respectively, without
-offering an issue draft.
+exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the
+tests prints an interrupt notice on stderr, attempts restoration first, then
+exits 129, 130, or 143, respectively, without offering an issue draft.
 
 Options:
   --with-write-tests

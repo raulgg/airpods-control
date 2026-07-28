@@ -2,6 +2,7 @@
 // write-and-readback machinery as the operational commands, ordered so the
 // last listening-mode write restores the initial mode.
 
+import Darwin
 import SignalMonitor
 
 final class SupportReportTerminationMonitor {
@@ -137,6 +138,12 @@ struct SupportReportWriteTestResults {
 }
 
 enum SupportReportWriteTester {
+  // Announced on stderr so an interrupted run shows feedback before the
+  // remaining holds and restoration writes, without touching the stdout
+  // report contract.
+  static let interruptionNotice =
+    "Interrupt caught; restoring initial settings...\n"
+
   static func run(device: any CompatibleAudioDevice) -> SupportReportWriteTestResults {
     run(plan: SupportReportWriteTestPlan.make(device: device), device: device)
   }
@@ -144,7 +151,8 @@ enum SupportReportWriteTester {
   static func run(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
-    interruptionSignal: () -> Int32? = { nil }
+    interruptionSignal: () -> Int32? = { nil },
+    writeError: (String) -> Void = { fputs($0, stderr) }
   ) -> SupportReportWriteTestResults {
     let initialMode = plan.initialListeningMode
     let advertised = Set(plan.listeningModes)
@@ -152,6 +160,11 @@ enum SupportReportWriteTester {
     func observeInterruption() {
       guard interruptedBySignal == nil else { return }
       interruptedBySignal = interruptionSignal()
+      // The nil guard above makes this transition unique, so the notice is
+      // written exactly once, before any restoration write that follows.
+      if interruptedBySignal != nil {
+        writeError(interruptionNotice)
+      }
     }
 
     var modeResults: [SupportReportWriteTestResults.ModeResult] = []
@@ -284,7 +297,8 @@ enum SupportReportWriteTester {
 
   static func runInterruptibly(
     plan: SupportReportWriteTestPlan,
-    device: any CompatibleAudioDevice
+    device: any CompatibleAudioDevice,
+    writeError: (String) -> Void = { fputs($0, stderr) }
   ) -> SupportReportWriteTestResults {
     guard let monitor = SupportReportTerminationMonitor() else {
       let reason = "termination-signal monitor unavailable, nothing written"
@@ -303,8 +317,12 @@ enum SupportReportWriteTester {
     var results = run(
       plan: plan,
       device: device,
-      interruptionSignal: { monitor.caughtSignal }
+      interruptionSignal: { monitor.caughtSignal },
+      writeError: writeError
     )
+    // A signal first surfaced by disarm arrived after the final checkpoint,
+    // when every write and restoration attempt had already finished, so no
+    // restoration notice is written for it.
     results.interruptedBySignal =
       results.interruptedBySignal ?? monitor.disarm()
     return results

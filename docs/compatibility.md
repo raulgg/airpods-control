@@ -123,8 +123,9 @@ Listening-mode tests also require the captured initial mode to be advertised
 and at least one alternate recognized advertised mode to test. After normal
 completion or a setter error, the command makes a best-effort restoration
 attempt. A failed restoration is reported locally and exits `3`. An externally
-delivered SIGINT or SIGTERM caught during the tests attempts restoration first,
-then exits `130` or `143`, respectively.
+delivered SIGHUP, SIGINT, or SIGTERM caught during the tests prints an
+interrupt notice on stderr, attempts restoration first, then exits `129`,
+`130`, or `143`, respectively.
 
 Mark a write capability as **Verified** only from an individual bare `verified`
 verdict, not a `no-op` or `setter error`, or after testing the command manually

@@ -173,12 +173,14 @@ rather than bare
 An unverified restoration
 names the final state, gives a manual-fix hint, and exits 3.
 .IP
-An externally delivered SIGINT or SIGTERM caught during the tests stops further
-writes, attempts restoration first, prints any restoration warning, and then
-exits 130 or 143, respectively. SIGKILL, a process crash, or power loss cannot
-guarantee restoration. The CLI does not generate thread-directed signals;
-those are outside this process-signal guarantee. An interrupted run does not
-offer or print an issue-draft URL.
+An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the tests
+stops further writes, prints
+.B "Interrupt caught; restoring initial settings..."
+on standard error, attempts restoration first, prints any restoration warning,
+and then exits 129, 130, or 143, respectively. SIGKILL, a process crash, or
+power loss cannot guarantee restoration. The CLI does not generate
+thread-directed signals; those are outside this process-signal guarantee. An
+interrupted run does not offer or print an issue-draft URL.
 .IP
 The prefilled GitHub issue includes every per-mode verdict but omits the
 restoration status and local creation note. Neither report labels the row that
@@ -309,6 +311,10 @@ support-report write tests could not restore the initial settings (no-op).
 .TP
 .B 4
 The mode or feature is not available on this device (unsupported).
+.TP
+.B 129
+An externally delivered SIGHUP was caught during the write tests and
+restoration was attempted.
 .TP
 .B 130
 An externally delivered SIGINT was caught during the write tests and

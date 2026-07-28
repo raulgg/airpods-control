@@ -406,7 +406,8 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
   let results = SupportReportWriteTester.run(
     plan: plan,
     device: device,
-    interruptionSignal: { caughtSignal }
+    interruptionSignal: { caughtSignal },
+    writeError: { _ in }
   )
   let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
 
@@ -462,14 +463,20 @@ func testRunInterruptiblyRestoresAfterARealSignalDuringModeHold() {
     }
   }
 
+  var notices: [String] = []
   let results = SupportReportWriteTester.runInterruptibly(
     plan: SupportReportWriteTestPlan.make(device: device),
-    device: device
+    device: device,
+    writeError: { notices.append($0) }
   )
 
   check(
     results.interruptedBySignal == SIGINT,
     "the production monitor propagates a real signal into the runner"
+  )
+  check(
+    notices == [SupportReportWriteTester.interruptionNotice],
+    "the real-signal path announces the interruption exactly once"
   )
   check(
     results.modeResults.map(\.mode) == [.off],
@@ -568,7 +575,8 @@ func testWriteTesterRestoresConversationAwarenessAfterInterruption() {
   let results = SupportReportWriteTester.run(
     plan: SupportReportWriteTestPlan.make(device: device),
     device: device,
-    interruptionSignal: { caughtSignal }
+    interruptionSignal: { caughtSignal },
+    writeError: { _ in }
   )
 
   check(
@@ -605,7 +613,8 @@ func testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption() {
   let results = SupportReportWriteTester.run(
     plan: plan,
     device: device,
-    interruptionSignal: { caughtSignal }
+    interruptionSignal: { caughtSignal },
+    writeError: { _ in }
   )
 
   check(
@@ -619,6 +628,122 @@ func testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption() {
   check(
     results.conversationAwarenessSkippedReason == "interrupted before test",
     "the interrupted CA test is reported as skipped"
+  )
+}
+
+func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+    listeningMode: .noiseCancellation,
+    conversationAwarenessSupported: true,
+    conversationAwarenessEnabled: false
+  )
+  var caughtSignal: Int32?
+  var notices: [String] = []
+  var noticesBeforeRestorationWrite: Int?
+  device.listeningModeEffect = {
+    if device.listeningModeSetCount == 1 {
+      caughtSignal = SIGINT
+    }
+  }
+  // The initial mode is written only by the restoration attempt, so this
+  // hook observes the notice count at the moment restoration begins.
+  device.listeningModeSetterAccepted = { target in
+    if target == .noiseCancellation {
+      noticesBeforeRestorationWrite = notices.count
+    }
+    return true
+  }
+
+  let results = SupportReportWriteTester.run(
+    plan: SupportReportWriteTestPlan.make(device: device),
+    device: device,
+    interruptionSignal: { caughtSignal },
+    writeError: { notices.append($0) }
+  )
+
+  check(
+    results.interruptedBySignal == SIGINT,
+    "the announced interruption is also retained in the results"
+  )
+  check(
+    notices == ["Interrupt caught; restoring initial settings...\n"],
+    "the interrupt notice is written exactly once with the documented wording"
+  )
+  check(
+    noticesBeforeRestorationWrite == 1,
+    "the interrupt notice is already written when the restoration write begins"
+  )
+  check(
+    results.conversationAwarenessSkippedReason == "interrupted before test",
+    "later checkpoints observe the same interruption without repeating the notice"
+  )
+}
+
+func testWriteTesterInterruptionNoticeDefaultsToStandardError() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    listeningModes: [.transparency, .noiseCancellation],
+    listeningMode: .noiseCancellation,
+    conversationAwarenessSupported: false
+  )
+  var caughtSignal: Int32?
+  device.listeningModeEffect = { caughtSignal = SIGINT }
+
+  guard let capture = tmpfile() else {
+    check(false, "a temporary stderr capture file can be created")
+    return
+  }
+  fflush(stderr)
+  let originalStderr = dup(STDERR_FILENO)
+  dup2(fileno(capture), STDERR_FILENO)
+
+  let results = SupportReportWriteTester.run(
+    plan: SupportReportWriteTestPlan.make(device: device),
+    device: device,
+    interruptionSignal: { caughtSignal }
+  )
+
+  fflush(stderr)
+  dup2(originalStderr, STDERR_FILENO)
+  close(originalStderr)
+
+  rewind(capture)
+  var captured = [UInt8]()
+  var buffer = [UInt8](repeating: 0, count: 1024)
+  while true {
+    let readCount = fread(&buffer, 1, buffer.count, capture)
+    guard readCount > 0 else { break }
+    captured.append(contentsOf: buffer[0..<readCount])
+  }
+  fclose(capture)
+
+  check(originalStderr >= 0, "the original stderr can be duplicated")
+  check(
+    results.interruptedBySignal == SIGINT,
+    "the default-writer run still retains the interruption"
+  )
+  check(
+    String(decoding: captured, as: UTF8.self)
+      == SupportReportWriteTester.interruptionNotice,
+    "the default interrupt notice goes to standard error, once"
+  )
+}
+
+func testTerminationMonitorCapturesSIGHUP() {
+  guard let monitor = SupportReportTerminationMonitor() else {
+    check(false, "the production signal monitor installs for SIGHUP")
+    return
+  }
+  check(kill(getpid(), SIGHUP) == 0, "the test process can deliver SIGHUP to itself")
+
+  for _ in 0..<100 where monitor.caughtSignal == nil {
+    usleep(10_000)
+  }
+  check(
+    monitor.disarm() == SIGHUP,
+    "the production signal monitor latches a caught SIGHUP"
   )
 }
 
@@ -639,4 +764,7 @@ func runSupportWriteTestsTests() {
   testTerminationMonitorRestoresCompleteSignalAction()
   testWriteTesterRestoresConversationAwarenessAfterInterruption()
   testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption()
+  testWriteTesterAnnouncesInterruptionOnceBeforeRestoration()
+  testWriteTesterInterruptionNoticeDefaultsToStandardError()
+  testTerminationMonitorCapturesSIGHUP()
 }

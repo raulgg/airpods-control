@@ -14,12 +14,14 @@ static void ignore_signal_for_test(int signal_number) {
 
 static _Atomic int worker_ready;
 static _Atomic int release_worker;
+// The monitored signal a child run exercises; set before the worker starts.
+static int test_signal_number;
 
 static void *wait_for_process_signal(void *unused) {
   (void)unused;
   sigset_t signal_set;
   sigemptyset(&signal_set);
-  sigaddset(&signal_set, SIGINT);
+  sigaddset(&signal_set, test_signal_number);
   if (pthread_sigmask(SIG_UNBLOCK, &signal_set, NULL) != 0) {
     return (void *)1;
   }
@@ -30,10 +32,13 @@ static void *wait_for_process_signal(void *unused) {
   return NULL;
 }
 
-static void exercise_late_handler_in_child(int poll_before_disarm) {
+static void exercise_late_handler_in_child(
+    int signal_number,
+    int poll_before_disarm) {
+  test_signal_number = signal_number;
   sigset_t signal_set;
   sigemptyset(&signal_set);
-  sigaddset(&signal_set, SIGINT);
+  sigaddset(&signal_set, signal_number);
   if (pthread_sigmask(SIG_BLOCK, &signal_set, NULL) != 0) {
     _exit(10);
   }
@@ -41,7 +46,7 @@ static void exercise_late_handler_in_child(int poll_before_disarm) {
   struct sigaction harmless_action = {0};
   harmless_action.sa_handler = ignore_signal_for_test;
   sigemptyset(&harmless_action.sa_mask);
-  if (sigaction(SIGINT, &harmless_action, NULL) != 0) {
+  if (sigaction(signal_number, &harmless_action, NULL) != 0) {
     _exit(11);
   }
   if (airpods_control_signal_monitor_install() != 0) {
@@ -62,7 +67,7 @@ static void exercise_late_handler_in_child(int poll_before_disarm) {
   if (!atomic_load_explicit(&worker_ready, memory_order_relaxed)) {
     _exit(14);
   }
-  if (kill(getpid(), SIGINT) != 0) {
+  if (kill(getpid(), signal_number) != 0) {
     _exit(15);
   }
 
@@ -77,12 +82,12 @@ static void exercise_late_handler_in_child(int poll_before_disarm) {
   }
 
   if (poll_before_disarm
-      && airpods_control_signal_monitor_caught_signal() != SIGINT) {
+      && airpods_control_signal_monitor_caught_signal() != signal_number) {
     // A delayed process handler must not allow later device writes merely
     // because its first atomic instruction has not run yet.
     _exit(17);
   }
-  if (airpods_control_signal_monitor_disarm() != SIGINT) {
+  if (airpods_control_signal_monitor_disarm() != signal_number) {
     // Returning zero here would let the real caller display the issue prompt
     // while this already-selected handler is still paused.
     _exit(18);
@@ -97,29 +102,38 @@ static void exercise_late_handler_in_child(int poll_before_disarm) {
 }
 
 int main(void) {
-  for (int poll_before_disarm = 0; poll_before_disarm <= 1; poll_before_disarm++) {
-    pid_t child = fork();
-    if (child < 0) {
-      perror("fork");
-      return 1;
-    }
-    if (child == 0) {
-      exercise_late_handler_in_child(poll_before_disarm);
-    }
+  const int monitored_signals[] = {SIGHUP, SIGINT, SIGTERM};
+  const int signal_count =
+      (int)(sizeof(monitored_signals) / sizeof(monitored_signals[0]));
+  for (int signal_index = 0; signal_index < signal_count; signal_index++) {
+    for (int poll_before_disarm = 0; poll_before_disarm <= 1;
+         poll_before_disarm++) {
+      pid_t child = fork();
+      if (child < 0) {
+        perror("fork");
+        return 1;
+      }
+      if (child == 0) {
+        exercise_late_handler_in_child(
+            monitored_signals[signal_index],
+            poll_before_disarm);
+      }
 
-    int status = 0;
-    if (waitpid(child, &status, 0) != child) {
-      perror("waitpid");
-      return 1;
-    }
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-      fprintf(
-          stderr,
-          "process-directed late signal was lost "
-          "(poll=%d, child status=%d)\n",
-          poll_before_disarm,
-          status);
-      return 1;
+      int status = 0;
+      if (waitpid(child, &status, 0) != child) {
+        perror("waitpid");
+        return 1;
+      }
+      if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        fprintf(
+            stderr,
+            "process-directed late signal was lost "
+            "(signal=%d, poll=%d, child status=%d)\n",
+            monitored_signals[signal_index],
+            poll_before_disarm,
+            status);
+        return 1;
+      }
     }
   }
   return 0;
