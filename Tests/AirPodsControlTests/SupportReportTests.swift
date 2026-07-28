@@ -930,6 +930,41 @@ func testSupportReportIssueBodyIncludesCompleteModeResults() {
   )
 }
 
+func testSupportReportIssueBodyDoesNotNameTheUntestedInitialMode() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    listeningModes: [.off, .transparency, .adaptive],
+    listeningMode: .adaptive,
+    appliesListeningModeWrite: false,
+    conversationAwarenessSupported: false,
+    reportMetadata: SupportReportDeviceMetadata(
+      family: .airPods,
+      modelIdentifier: "BTHeadphones76,8231",
+      unrecognizedListeningModes: [],
+      listeningModeQueryAnswered: true
+    )
+  )
+  let preflight = SupportReport.make(device: device)!
+  let results = SupportReportWriteTester.run(device: device)
+  let body = preflight.including(writeTests: results).issueDraft.body
+
+  check(
+    results.initialModeTestSkipped,
+    "a state that never changes leaves the initial mode untested"
+  )
+  check(
+    body.contains(
+      "- `listening-mode set` (captured initial mode): "
+        + "skipped (state never changed from initial)"
+    ),
+    "the issue body keeps an unnamed row for the untested initial mode"
+  )
+  check(
+    !body.contains("`listening-mode set adaptive`"),
+    "the issue body never names the initial mode in a write-test row"
+  )
+}
+
 func testSupportReportIssueBodyIncludesStateDependentModeSkipReasons() {
   let device = FakeCompatibleAudioDevice(
     name: "",
@@ -1345,6 +1380,7 @@ func runSupportReportTests() {
   testSupportReportWriteTestConsent()
   testSupportReportWriteTestsCommandFlow()
   testSupportReportIssueBodyIncludesCompleteModeResults()
+  testSupportReportIssueBodyDoesNotNameTheUntestedInitialMode()
   testSupportReportIssueBodyIncludesStateDependentModeSkipReasons()
   testSupportReportRunsOnlyTheConsentedWritePlan()
   testSupportReportSkipsCapabilitiesRemovedDuringConsent()

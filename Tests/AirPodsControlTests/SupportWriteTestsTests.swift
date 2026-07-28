@@ -118,6 +118,56 @@ func testWriteTesterContinuesAfterNoOp() {
   )
 }
 
+func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+    listeningMode: .noiseCancellation,
+    conversationAwarenessSupported: false
+  )
+  // The Off write falls back to Transparency, so the next canonical target
+  // is already the current state when its own write begins.
+  device.listeningModeWriteOverride = {
+    $0 == .off ? .transparency : $0
+  }
+  let results = SupportReportWriteTester.run(device: device)
+
+  let transparencyResult = results.modeResults.first { $0.mode == .transparency }
+  check(
+    transparencyResult?.targetAlreadyCurrent == true,
+    "a target reached by an earlier fallback is recorded as already current"
+  )
+  check(
+    transparencyResult?.verified == true,
+    "the matching readback of an already-current target is still recorded"
+  )
+  check(
+    results.modeResults.first { $0.mode == .adaptive }?.targetAlreadyCurrent == false,
+    "a genuine transition is not flagged as already current"
+  )
+  check(
+    results.listeningModeRestorationResult?.targetAlreadyCurrent == false,
+    "restoration only runs from a different state, so it is never flagged"
+  )
+
+  let body = SupportReport.make(device: device, writeTests: results)?.issueDraft.body ?? ""
+  check(
+    body.contains(
+      "- `listening-mode set transparency`: "
+        + "verified (already in this state; no transition demonstrated)"
+    ),
+    "an undemonstrated transition gets a distinct qualified verdict"
+  )
+  check(
+    !body.contains("- `listening-mode set transparency`: verified\n"),
+    "an undemonstrated transition never renders as a bare verified verdict"
+  )
+  check(
+    body.contains("- `listening-mode set adaptive`: verified\n"),
+    "a demonstrated transition keeps the bare verified verdict"
+  )
+}
+
 func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
   let device = FakeCompatibleAudioDevice(
     name: "",
@@ -575,6 +625,7 @@ func testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption() {
 func runSupportWriteTestsTests() {
   testWriteTesterVerifiesAndRestores()
   testWriteTesterContinuesAfterNoOp()
+  testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent()
   testWriteTesterVerifiesSettledTransitionsBeforeReturning()
   testWriteTesterStopsOnSetterErrorAndRestores()
   testWriteTesterReportsConversationAwarenessSetterError()

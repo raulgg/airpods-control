@@ -214,11 +214,11 @@ struct SupportReport {
             + modeVerdict(restoration)
         )
       }
-      if results.initialModeTestSkipped,
-         let initialMode = results.initialListeningMode
-      {
+      if results.initialModeTestSkipped {
+        // Deliberately unnamed: the report is pasted publicly and must not
+        // disclose which mode the device was in.
         lines.append(
-          "- `listening-mode set \(initialMode.rawValue)`: "
+          "- `listening-mode set` (captured initial mode): "
             + "skipped (state never changed from initial)"
         )
       }
@@ -255,7 +255,9 @@ struct SupportReport {
       return "setter error"
     }
     if result.verified {
-      return "verified"
+      return result.targetAlreadyCurrent
+        ? "verified (already in this state; no transition demonstrated)"
+        : "verified"
     }
     if result.inferredOffFallback {
       return "no-op (expected Transparency fallback)"

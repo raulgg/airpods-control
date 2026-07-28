@@ -104,6 +104,10 @@ struct SupportReportWriteTestResults {
     let mode: ListeningMode
     let setterAccepted: Bool
     let verified: Bool
+    // The state read immediately before this write already equaled the
+    // target (for example after an Off write fell back to Transparency), so
+    // a matching readback demonstrates no transition.
+    let targetAlreadyCurrent: Bool
     let inferredOffFallback: Bool
     let observed: ListeningMode?
   }
@@ -311,6 +315,10 @@ enum SupportReportWriteTester {
     device: any CompatibleAudioDevice,
     transparencySupported: Bool
   ) -> SupportReportWriteTestResults.ModeResult {
+    // An earlier write can leave the device in a later target (for example
+    // Off falling back to Transparency). The write is still attempted, but
+    // its readback can then match without demonstrating a transition.
+    let modeBeforeWrite = device.currentListeningMode()
     let observation = device.setListeningModeAndReadBack(target)
     device.waitForListeningModeEffect()
     let settledMode = device.currentListeningMode()
@@ -324,6 +332,7 @@ enum SupportReportWriteTester {
       mode: target,
       setterAccepted: observation.setterAccepted,
       verified: resolution.verified,
+      targetAlreadyCurrent: modeBeforeWrite == target,
       inferredOffFallback: resolution.inferredOffFallback,
       observed: resolution.state
     )

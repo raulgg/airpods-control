@@ -164,7 +164,13 @@ restoration attempt if needed. Accepted but unverified writes are reported as
 setter rejections are reported as
 .B setter error
 and stop the remaining tests for that setting. Restoration setter errors and
-restoration no-ops remain distinct in the report. An unverified restoration
+restoration no-ops remain distinct in the report. A write whose target already
+equals the state read immediately before it cannot demonstrate a transition;
+if its readback still matches, it is reported as
+.B "verified (already in this state; no transition demonstrated)"
+rather than bare
+.BR verified .
+An unverified restoration
 names the final state, gives a manual-fix hint, and exits 3.
 .IP
 An externally delivered SIGINT or SIGTERM caught during the tests stops further

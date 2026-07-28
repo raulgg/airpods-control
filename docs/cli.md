@@ -213,7 +213,11 @@ restoration attempt if needed. An accepted write whose readback does not verify
 is reported as a `no-op` and does not stop the remaining tests. A setter
 rejection is reported as `setter error` and stops the remaining tests for that
 setting; restoration setter errors and restoration no-ops remain distinct in
-the report.
+the report. A write whose target already equals the state read immediately
+before it (for example after an Off write fell back to Transparency) cannot
+demonstrate a transition; if its readback still matches, it is reported as
+`verified (already in this state; no transition demonstrated)` rather than
+bare `verified`.
 
 The terminal always states the restoration outcome. `Initial state restored:
 yes` indicates success; otherwise it names the final state, gives a manual-fix

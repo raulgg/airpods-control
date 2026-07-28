@@ -126,12 +126,17 @@ attempt. A failed restoration is reported locally and exits `3`. An externally
 delivered SIGINT or SIGTERM caught during the tests attempts restoration first,
 then exits `130` or `143`, respectively.
 
-Mark a write capability as **Verified** only from an individual `verified`
+Mark a write capability as **Verified** only from an individual bare `verified`
 verdict, not a `no-op` or `setter error`, or after testing the command manually
-on real hardware and recording the device and macOS version. The prefilled
-issue includes the same named listening-mode verdicts but omits the restoration
-outcome. Mode-result rows do not explicitly label which write restored the
-initial state.
+on real hardware and recording the device and macOS version. A `verified
+(already in this state; no transition demonstrated)` verdict does not qualify
+either: the device already read as the target immediately before that write
+(for example after an Off write fell back to Transparency), so the matching
+readback proves nothing about the setter. The prefilled issue includes the
+same named listening-mode verdicts but omits the restoration outcome.
+Mode-result rows do not explicitly label which write restored the initial
+state, and when the state never left the captured initial mode, that mode's
+untested `listening-mode set` row is rendered without naming the mode.
 
 If the report says the model is not recognized by this CLI version, the model
 identifier line still carries the decoded Bluetooth product ID whenever the
