@@ -197,24 +197,25 @@ struct SupportReport {
     _ results: SupportReportWriteTestResults
   ) -> String {
     var lines: [String] = []
-    if let reason = results.modeTestsSkippedReason {
+    switch results.listeningModes {
+    case let .skipped(reason):
       lines.append("- `listening-mode set`: skipped (\(reason))")
-    } else {
-      for result in results.modeResults {
+    case let .ran(run):
+      for test in run.tests {
         lines.append(
-          "- `listening-mode set \(result.mode.rawValue)`: \(modeVerdict(result))"
+          "- `listening-mode set \(test.mode.rawValue)`: \(modeVerdict(test))"
         )
       }
-      if results.modeTestsStoppedAfterSetterError {
+      if run.stoppedAfterSetterError {
         lines.append("- Remaining listening-mode tests: skipped after setter error")
       }
-      if let restoration = results.listeningModeRestorationResult {
+      switch run.restoration {
+      case let .attempted(restoration):
         lines.append(
           "- `listening-mode set \(restoration.mode.rawValue)`: "
             + modeVerdict(restoration)
         )
-      }
-      if results.initialModeTestSkipped {
+      case .stateNeverChanged:
         // Deliberately unnamed: the report is pasted publicly and must not
         // disclose which mode the device was in.
         lines.append(
@@ -223,22 +224,13 @@ struct SupportReport {
         )
       }
     }
-    if let reason = results.conversationAwarenessSkippedReason {
+    switch results.conversationAwareness {
+    case let .skipped(reason):
       lines.append("- `conversation-awareness set`: skipped (\(reason))")
-    } else {
-      let verdict: String
-      if results.conversationAwarenessSetterAccepted == false {
-        verdict = "setter error"
-      } else if results.conversationAwarenessRestorationSetterAccepted == false {
-        verdict = "restoration setter error"
-      } else if results.conversationAwarenessRestorationVerified == false {
-        verdict = "restoration no-op"
-      } else if results.conversationAwarenessToggleVerified == true {
-        verdict = "verified round trip"
-      } else {
-        verdict = "no-op"
-      }
-      lines.append("- `conversation-awareness set`: \(verdict)")
+    case let .ran(run):
+      lines.append(
+        "- `conversation-awareness set`: \(conversationAwarenessVerdict(run))"
+      )
     }
     let section = "### Write tests (run with consent)\n\n" + lines.joined(separator: "\n")
     let interruption = results.interruptedBySignal.map {
@@ -249,38 +241,58 @@ struct SupportReport {
   }
 
   private static func modeVerdict(
-    _ result: SupportReportWriteTestResults.ModeResult
+    _ test: SupportReportWriteTestResults.ListeningModeTest
   ) -> String {
-    if !result.setterAccepted {
+    if !test.write.setterAccepted {
       return "setter error"
     }
-    if result.verified {
-      return result.targetAlreadyCurrent
+    if test.write.verified {
+      return test.targetAlreadyCurrent
         ? "verified (already in this state; no transition demonstrated)"
         : "verified"
     }
-    if result.inferredOffFallback {
+    if test.inferredOffFallback {
       return "no-op (expected Transparency fallback)"
     }
     return "no-op"
   }
 
+  private static func conversationAwarenessVerdict(
+    _ run: SupportReportWriteTestResults.ConversationAwarenessTestRun
+  ) -> String {
+    guard run.toggle.setterAccepted else { return "setter error" }
+    switch run.restoration {
+    case .stateNeverChanged:
+      // The accepted toggle never moved the readback, so there was no round
+      // trip to verify.
+      return "no-op"
+    case let .attempted(restoration):
+      guard restoration.setterAccepted else { return "restoration setter error" }
+      guard restoration.verified else { return "restoration no-op" }
+      return run.toggle.verified ? "verified round trip" : "no-op"
+    }
+  }
+
   private static func restoredValue(_ results: SupportReportWriteTestResults) -> String {
-    let nothingTested = results.modeTestsSkippedReason != nil
-      && results.conversationAwarenessSkippedReason != nil
-    if nothingTested { return "nothing was written" }
-    guard !results.fullyRestored else { return "yes" }
+    var anythingWritten = false
     var problems: [String] = []
-    if results.listeningModeRestored == false {
-      problems.append(
-        "listening mode is now \(results.finalListeningMode?.rawValue ?? "unknown")"
-      )
+    if case let .ran(run) = results.listeningModes {
+      anythingWritten = true
+      if !run.restored {
+        problems.append(
+          "listening mode is now \(run.finalMode?.rawValue ?? "unknown")"
+        )
+      }
     }
-    if results.conversationAwarenessRestored == false {
-      let state =
-        results.finalConversationAwareness.map { $0 ? "on" : "off" } ?? "unknown"
-      problems.append("Conversation Awareness is now \(state)")
+    if case let .ran(run) = results.conversationAwareness {
+      anythingWritten = true
+      if !run.restored {
+        let state = run.finalState.map { $0 ? "on" : "off" } ?? "unknown"
+        problems.append("Conversation Awareness is now \(state)")
+      }
     }
+    guard anythingWritten else { return "nothing was written" }
+    guard !problems.isEmpty else { return "yes" }
     return "no, " + problems.joined(separator: "; ")
       + ". Restore manually in System Settings."
   }

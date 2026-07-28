@@ -12,32 +12,35 @@ func testWriteTesterVerifiesAndRestores() {
     conversationAwarenessEnabled: false
   )
   let results = SupportReportWriteTester.run(device: device)
+  let modeRun = results.listeningModes.testRun
+  let awarenessRun = results.conversationAwareness.testRun
 
   check(
-    results.modeResults.map(\.mode)
+    modeRun?.tests.map(\.mode)
       == [.off, .transparency, .adaptive],
     "noninitial modes are tested in canonical order"
   )
   check(
-    results.modeResults.allSatisfy(\.verified),
+    modeRun?.tests.allSatisfy(\.write.verified) == true,
     "an applying device verifies every advertised mode"
   )
   check(
-    results.listeningModeRestorationResult?.mode == .noiseCancellation
-      && results.listeningModeRestorationResult?.verified == true,
+    modeRun?.restoration.attempted?.mode == .noiseCancellation
+      && modeRun?.restoration.attempted?.write.verified == true,
     "the initial mode is verified separately during restoration"
   )
-  check(results.listeningModeRestored == true, "the last test restores the mode")
+  check(modeRun?.restored == true, "the last test restores the mode")
   check(
     device.currentListeningMode() == .noiseCancellation,
     "the device ends in its initial listening mode"
   )
   check(
-    results.conversationAwarenessToggleVerified == true,
+    awarenessRun?.toggle.verified == true
+      && awarenessRun?.restoration.attempted?.verified == true,
     "the Conversation Awareness round trip verifies"
   )
   check(
-    results.conversationAwarenessRestored == true,
+    awarenessRun?.restored == true,
     "Conversation Awareness ends in its initial state"
   )
   check(
@@ -69,24 +72,25 @@ func testWriteTesterContinuesAfterNoOp() {
     $0 == .off ? .transparency : $0
   }
   let results = SupportReportWriteTester.run(device: device)
+  let modeRun = results.listeningModes.testRun
 
-  check(results.modeResults.count == 2, "a no-op does not skip later mode tests")
-  let offResult = results.modeResults.first { $0.mode == .off }
-  check(offResult?.verified == false, "an unapplied off write is not verified")
+  check(modeRun?.tests.count == 2, "a no-op does not skip later mode tests")
+  let offTest = modeRun?.tests.first { $0.mode == .off }
+  check(offTest?.write.verified == false, "an unapplied off write is not verified")
   check(
-    offResult?.observed == .transparency,
+    offTest?.write.observed == .transparency,
     "the Off no-op records the observed Transparency fallback"
   )
   check(
-    results.modeResults.allSatisfy(\.setterAccepted),
+    modeRun?.tests.allSatisfy(\.write.setterAccepted) == true,
     "accepted no-op writes do not stop the test sequence"
   )
   check(
-    results.listeningModeRestored == true,
+    modeRun?.restored == true,
     "later tests restore the initial listening mode"
   )
   check(
-    results.listeningModeRestorationResult?.mode == .noiseCancellation,
+    modeRun?.restoration.attempted?.mode == .noiseCancellation,
     "restoration is recorded separately from exploratory tests"
   )
   check(
@@ -94,7 +98,7 @@ func testWriteTesterContinuesAfterNoOp() {
     "an accepted no-op is still held before testing the next mode"
   )
   check(
-    results.conversationAwarenessToggleVerified == false,
+    results.conversationAwareness.testRun?.toggle.verified == false,
     "an unapplied Conversation Awareness toggle is not verified"
   )
   check(
@@ -102,7 +106,7 @@ func testWriteTesterContinuesAfterNoOp() {
     "an unchanged Conversation Awareness state needs no restore write"
   )
   check(
-    results.conversationAwarenessRestored == true,
+    results.conversationAwareness.testRun?.restored == true,
     "an unchanged Conversation Awareness state counts as restored"
   )
   let report = SupportReport.make(device: device, writeTests: results)
@@ -131,22 +135,23 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
     $0 == .off ? .transparency : $0
   }
   let results = SupportReportWriteTester.run(device: device)
+  let modeRun = results.listeningModes.testRun
 
-  let transparencyResult = results.modeResults.first { $0.mode == .transparency }
+  let transparencyTest = modeRun?.tests.first { $0.mode == .transparency }
   check(
-    transparencyResult?.targetAlreadyCurrent == true,
+    transparencyTest?.targetAlreadyCurrent == true,
     "a target reached by an earlier fallback is recorded as already current"
   )
   check(
-    transparencyResult?.verified == true,
+    transparencyTest?.write.verified == true,
     "the matching readback of an already-current target is still recorded"
   )
   check(
-    results.modeResults.first { $0.mode == .adaptive }?.targetAlreadyCurrent == false,
+    modeRun?.tests.first { $0.mode == .adaptive }?.targetAlreadyCurrent == false,
     "a genuine transition is not flagged as already current"
   )
   check(
-    results.listeningModeRestorationResult?.targetAlreadyCurrent == false,
+    modeRun?.restoration.attempted?.targetAlreadyCurrent == false,
     "restoration only runs from a different state, so it is never flagged"
   )
 
@@ -181,15 +186,16 @@ func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
   }
 
   let results = SupportReportWriteTester.run(device: device)
+  let modeRun = results.listeningModes.testRun
 
   check(
-    results.modeResults.first?.mode == .adaptive
-      && results.modeResults.first?.verified == true,
+    modeRun?.tests.first?.mode == .adaptive
+      && modeRun?.tests.first?.write.verified == true,
     "a mode is verified from its post-hold state"
   )
   check(
-    results.listeningModeRestorationResult?.mode == .transparency
-      && results.listeningModeRestorationResult?.verified == true,
+    modeRun?.restoration.attempted?.mode == .transparency
+      && modeRun?.restoration.attempted?.write.verified == true,
     "the initial mode is verified only after its restoration hold"
   )
   check(
@@ -197,7 +203,7 @@ func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
     "the tester waits for both the exploratory transition and final restoration"
   )
   check(
-    results.finalListeningMode == .transparency,
+    modeRun?.finalMode == .transparency,
     "results return only after the initial mode is restored"
   )
 }
@@ -212,13 +218,14 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
   device.listeningModeSetterAccepted = { $0 != .adaptive }
 
   let results = SupportReportWriteTester.run(device: device)
+  let modeRun = results.listeningModes.testRun
 
   check(
-    results.modeResults.map(\.mode) == [.transparency, .adaptive],
+    modeRun?.tests.map(\.mode) == [.transparency, .adaptive],
     "a setter error skips remaining exploratory writes"
   )
   check(
-    results.modeTestsStoppedAfterSetterError,
+    modeRun?.stoppedAfterSetterError == true,
     "the exploratory setter error is recorded separately from restoration"
   )
   check(
@@ -230,11 +237,11 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
     "the accepted test, rejected test, and restoration are all held"
   )
   check(
-    results.listeningModeRestored == true,
+    modeRun?.restored == true,
     "the best-effort restoration returns to the initial mode"
   )
   check(
-    results.listeningModeRestorationResult?.mode == .noiseCancellation,
+    modeRun?.restoration.attempted?.mode == .noiseCancellation,
     "restoration is recorded after the interrupted tests"
   )
   let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
@@ -283,7 +290,7 @@ func testWriteTesterReportsConversationAwarenessRestorationSetterError() {
   let report = SupportReport.make(device: device, writeTests: results)?.markdown ?? ""
 
   check(
-    results.conversationAwarenessRestored == false,
+    results.conversationAwareness.testRun?.restored == false,
     "a rejected Conversation Awareness restoration is not treated as restored"
   )
   check(
@@ -304,11 +311,12 @@ func testWriteTesterSkipsUnreadableAndUnexposedCapabilities() {
   )
   let unreadableResults = SupportReportWriteTester.run(device: unreadable)
   check(
-    unreadableResults.modeTestsSkippedReason == "initial state unreadable, nothing written",
+    unreadableResults.listeningModes.skipReason
+      == "initial state unreadable, nothing written",
     "an unreadable initial mode skips the mode tests"
   )
   check(
-    unreadableResults.conversationAwarenessSkippedReason
+    unreadableResults.conversationAwareness.skipReason
       == "initial state unreadable, nothing written",
     "an unreadable Conversation Awareness state skips its test"
   )
@@ -329,11 +337,11 @@ func testWriteTesterSkipsUnreadableAndUnexposedCapabilities() {
   unexposed.exposesListeningModeSetter = false
   let unexposedResults = SupportReportWriteTester.run(device: unexposed)
   check(
-    unexposedResults.modeTestsSkippedReason == "setter not exposed",
+    unexposedResults.listeningModes.skipReason == "setter not exposed",
     "a missing mode setter skips the mode tests"
   )
   check(
-    unexposedResults.conversationAwarenessSkippedReason == "not supported",
+    unexposedResults.conversationAwareness.skipReason == "not supported",
     "unsupported Conversation Awareness skips its test"
   )
   check(unexposed.listeningModeSetCount == 0, "no write reaches a missing setter")
@@ -350,7 +358,7 @@ func testWriteTesterSkipsAnUnadvertisedInitialMode() {
   let results = SupportReportWriteTester.run(device: device)
 
   check(
-    results.modeTestsSkippedReason
+    results.listeningModes.skipReason
       == "initial mode is not advertised, nothing written",
     "an unadvertised initial mode makes the write-test plan unsafe"
   )
@@ -371,18 +379,19 @@ func testWriteTesterReportsFailedRestore() {
   // Every write lands on transparency, so the final restore write misses.
   device.listeningModeWriteOverride = { _ in .transparency }
   let results = SupportReportWriteTester.run(device: device)
+  let modeRun = results.listeningModes.testRun
 
   check(
-    results.listeningModeRestored == false,
+    modeRun?.restored == false,
     "a restore write that lands elsewhere reports a failed restoration"
   )
   check(
-    results.finalListeningMode == .transparency,
+    modeRun?.finalMode == .transparency,
     "the final listening mode is recorded for the report"
   )
   check(!results.fullyRestored, "a failed mode restore fails full restoration")
   check(
-    results.conversationAwarenessRestored == true,
+    results.conversationAwareness.testRun?.restored == true,
     "the Conversation Awareness restore is judged independently"
   )
 }
@@ -416,11 +425,11 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
     "the first observed termination signal is retained"
   )
   check(
-    results.modeResults.map(\.mode) == [.off],
+    results.listeningModes.testRun?.tests.map(\.mode) == [.off],
     "an interruption stops later exploratory mode writes"
   )
   check(
-    results.listeningModeRestorationResult?.mode == .noiseCancellation,
+    results.listeningModes.testRun?.restoration.attempted?.mode == .noiseCancellation,
     "the initial listening mode is still restored after interruption"
   )
   check(
@@ -432,7 +441,7 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
     "an interruption prevents a later Conversation Awareness test"
   )
   check(
-    results.conversationAwarenessSkippedReason == "interrupted before test",
+    results.conversationAwareness.skipReason == "interrupted before test",
     "the skipped capability is explained"
   )
   check(results.fullyRestored, "interrupted write tests still finish restoration")
@@ -479,11 +488,11 @@ func testRunInterruptiblyRestoresAfterARealSignalDuringModeHold() {
     "the real-signal path announces the interruption exactly once"
   )
   check(
-    results.modeResults.map(\.mode) == [.off],
+    results.listeningModes.testRun?.tests.map(\.mode) == [.off],
     "a real signal stops later exploratory mode writes"
   )
   check(
-    results.listeningModeRestorationResult?.mode == .noiseCancellation,
+    results.listeningModes.testRun?.restoration.attempted?.mode == .noiseCancellation,
     "the real-signal path restores the captured listening mode"
   )
   check(
@@ -592,7 +601,7 @@ func testWriteTesterRestoresConversationAwarenessAfterInterruption() {
     "Conversation Awareness returns to its captured initial state"
   )
   check(
-    results.conversationAwarenessRestored == true,
+    results.conversationAwareness.testRun?.restored == true,
     "the interrupted round trip reports successful restoration"
   )
 }
@@ -626,7 +635,7 @@ func testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption() {
     "the CA-boundary interruption is retained"
   )
   check(
-    results.conversationAwarenessSkippedReason == "interrupted before test",
+    results.conversationAwareness.skipReason == "interrupted before test",
     "the interrupted CA test is reported as skipped"
   )
 }
@@ -676,7 +685,7 @@ func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
     "the interrupt notice is already written when the restoration write begins"
   )
   check(
-    results.conversationAwarenessSkippedReason == "interrupted before test",
+    results.conversationAwareness.skipReason == "interrupted before test",
     "later checkpoints observe the same interruption without repeating the notice"
   )
 }

@@ -293,7 +293,7 @@ func testSupportReportIssueBodyDoesNotNameTheUntestedInitialMode() {
   let body = preflight.including(writeTests: results).issueDraft.body
 
   check(
-    results.initialModeTestSkipped,
+    results.listeningModes.testRun?.restoration.stateNeverChanged == true,
     "a state that never changes leaves the initial mode untested"
   )
   check(
