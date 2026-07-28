@@ -8,6 +8,7 @@ struct TestRunner {
     runCommandExecutionTests()
     runPrivateAudioTests()
     runSupportReportTests()
+    runSupportReportWriteFlowTests()
     runSupportWriteTestsTests()
 
     if failureCount > 0 {

@@ -1,3 +1,22 @@
+extension SupportReportDeviceMetadata {
+  // Defaults to AirPods Pro 3 (`BTHeadphones76,8231`, Bluetooth product ID
+  // 0x2027), the verified baseline device. Tests pass only the fields they
+  // actually vary.
+  static func fixture(
+    family: SupportReportDeviceFamily? = .airPods,
+    modelIdentifier: String? = "BTHeadphones76,8231",
+    unrecognizedListeningModes: [String] = [],
+    listeningModeQueryAnswered: Bool = true
+  ) -> SupportReportDeviceMetadata {
+    SupportReportDeviceMetadata(
+      family: family,
+      modelIdentifier: modelIdentifier,
+      unrecognizedListeningModes: unrecognizedListeningModes,
+      listeningModeQueryAnswered: listeningModeQueryAnswered
+    )
+  }
+}
+
 final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   let name: String
   var listeningModes: [ListeningMode]

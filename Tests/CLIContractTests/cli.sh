@@ -199,6 +199,16 @@ assert_contains "$support_report_output" \
 assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
   "support-report no-device has no prompt"
 
+# Safety guard for the consented invocation below: --with-write-tests
+# authorizes real device writes without prompting, and CONTRIBUTING.md
+# promises that tests never write device settings. The probe copy excludes
+# avbypass.dylib, so the entitlement gate must block device discovery. Prove
+# that here, immediately before the consented flag, so the guard travels with
+# this test instead of depending on earlier tests or file ordering. If this
+# assertion ever fails, the consented invocation could switch listening modes
+# on a contributor's connected AirPods.
+expect_failure 1 no-device "$CLI" lm get
+
 set +e
 support_report_writes_output=$(
   "$CLI" support-report --with-write-tests \

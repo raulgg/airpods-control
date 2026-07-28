@@ -249,7 +249,9 @@ Initial state restored: yes
 
 The prefilled GitHub issue includes every per-mode verdict but omits the
 restoration status and local creation note. Neither report labels the row that
-restored the initial state.
+restored the initial state, and when the state never left the captured initial
+mode, that mode's untested `listening-mode set` row is rendered without naming
+the mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example

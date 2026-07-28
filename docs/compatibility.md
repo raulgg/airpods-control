@@ -106,26 +106,16 @@ device, then run:
 airpods-control support-report
 ```
 
-The report deliberately does not read customizable device names or accept
-`--device`. It therefore requires exactly one compatible output device and
-stops before prompting or writing when selection is ambiguous.
+Read the report before opening the GitHub issue. The write tests run only with
+explicit consent and can be disruptive (audible mode switches, noise control
+changes while the device is worn), so do not run them during a call. The
+[CLI reference](cli.md#consented-write-tests) is the canonical description of
+the consent flow, the captured plan, the skip rules, restoration, and the
+exit codes.
 
-Read the report before opening the GitHub issue. A read-only report uses
-passive reads, so it can report setter exposure but cannot verify a command
-that changes a setting. With consent, the captured plan tests the advertised
-listening-mode targets recognized by this CLI and toggles Conversation
-Awareness away from the captured initial state and back. The plan does not
-change after it is disclosed.
-
-A setting is skipped without writing if its initial state cannot be read and
-restored safely, or if that state changes while consent is pending.
-Listening-mode tests also require the captured initial mode to be advertised
-and at least one alternate recognized advertised mode to test. After normal
-completion or a setter error, the command makes a best-effort restoration
-attempt. A failed restoration is reported locally and exits `3`. An externally
-delivered SIGHUP, SIGINT, or SIGTERM caught during the tests prints an
-interrupt notice on stderr, attempts restoration first, then exits `129`,
-`130`, or `143`, respectively.
+A read-only report uses passive reads, so it can report setter exposure but
+cannot verify a command that changes a setting. Only a consented run produces
+the write-test verdicts interpreted below.
 
 Mark a write capability as **Verified** only from an individual bare `verified`
 verdict, not a `no-op` or `setter error`, or after testing the command manually

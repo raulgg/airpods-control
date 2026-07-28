@@ -157,44 +157,26 @@ To share compatibility details:
 4. Read the report. You can then open a prefilled GitHub issue, edit it, and
    submit it.
 
-The read-only compatibility report includes only the normalized model
-identifier, the advertised listening modes (including modes this CLI version
-does not recognize), the advertised Conversation Awareness capability, whether
-the listening-mode and Conversation Awareness queries answer, whether macOS
-exposes their setters, the macOS version, and the CLI version. The model name is
-resolved locally from the Bluetooth product ID embedded in the model identifier.
-A consented run reads setting values locally only to plan, verify, and restore
-the write tests. If restoration cannot be verified, the terminal names the
-final state so you can restore it manually. The prefilled issue includes the
-same per-mode verdicts but omits the restoration outcome. Mode-result rows do
-not explicitly label which write restored the initial state.
+The report is built locally and shown to you before anything else happens. It
+contains only a fixed set of compatibility metadata; it never reads the
+customizable device name, firmware version, serial numbers, Bluetooth/MAC
+addresses, account data, or raw logs and system dumps, and it never uses the
+clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub
+issue is always your explicit choice. The
+[CLI reference](docs/cli.md#contributor-compatibility-report) documents the
+exact report contents and privacy rules.
 
-The command never reads the customizable device name, firmware version, serial
-numbers, Bluetooth/MAC addresses, account data, or raw logs and system dumps.
-Because it does not read names or accept `--device`, it requires exactly one
-compatible output device and exits without a report when selection is
-ambiguous.
-Without write-test consent, it does not change device settings or intentionally
-interrupt audio. It never uses the clipboard, sends telemetry, or submits a
-report. If it cannot identify a connected device, it prints a message and
-stops without opening the browser.
-
-The optional write tests require confirmation or `--with-write-tests`. They
-switch through the advertised listening modes recognized by this CLI and
-toggle Conversation Awareness away from the captured initial state and back.
-The plan is captured once before any write and shown before interactive
-consent. If a setting changes while consent is pending, or its initial state
-cannot be restored safely, that setting is skipped without writing. Each
-listening mode is held for about two seconds before the next write. After
-normal completion or a setter error, the command makes a best-effort
-restoration attempt. An unverified restoration names the final state and exits
-`3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during these
-tests stops further writes, prints an interrupt notice on stderr, attempts
-restoration first, suppresses the issue-opening prompt, and then exits `129`,
-`130`, or `143`, respectively. The tests can be
-disruptive (audible switches, noise control changes while worn), so consent
-only if you accept that. See the
-[CLI reference](docs/cli.md#consented-write-tests) for details.
+The optional write tests run only with your consent (the interactive question
+or `--with-write-tests`). They temporarily switch through the advertised
+listening modes recognized by this CLI, toggle Conversation Awareness, and
+then make a best-effort attempt to restore the captured initial settings; the
+terminal names the final state whenever restoration cannot be verified. The
+tests can be disruptive: mode switches are audible and noise control changes
+while the device is worn, so do not run them during a call, and consent only
+if you accept that. Without consent, `support-report` does not change device
+settings or intentionally interrupt audio. See the
+[CLI reference](docs/cli.md#consented-write-tests) for the exact plan, skip
+rules, verdict vocabulary, restoration behavior, and exit codes.
 
 Reports from other AirPods and Beats owners are welcome. A report does not make
 a Beats device supported.
