@@ -66,7 +66,7 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
     check(false, "support-report discovers an allowlisted device without a name")
     return
   }
-  let report = SupportReport.make(device: device)
+  let report = passiveSupportReport(device: device)
   check(report != nil, "name-free private adapter produces a support report")
   check(
     report?.markdown.contains("BTHeadphones76,8231") == true,
@@ -75,6 +75,10 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   check(
     report?.markdown.contains("Device family: AirPods") == true,
     "the Bluetooth model identifier resolves to the AirPods family"
+  )
+  check(
+    report?.markdown.contains("Model: AirPods Pro 3") == true,
+    "the Bluetooth product ID resolves to a model name"
   )
   check(device.name.isEmpty, "support-report adapter retains no customizable name")
   check(
@@ -89,6 +93,21 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   check(
     !device.canSetConversationAwareness(),
     "support-report fixture exposes no Conversation Awareness setter"
+  )
+
+  let otherRawDevice = FakeSupportReportRawDevice()
+  let ambiguousController = PrivateAudioController(
+    rawDevices: [rawDevice, otherRawDevice],
+    logger: DebugLogger(enabled: false),
+    includeDeviceNames: false
+  )
+  check(
+    ambiguousController.selectDevice(named: nil) == nil,
+    "name-free support-report selection requires one unique compatible device"
+  )
+  check(
+    rawDevice.nameReadCount == 0 && otherRawDevice.nameReadCount == 0,
+    "rejecting multiple report devices still reads no customizable names"
   )
 
   let namelessController = PrivateAudioController(
@@ -304,8 +323,14 @@ func testDeviceSelectionAndCapabilities() {
     reportMetadata.modelIdentifier == "AirPodsTest1,1",
     "report reads the allowlisted model identifier"
   )
-  check(reportMetadata.firmwareVersion == "1.0", "report reads exposed firmware")
-  check(reportMetadata.connectionState == .connected, "selected output device is connected")
+  check(
+    reportMetadata.unrecognizedListeningModes.isEmpty,
+    "all-known advertised modes leave nothing unrecognized"
+  )
+  check(
+    reportMetadata.listeningModeQueryAnswered,
+    "an answering mode query is recorded for the report"
+  )
   check(selected.canSetListeningMode(), "mode setter capability is detected")
   _ = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
   check(
@@ -317,10 +342,62 @@ func testDeviceSelectionAndCapabilities() {
   check(selected.conversationAwarenessState() == true, "CA setter and state are invoked safely")
 }
 
+func testSupportReportMetadataForUnrecognizedModes() {
+  let future = FakeRawDevice(
+    name: "Future AirPods",
+    modes: [
+      rawListeningModeValues[.off]!,
+      "AVOutputDeviceBluetoothListeningModeHearingAid",
+    ],
+    mode: "AVOutputDeviceBluetoothListeningModeHearingAid",
+    modelIdentifier: "BTHeadphones76,8231"
+  )
+  let device = privateAudioDevice(future)
+  let metadata = device.supportReportMetadata()
+  check(
+    metadata.unrecognizedListeningModes
+      == ["AVOutputDeviceBluetoothListeningModeHearingAid"],
+    "an unknown advertised mode is carried into the report metadata"
+  )
+  check(
+    metadata.listeningModeQueryAnswered,
+    "an unmapped current mode still counts as an answered query"
+  )
+  check(
+    device.currentListeningMode() == nil,
+    "an unmapped current mode is not translated"
+  )
+
+  let allUnknown = FakeRawDevice(
+    name: "Unknown-mode AirPods",
+    modes: ["AVOutputDeviceBluetoothListeningModeFuture"],
+    mode: "AVOutputDeviceBluetoothListeningModeFuture",
+    modelIdentifier: "BTHeadphones76,8231"
+  )
+  let report = passiveSupportReport(device: privateAudioDevice(allUnknown))
+  let markdown = report?.markdown ?? ""
+  check(report != nil, "a device advertising only unknown modes still reports")
+  check(
+    markdown.contains("Advertised known listening modes: unavailable/not reported"),
+    "unknown-only advertised modes leave the known list empty"
+  )
+  check(
+    markdown.contains(
+      "Other advertised listening modes: `AVOutputDeviceBluetoothListeningModeFuture`"
+    ),
+    "unknown-only advertised modes are still reported verbatim"
+  )
+  check(
+    markdown.contains("Listening-mode query: answers with an unrecognized mode"),
+    "an unmapped current mode is distinguished in the report"
+  )
+}
+
 func runPrivateAudioTests() {
   testPrivateSelectorDiscovery()
   testPrivateListeningModeTranslation()
   testSupportReportDiscoveryDoesNotReadDeviceNames()
+  testSupportReportMetadataForUnrecognizedModes()
   testListeningModeReadbackWaitsForDelayedTarget()
   testListeningModeReadbackReturnsImmediatelyForObservedTarget()
   testListeningModeReadbackReturnsFinalFallback()

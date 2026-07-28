@@ -18,21 +18,30 @@ SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
 SWIFT_LIBRARY_SOURCES := $(filter-out Sources/AirPodsControl/main.swift,$(SWIFT_SOURCES))
 SWIFT_TEST_SOURCES := $(sort $(wildcard Tests/AirPodsControlTests/*.swift))
 AV_BYPASS_SOURCE := Sources/AVBypass/bypass.c
-SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass
+SIGNAL_MONITOR_SOURCE := Sources/SignalMonitor/signal_monitor.c
+SIGNAL_MONITOR_INCLUDE_DIR := Sources/SignalMonitor/include
+SIGNAL_MONITOR_HEADER := $(SIGNAL_MONITOR_INCLUDE_DIR)/SignalMonitor.h
+SIGNAL_MONITOR_MODULE_MAP := $(SIGNAL_MONITOR_INCLUDE_DIR)/module.modulemap
+SIGNAL_MONITOR_RACE_TEST_SOURCE := Tests/SignalMonitorTests/signal_monitor_race_test.c
+SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass Sources/SignalMonitor
 SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
+SIGNAL_MONITOR_TEST_OBJECT := $(BUILD_DIR)/signal-monitor-tests.o
+SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
-.PHONY: all _build test install uninstall clean
+.PHONY: all _build test verify-catalog install uninstall clean
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
 		$(MAKE) --no-print-directory _build; \
 	fi
 
-$(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(AV_BYPASS_SOURCE) Makefile
+$(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(AV_BYPASS_SOURCE) \
+	$(SIGNAL_MONITOR_SOURCE) $(SIGNAL_MONITOR_HEADER) \
+	$(SIGNAL_MONITOR_MODULE_MAP) Makefile
 	@$(MAKE) --no-print-directory _build
 
 _build:
@@ -47,9 +56,15 @@ _build:
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -dynamiclib \
 			-o "$$tmp/avbypass.$$arch.dylib" "$(AV_BYPASS_SOURCE)" \
 			-framework CoreFoundation -framework Security && \
+		"$(CLANG)" -O2 -arch "$$arch" \
+			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -c \
+			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
+			-o "$$tmp/signal-monitor.$$arch.o" "$(SIGNAL_MONITOR_SOURCE)" && \
 		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
+			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
-			-o "$$tmp/airpods-control.$$arch" $(SWIFT_SOURCES); \
+			-o "$$tmp/airpods-control.$$arch" $(SWIFT_SOURCES) \
+			"$$tmp/signal-monitor.$$arch.o"; \
 	}; \
 	succeeded=""; failed=""; \
 	for arch in $(ARCHS); do \
@@ -90,11 +105,27 @@ _build:
 
 test: all
 	./Tests/CLIContractTests/cli.sh
+	"$(CLANG)" -O2 -pthread -DAIRPODS_CONTROL_SIGNAL_MONITOR_TESTING \
+		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
+		-o "$(SIGNAL_MONITOR_RACE_TEST_BINARY)" \
+		"$(SIGNAL_MONITOR_SOURCE)" "$(SIGNAL_MONITOR_RACE_TEST_SOURCE)"
+	"$(SIGNAL_MONITOR_RACE_TEST_BINARY)"
+	"$(CLANG)" -O0 -c \
+		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
+		-o "$(SIGNAL_MONITOR_TEST_OBJECT)" "$(SIGNAL_MONITOR_SOURCE)"
 	"$(SWIFTC)" -Onone -parse-as-library \
+		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 		-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 		-o "$(SWIFT_TEST_BINARY)" \
-		$(SWIFT_LIBRARY_SOURCES) $(SWIFT_TEST_SOURCES)
+		$(SWIFT_LIBRARY_SOURCES) $(SWIFT_TEST_SOURCES) \
+		"$(SIGNAL_MONITOR_TEST_OBJECT)"
 	"$(SWIFT_TEST_BINARY)"
+
+# Deliberately outside `test`: the result depends on the macOS version of
+# whoever runs it, so a stale system would fail the suite for no fault of the
+# code. Run it when adding hardware or after a major system upgrade.
+verify-catalog:
+	./scripts/verify-catalog.sh
 
 install: all
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"

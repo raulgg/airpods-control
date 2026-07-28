@@ -150,20 +150,33 @@ but reports are welcome. See the
 
 To share compatibility details:
 
-1. Connect AirPods as a macOS output device.
+1. Connect exactly one compatible AirPods or Beats device as a macOS output
+   device.
 2. Run `airpods-control support-report`.
-3. Read the report. You can then open a prefilled GitHub issue, edit it, and
+3. Choose whether to run the consented write tests when asked.
+4. Read the report. You can then open a prefilled GitHub issue, edit it, and
    submit it.
 
-The command reads only the model identifier, firmware when macOS exposes it,
-connection state, advertised capabilities and current states when available,
-the macOS version, and the CLI version. It never reads the customizable device
-name, serial numbers, Bluetooth/MAC addresses, account data, or raw logs and
-system dumps.
+The report is built locally and shown to you before anything else happens. It
+contains only a fixed set of compatibility metadata. It never reads the
+customizable device name, firmware version, serial numbers, Bluetooth/MAC
+addresses, account data, or raw logs and system dumps. It never uses the
+clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub
+issue is always your explicit choice. The
+[CLI reference](docs/cli.md#contributor-compatibility-report) documents the
+exact report contents and privacy rules.
 
-It also does not change device settings, interrupt audio, use the clipboard,
-send telemetry, or submit a report. If it cannot identify a connected device,
-it prints a message and stops without opening the browser.
+The optional write tests run only with your consent (the interactive question
+or `--with-write-tests`). They temporarily switch through the advertised
+listening modes recognized by this CLI, toggle Conversation Awareness, and
+then try to restore the captured initial settings. The terminal names the
+final state whenever restoration cannot be verified. The tests may be
+disruptive: mode switches are audible and noise control changes while the
+device is worn. Do not run them during a call. Consent only if you accept
+this. Without consent, `support-report` does not change device settings or
+intentionally interrupt audio. See the
+[CLI reference](docs/cli.md#consented-write-tests) for the exact plan, skip
+rules, verdict vocabulary, restoration behavior, and exit codes.
 
 Reports from other AirPods and Beats owners are welcome. A report does not make
 a Beats device supported.

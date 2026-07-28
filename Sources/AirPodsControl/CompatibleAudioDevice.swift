@@ -1,3 +1,5 @@
+import Foundation
+
 struct DeviceWriteObservation<State> {
   let setterAccepted: Bool
   let observed: State?
@@ -21,4 +23,9 @@ protocol CompatibleAudioDevice {
   func setConversationAwarenessAndReadBack(
     _ target: Bool
   ) -> DeviceWriteObservation<Bool>
+
+  // Blocks for the given interval without going stale: the production
+  // adapter must keep pumping the main run loop while it waits. How long to
+  // wait is the caller's policy, not the device's.
+  func settle(for interval: TimeInterval)
 }

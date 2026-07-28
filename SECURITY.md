@@ -39,11 +39,11 @@ library validation and blocks the inserted library.
 
 - You clone the repository and compile it locally with your own Command Line
   Tools toolchain.
-- The runtime source consists of
-  [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c), about 40 lines of C,
-  and the Swift files under
-  [`Sources/AirPodsControl`](Sources/AirPodsControl). Review them before
-  building. The executable comes from the source you compile.
+- The runtime source consists of the entitlement interpose in
+  [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c), the termination
+  monitor under [`Sources/SignalMonitor`](Sources/SignalMonitor), and the Swift
+  files under [`Sources/AirPodsControl`](Sources/AirPodsControl). Review them
+  before building. The executable comes from the source you compile.
 - The Homebrew formula downloads a source tarball and runs the same `make`.
 
 To verify the dylib, read `Sources/AVBypass/bypass.c`. It should compare

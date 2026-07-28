@@ -58,7 +58,6 @@ let rawListeningModeValues: [ListeningMode: String] = [
   let appliesListeningModeAsynchronously: Bool
   let appliesConversationAwarenessWrite: Bool
   let modelIdentifier: String
-  let firmware: String
   var listeningModeSetCount = 0
   var conversationAwarenessSetCount = 0
 
@@ -70,8 +69,7 @@ let rawListeningModeValues: [ListeningMode: String] = [
     conversationAwarenessEnabled: Bool = false,
     appliesListeningModeAsynchronously: Bool = false,
     appliesConversationAwarenessWrite: Bool = true,
-    modelIdentifier: String = "AirPodsTest1,1",
-    firmware: String = "1.0"
+    modelIdentifier: String = "AirPodsTest1,1"
   ) {
     outputName = name
     self.modes = modes
@@ -81,7 +79,6 @@ let rawListeningModeValues: [ListeningMode: String] = [
     self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
     self.modelIdentifier = modelIdentifier
-    self.firmware = firmware
   }
 
   @objc(name) func deviceName() -> String {
@@ -90,10 +87,6 @@ let rawListeningModeValues: [ListeningMode: String] = [
 
   @objc(modelID) func modelID() -> String {
     modelIdentifier
-  }
-
-  @objc(firmwareVersion) func firmwareVersion() -> String {
-    firmware
   }
 
   @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
@@ -167,10 +160,6 @@ let rawListeningModeValues: [ListeningMode: String] = [
 
   @objc(modelID) func modelID() -> String {
     "BTHeadphones76,8231"
-  }
-
-  @objc(firmwareVersion) func firmwareVersion() -> String {
-    "2.0"
   }
 
   @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {

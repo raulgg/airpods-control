@@ -1,0 +1,13 @@
+#ifndef AIRPODS_CONTROL_SIGNAL_MONITOR_H
+#define AIRPODS_CONTROL_SIGNAL_MONITOR_H
+
+int airpods_control_signal_monitor_install(void);
+int airpods_control_signal_monitor_caught_signal(void);
+int airpods_control_signal_monitor_disarm(void);
+
+#if defined(AIRPODS_CONTROL_SIGNAL_MONITOR_TESTING)
+void airpods_control_signal_monitor_test_pause_handler(int should_pause);
+int airpods_control_signal_monitor_test_handler_entered(void);
+#endif
+
+#endif

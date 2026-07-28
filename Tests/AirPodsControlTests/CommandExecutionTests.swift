@@ -58,8 +58,10 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   let noDeviceReport = CommandExecution.execute(reportInvocation) { _, _ in nil }
   check(noDeviceReport.exitCode == 1, "missing support-report device exits one")
   check(
-    noDeviceReport.plain.contains("No identifiable AirPods or Beats"),
-    "missing support-report device has helpful local guidance"
+    noDeviceReport.plain.contains(
+      "Connect exactly one compatible AirPods or Beats device"
+    ),
+    "support-report requires an unambiguous privacy-preserving target"
   )
   check(noDeviceReport.issueDraft == nil, "missing device does not offer issue creation")
 }

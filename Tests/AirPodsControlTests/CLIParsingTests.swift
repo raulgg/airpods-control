@@ -43,14 +43,50 @@ func testCLIParsing() {
 
   do {
     let invocation = try parseInvocation(["support-report"])
-    if case .supportReport = invocation.command {
-      check(true, "support-report parses as its contributor command")
+    if case .supportReport(writeTests: .ask) = invocation.command {
+      check(true, "bare support-report defaults to asking about write tests")
     } else {
-      check(false, "support-report parses as its contributor command")
+      check(false, "bare support-report defaults to asking about write tests")
     }
   } catch {
     check(false, "support-report parses successfully")
   }
+  do {
+    let invocation = try parseInvocation(["support-report", "--with-write-tests"])
+    if case .supportReport(writeTests: .always) = invocation.command {
+      check(true, "--with-write-tests consents without asking")
+    } else {
+      check(false, "--with-write-tests consents without asking")
+    }
+  } catch {
+    check(false, "--with-write-tests parses successfully")
+  }
+  do {
+    let invocation = try parseInvocation(["--no-write-tests", "support-report"])
+    if case .supportReport(writeTests: .never) = invocation.command {
+      check(true, "--no-write-tests declines anywhere in the invocation")
+    } else {
+      check(false, "--no-write-tests declines anywhere in the invocation")
+    }
+  } catch {
+    check(false, "--no-write-tests parses successfully")
+  }
+  expectParseFailure(
+    ["support-report", "--with-write-tests", "--no-write-tests"],
+    "the write-test flags are mutually exclusive"
+  )
+  expectParseFailure(
+    ["support-report", "--with-write-tests", "--with-write-tests"],
+    "duplicate consent flags are rejected"
+  )
+  expectParseFailure(
+    ["lm", "get", "--with-write-tests"],
+    "the consent flag belongs to support-report alone"
+  )
+  expectParseFailure(
+    ["--no-write-tests", "version"],
+    "version rejects the write-test flags"
+  )
   expectParseFailure(["support-report", "extra"], "support-report takes no arguments")
   expectParseFailure(["support-report", "--json"], "support-report rejects JSON output")
   expectParseFailure(["support-report", "--debug"], "support-report rejects debug output")

@@ -47,6 +47,7 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .br
 .B airpods-control
 .B support-report
+.RB [ --with-write-tests " | " --no-write-tests ]
 .br
 .B airpods-control
 .RB [ --version | -v | version ]
@@ -123,24 +124,106 @@ contract as listening mode.
 .TP
 .B support-report
 Build a local compatibility report from existing device and macOS metadata.
-The command reads only the normalized model identifier, firmware when macOS
-exposes it, connection state, advertised known listening modes and their
-current state, Conversation Awareness capability and state when available,
-the macOS version, and the CLI version. Missing data is marked unavailable or
-not reported. The command does not guess it.
+Exactly one compatible output device must be available. The command does not
+read device names or choose arbitrarily among devices.
+The read-only report includes only the normalized model identifier, the
+advertised listening modes, the advertised Conversation Awareness capability,
+whether the listening-mode and Conversation Awareness queries answer, whether
+macOS exposes their setters, the macOS version, and the CLI version. The model
+name is resolved locally from the Bluetooth product ID embedded in the model
+identifier. Advertised listening modes that this CLI version does not
+recognize are listed verbatim, capped at six, and filtered through the
+report's character allowlist. Missing data is marked unavailable or not
+reported. The command does not guess it.
 .IP
-It never reads the customizable device name, serial numbers, Bluetooth/MAC
-addresses, account data, or raw system dumps and logs. It does not change
-device settings, interrupt audio, use the clipboard, send telemetry, or submit
+The read-only report does not include the setting values returned by the
+queries and never invokes a setter. A consented run reads setting values
+locally only to plan, verify, and restore its writes. If restoration cannot be
+verified, the report names the final state so it can be restored manually. The
+prefilled issue includes the same per-mode verdicts but omits the restoration
+outcome.
+.IP
+When at least one write test can be planned safely, an interactive run captures
+the initial settings and advertised capabilities, displays that plan, and asks
+for consent, defaulting to no. The captured plan does not change after it is
+disclosed. If a setting changes while consent is pending, that setting is
+skipped rather than replaced with a different write.
+.IP
+Listening-mode tests cover only the advertised modes recognized by this CLI.
+They attempt each noninitial mode and restore the captured initial mode last if
+the state changed. All listening-mode writes are skipped if the setter is
+missing, the initial mode is unreadable or not advertised, or there is no
+alternate recognized advertised mode to test. Each completed listening-mode
+write is held for about two seconds. Conversation Awareness is toggled away
+from the captured initial state and back; it is skipped if its setter or
+initial state is unavailable.
+.IP
+After normal completion or a setter error, the command makes one restoration
+attempt if needed. Accepted but unverified writes are reported as
+.BR no-op ;
+setter rejections are reported as
+.B setter error
+and stop the remaining tests for that setting. Restoration setter errors and
+restoration no-ops remain distinct in the report. A write whose target already
+equals the state read immediately before it cannot demonstrate a transition;
+if its readback still matches, it is reported as
+.B "verified (already in this state; no transition demonstrated)"
+rather than bare
+.BR verified .
+An unverified restoration
+names the final state, gives a manual-fix hint, and exits 3.
+.IP
+An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the tests
+stops further writes, prints
+.B "Interrupt caught; restoring initial settings..."
+on standard error, attempts restoration first, prints any restoration warning,
+and then exits 129, 130, or 143, respectively. SIGKILL, a process crash, or
+power loss cannot guarantee restoration. The CLI does not generate
+thread-directed signals; those are outside this process-signal guarantee. An
+interrupted run does not offer or print an issue-draft URL.
+.IP
+The prefilled GitHub issue includes every per-mode verdict but omits the
+restoration status and local creation note. Neither report labels the row that
+restored the initial state, and when the state never left the captured initial
+mode, that mode's untested listening-mode set row is rendered without naming
+the mode.
+.B --with-write-tests
+answers the consent question with yes and is the only way to run the tests
+noninteractively;
+.B --no-write-tests
+answers it with no.
+.IP
+It never reads the customizable device name, firmware version, serial numbers,
+Bluetooth/MAC addresses, account data, or raw system dumps and logs. A
+read-only report does not change device settings or intentionally interrupt
+audio. Consented write tests temporarily change the settings in the captured
+plan. The command never uses the clipboard, sends telemetry, or submits
 anything.
 .IP
-The command prints the report before asking whether to open a GitHub issue with
-the Markdown template and report body already filled in. The contributor still
-edits and submits the issue. If the encoded URL is too long, the report stays
-in the terminal and the command offers the template without a prefilled body.
+Because
+.B support-report
+neither reads customizable names nor accepts
+.BR --device ,
+it requires exactly one compatible output device. With zero or multiple
+compatible devices it exits 1 before a report, prompt, or write.
 .IP
-If the command cannot identify connected AirPods or Beats, it prints local
-instructions and stops. The CLI has only been verified with AirPods Pro 3.
+After any completed write-test prompt and run, the command prints the report
+before asking whether to open a GitHub issue with the Markdown template and
+report body already filled in. The contributor still edits and submits the
+issue. If the encoded URL is too long, the report stays in the terminal and
+the command offers the template without a prefilled body.
+.IP
+The issue-opening question is asked only when standard input is interactive.
+For a completed run under a script, pipeline, or CI, the command prints the
+report and writes the ready-to-open issue draft URL to standard error without
+prompting or opening a browser, then returns the report outcome: normally 0,
+or 3 if consented write tests could not restore the initial settings. Unless
+the length cap above applies, that URL carries the report body with write-test
+verdicts but without restoration status.
+.IP
+If the command cannot select one unique identifiable AirPods or Beats device,
+it prints local instructions and stops. The CLI has only been verified with
+AirPods Pro 3.
 Other AirPods may work when macOS exposes the same private audio capabilities.
 Beats reports are welcome, but Beats support has not been verified.
 .TP
@@ -218,16 +301,30 @@ device selection, raw state, capability checks, writes, and read-back attempts.
 Success.
 .TP
 .B 1
-No supported or identifiable report device was found (no-device).
+No supported target was selected, or no unique identifiable report device was
+available (no-device).
 .TP
 .B 2
 Missing or malformed arguments (bad-args).
 .TP
 .B 3
-A requested write was not verified within the bounded window (no-op).
+A requested write was not verified within the bounded window, or the
+support-report write tests could not restore the initial settings (no-op).
 .TP
 .B 4
 The mode or feature is not available on this device (unsupported).
+.TP
+.B 129
+An externally delivered SIGHUP was caught during the write tests and
+restoration was attempted.
+.TP
+.B 130
+An externally delivered SIGINT was caught during the write tests and
+restoration was attempted.
+.TP
+.B 143
+An externally delivered SIGTERM was caught during the write tests and
+restoration was attempted.
 .SH NOTES
 Listening-mode writes are checked every 50 milliseconds while the device
 settles. Modes other than
@@ -270,7 +367,12 @@ accepts no
 .BR --json ,
 or
 .B --debug
-option. The report fields and confirmation prompt are fixed.
+option. Its only options are
+.B --with-write-tests
+and
+.BR --no-write-tests .
+The write-test consent prompt is device-specific; report result rows depend on
+the captured plan and its outcomes.
 .SH SEE ALSO
 Project documentation: https://github.com/raulgg/airpods-control
 .PP

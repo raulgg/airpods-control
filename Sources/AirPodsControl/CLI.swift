@@ -14,9 +14,15 @@ enum CLIResource {
   }
 }
 
+enum WriteTestsPreference {
+  case ask
+  case always
+  case never
+}
+
 enum CLICommand {
   case version
-  case supportReport
+  case supportReport(writeTests: WriteTestsPreference)
   case listeningModeGet
   case listeningModeSet(ListeningMode)
   case listeningModeList
@@ -63,7 +69,7 @@ struct CLIParseError: Error {}
 let globalHelp = """
 Usage:
   airpods-control [--device NAME] <resource> <command> [--json] [--debug]
-  airpods-control support-report
+  airpods-control support-report [--with-write-tests | --no-write-tests]
   airpods-control --version | -v | version
   airpods-control --help | -h
 
@@ -146,15 +152,40 @@ Options:
 
 let supportReportHelp = """
 Usage:
-  airpods-control support-report
+  airpods-control support-report [--with-write-tests | --no-write-tests]
 
-Builds a local compatibility report by reading existing device and macOS
-metadata. It does not change device settings, interrupt audio, use the
-clipboard, send telemetry, or submit anything.
+Build a local compatibility report from device and macOS metadata. When the
+command can plan at least one write test safely, an interactive run shows the
+plan and asks for consent. Declining produces a read-only report. Exactly one
+compatible output device must be available; the command does not read device
+names or choose arbitrarily among devices.
 
-The command never reads the customizable device name, serial numbers,
-Bluetooth/MAC addresses, account data, or raw system dumps and logs. Check the
-report before choosing whether to open a prefilled GitHub issue.
+The optional tests switch through the advertised listening modes recognized by
+this CLI and toggle Conversation Awareness away from the captured initial state
+and back. If a setting changes while consent is pending, or its initial state
+cannot be restored safely, that setting is skipped without writing. The tests
+can be disruptive: mode switches are audible and noise control changes while
+the device is worn.
+
+After normal completion or a setter error, the command makes one restoration
+attempt. An unverified restoration reports the final state and
+exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the
+tests prints an interrupt notice on stderr, attempts restoration first, then
+exits 129, 130, or 143, respectively, without offering an issue draft.
+
+Options:
+  --with-write-tests
+               Consent to the write tests without asking. This is the only
+               way to run them when standard input is not interactive.
+  --no-write-tests
+               Skip the write tests and the consent question.
+
+A read-only report does not change device settings or intentionally interrupt
+audio. The command does not read the customizable device name, firmware
+version, serial numbers, Bluetooth/MAC addresses, account data, or raw system
+dumps and logs. It never uses the clipboard, sends telemetry, or submits
+anything. Check the report before choosing whether to open a prefilled GitHub
+issue.
 """
 
 func helpText(for rawArgs: [String]) -> String? {
@@ -200,6 +231,8 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   var positional: [String] = []
   var jsonOutput = false
   var debugEnabled = false
+  var withWriteTests = false
+  var noWriteTests = false
   var requestedDeviceName: String?
   var requestedCycleModes: [ListeningMode]?
   var index = 0
@@ -210,6 +243,14 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       guard !jsonOutput else { throw CLIParseError() }
       jsonOutput = true
 
+    case "--with-write-tests":
+      guard !withWriteTests else { throw CLIParseError() }
+      withWriteTests = true
+
+    case "--no-write-tests":
+      guard !noWriteTests else { throw CLIParseError() }
+      noWriteTests = true
+
     case "--debug":
       guard !debugEnabled else { throw CLIParseError() }
       debugEnabled = true
@@ -219,7 +260,11 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
         throw CLIParseError()
       }
       let name = rawArgs[index + 1]
-      guard !name.isEmpty, !["--json", "--debug", "--device", "--help", "-h"].contains(name)
+      guard !name.isEmpty,
+            ![
+              "--json", "--debug", "--device", "--help", "-h",
+              "--with-write-tests", "--no-write-tests",
+            ].contains(name)
       else {
         throw CLIParseError()
       }
@@ -241,7 +286,13 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   }
 
   if positional.count == 1, ["--version", "-v", "version"].contains(positional[0]) {
-    guard requestedDeviceName == nil, requestedCycleModes == nil else { throw CLIParseError() }
+    guard requestedDeviceName == nil,
+          requestedCycleModes == nil,
+          !withWriteTests,
+          !noWriteTests
+    else {
+      throw CLIParseError()
+    }
     return CLIInvocation(
       command: .version,
       jsonOutput: jsonOutput,
@@ -254,17 +305,28 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
     guard requestedDeviceName == nil,
           requestedCycleModes == nil,
           !jsonOutput,
-          !debugEnabled
+          !debugEnabled,
+          !(withWriteTests && noWriteTests)
     else {
       throw CLIParseError()
     }
+    let writeTests: WriteTestsPreference
+    if withWriteTests {
+      writeTests = .always
+    } else if noWriteTests {
+      writeTests = .never
+    } else {
+      writeTests = .ask
+    }
     return CLIInvocation(
-      command: .supportReport,
+      command: .supportReport(writeTests: writeTests),
       jsonOutput: false,
       debugEnabled: false,
       requestedDeviceName: nil
     )
   }
+
+  guard !withWriteTests, !noWriteTests else { throw CLIParseError() }
 
   guard positional.count >= 2 else { throw CLIParseError() }
 

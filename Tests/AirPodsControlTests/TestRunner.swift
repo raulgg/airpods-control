@@ -7,7 +7,10 @@ struct TestRunner {
     runListeningModeTests()
     runCommandExecutionTests()
     runPrivateAudioTests()
+    runAppleAudioProductsTests()
     runSupportReportTests()
+    runSupportReportWriteFlowTests()
+    runSupportWriteTestsTests()
 
     if failureCount > 0 {
       fputs("Swift tests failed: \(failureCount)\n", stderr)

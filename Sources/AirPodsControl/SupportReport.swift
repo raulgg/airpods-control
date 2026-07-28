@@ -1,201 +1,194 @@
 import Darwin
 import Foundation
 
-enum SupportReportDeviceFamily: String {
-  case airPods = "AirPods"
-  case beats = "Beats (exploratory)"
-  case unknownApple = "Apple or Beats (unidentified, exploratory)"
-}
-
-enum SupportReportConnectionState: String {
-  case connected = "connected"
-}
-
-struct SupportReportDeviceMetadata {
-  let family: SupportReportDeviceFamily?
-  let modelIdentifier: String?
-  let firmwareVersion: String?
-  let connectionState: SupportReportConnectionState
-}
-
 struct SupportReportIssueDraft {
   let title: String
   let body: String
 }
 
+// The rendered support-report document: the local markdown and the GitHub
+// issue draft, produced in one pass from a pre-write snapshot and the
+// write-test results, if any ran.
 struct SupportReport {
   static let repositoryIssuesURL =
     URL(string: "https://github.com/raulgg/airpods-control/issues/new")!
   static let issueTemplateName = "compatibility-report.md"
   static let maximumPrefilledURLLength = 6_000
-  static let maximumModelIdentifierLength = 80
-  static let maximumFirmwareVersionLength = 40
 
   let markdown: String
   let issueDraft: SupportReportIssueDraft
 
-  static func make(
-    device: any CompatibleAudioDevice,
-    operatingSystemVersion: OperatingSystemVersion =
-      ProcessInfo.processInfo.operatingSystemVersion
-  ) -> SupportReport? {
-    let metadata = device.supportReportMetadata()
-    guard let family = metadata.family,
-          let modelIdentifier = normalizedMetadataValue(
-            metadata.modelIdentifier,
-            maximumLength: maximumModelIdentifierLength
-          )
-    else {
-      return nil
-    }
+  static func render(
+    _ snapshot: SupportReportSnapshot,
+    writeTests: SupportReportWriteTestResults? = nil
+  ) -> SupportReport {
+    let setterTested = writeTests != nil
+    let listeningModeSetter = setterValue(
+      snapshot.listeningModeSetterExposed, tested: setterTested
+    )
+    let conversationAwarenessSetter = setterValue(
+      snapshot.conversationAwarenessSetterExposed, tested: setterTested
+    )
+    let writeTestsSummaryLine = writeTests == nil ? "\n- Write tests: not run" : ""
+    let renderedWriteTestsSection = writeTests.map {
+      "\n\n" + writeTestsSection($0)
+    } ?? ""
+    let localRestorationStatus = writeTests.map {
+      "\n\nInitial state restored: \(restoredValue($0))"
+    } ?? ""
 
-    let listeningModes = device.availableListeningModes()
-    let listeningModesValue = listeningModes.isEmpty
-      ? "unavailable/not reported"
-      : listeningModes.map(\.rawValue).joined(separator: ", ")
-    let listeningModeState = device.currentListeningMode()?.rawValue ?? "unavailable"
-    let conversationAwarenessSupport: String
-    switch device.supportsConversationAwareness() {
-    case .some(true): conversationAwarenessSupport = "supported"
-    case .some(false): conversationAwarenessSupport = "not supported"
-    case .none: conversationAwarenessSupport = "unavailable/not reported"
-    }
-    let conversationAwarenessState: String
-    switch device.conversationAwarenessState() {
-    case .some(true): conversationAwarenessState = "on"
-    case .some(false): conversationAwarenessState = "off"
-    case .none: conversationAwarenessState = "unavailable"
-    }
-
-    let firmware = normalizedMetadataValue(
-      metadata.firmwareVersion,
-      maximumLength: maximumFirmwareVersionLength
-    ).map { "`\($0)`" } ?? "unavailable/not reported"
-    let macOS = [
-      operatingSystemVersion.majorVersion,
-      operatingSystemVersion.minorVersion,
-      operatingSystemVersion.patchVersion,
-    ].map(String.init).joined(separator: ".")
-
-    let markdown = """
+    let compatibilityReport = """
     ### Compatibility report
 
-    - Device family: \(family.rawValue)
-    - Model identifier: `\(modelIdentifier)`
-    - Firmware: \(firmware)
-    - Connection state: \(metadata.connectionState.rawValue)
-    - Advertised known listening modes: \(listeningModesValue)
-    - Current listening mode: \(listeningModeState)
-    - Conversation Awareness capability: \(conversationAwarenessSupport)
-    - Conversation Awareness state: \(conversationAwarenessState)
-    - macOS: \(macOS)
+    - Device family: \(snapshot.family.rawValue)
+    - Model: \(snapshot.model)
+    - Model identifier: \(snapshot.modelIdentifier)
+    - Advertised known listening modes: \(snapshot.listeningModes)
+    - Other advertised listening modes: \(snapshot.otherModes)
+    - Listening-mode query: \(snapshot.listeningModeQuery)
+    - Listening-mode setter: \(listeningModeSetter)
+    - Conversation Awareness capability: \(snapshot.conversationAwarenessSupport)
+    - Conversation Awareness query: \(snapshot.conversationAwarenessQuery)
+    - Conversation Awareness setter: \(conversationAwarenessSetter)\(writeTestsSummaryLine)
+    - macOS: \(snapshot.macOS)
     - airpods-control: \(VERSION)
+    """
+    let markdown = compatibilityReport + renderedWriteTestsSection
+      + localRestorationStatus
+      + "\n\nCreated locally by `airpods-control support-report`. Check it before submitting."
+    let issueBody = compatibilityReport + renderedWriteTestsSection + """
 
-    _Created locally by `airpods-control support-report`. Check it before submitting._
+
+    ### Notes (optional)
+
+    Add any other compatibility details that are safe to publish.
     """
 
     return SupportReport(
       markdown: markdown,
       issueDraft: SupportReportIssueDraft(
-        title: "[Compatibility] \(family.rawValue) on macOS \(macOS)",
-        body: markdown
+        title: "[Compatibility] \(snapshot.titleSubject) on macOS \(snapshot.macOS)",
+        body: issueBody
       )
     )
   }
 
-  static func normalizedMetadataValue(_ value: String?, maximumLength: Int) -> String? {
-    guard let value else { return nil }
-    let normalized = value
-      .components(separatedBy: .whitespacesAndNewlines)
-      .filter { !$0.isEmpty }
-      .joined(separator: " ")
-    let allowedCharacters = CharacterSet(
-      charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,_()+-/"
-    )
-    guard !normalized.isEmpty,
-          normalized.unicodeScalars.count <= maximumLength,
-          normalized.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) })
-    else {
-      return nil
-    }
-    return normalized
+  private static func setterValue(_ exposed: Bool, tested: Bool) -> String {
+    guard exposed else { return "not exposed" }
+    return tested ? "exposed (see write tests)" : "exposed, not tested by this report"
   }
 
-  private static let appleVendorID = 76
-  private static let bluetoothModelIDPrefix = "BTHeadphones"
-
-  // Product IDs from MagicPodsCore's AapModelIds table, cross-checked against
-  // AirPodsDesktop's AppleCP.cpp:
-  // https://github.com/steam3d/MagicPodsCore/blob/main/src/sdk/aap/enums/AapModelIds.h
-  private static let appleAudioProducts: [Int: SupportReportDeviceFamily] = [
-    0x2002: .airPods,
-    0x200A: .airPods,
-    0x200E: .airPods,
-    0x200F: .airPods,
-    0x2013: .airPods,
-    0x2014: .airPods,
-    0x2019: .airPods,
-    0x201B: .airPods,
-    0x201F: .airPods,
-    0x2024: .airPods,
-    0x2027: .airPods,
-    0x202D: .airPods,
-    0x2003: .beats,
-    0x2005: .beats,
-    0x2006: .beats,
-    0x2009: .beats,
-    0x200B: .beats,
-    0x200C: .beats,
-    0x200D: .beats,
-    0x2010: .beats,
-    0x2011: .beats,
-    0x2012: .beats,
-    0x2016: .beats,
-    0x2017: .beats,
-    0x201D: .beats,
-    0x2025: .beats,
-    0x2026: .beats,
-    0x202F: .beats,
-  ]
-
-  static func family(for modelIdentifier: String?) -> SupportReportDeviceFamily? {
-    guard let modelIdentifier else { return nil }
-    if let bluetoothIDs = bluetoothIdentifiers(for: modelIdentifier) {
-      guard bluetoothIDs.vendorID == appleVendorID else { return nil }
-      return appleAudioProducts[bluetoothIDs.productID] ?? .unknownApple
+  private static func writeTestsSection(
+    _ results: SupportReportWriteTestResults
+  ) -> String {
+    var lines: [String] = []
+    switch results.listeningModes {
+    case let .skipped(reason):
+      lines.append("- `listening-mode set`: skipped (\(reason))")
+    case let .ran(run):
+      for test in run.tests {
+        lines.append(
+          "- `listening-mode set \(test.mode.rawValue)`: \(modeVerdict(test))"
+        )
+      }
+      if run.stoppedAfterSetterError {
+        lines.append("- Remaining listening-mode tests: skipped after setter error")
+      }
+      switch run.restoration {
+      case let .attempted(restoration):
+        lines.append(
+          "- `listening-mode set \(restoration.mode.rawValue)`: "
+            + modeVerdict(restoration)
+        )
+      case .stateNeverChanged:
+        // Deliberately unnamed: the report is pasted publicly and must not
+        // disclose which mode the device was in.
+        lines.append(
+          "- `listening-mode set` (captured initial mode): "
+            + "skipped (state never changed from initial)"
+        )
+      }
     }
-    let normalized = modelIdentifier.lowercased()
-    if normalized.contains("airpods") {
-      return .airPods
+    switch results.conversationAwareness {
+    case let .skipped(reason):
+      lines.append("- `conversation-awareness set`: skipped (\(reason))")
+    case let .ran(run):
+      lines.append(
+        "- `conversation-awareness set`: \(conversationAwarenessVerdict(run))"
+      )
     }
-    if normalized.contains("beats") {
-      return .beats
-    }
-    return nil
+    let section = "### Write tests (run with consent)\n\n" + lines.joined(separator: "\n")
+    let interruption = results.interruptedBySignal.map {
+      "\n\nWrite tests interrupted by \(signalName($0)); "
+        + "remaining exploratory writes skipped."
+    } ?? ""
+    return section + interruption
   }
 
-  private static func bluetoothIdentifiers(
-    for modelIdentifier: String
-  ) -> (vendorID: Int, productID: Int)? {
-    let prefix = modelIdentifier.prefix(bluetoothModelIDPrefix.count)
-    guard prefix.lowercased() == bluetoothModelIDPrefix.lowercased() else { return nil }
-    let fields = modelIdentifier.dropFirst(prefix.count).components(separatedBy: ",")
-    guard fields.count == 2,
-          let vendorID = decimalIdentifier(fields[0]),
-          let productID = decimalIdentifier(fields[1])
-    else {
-      return nil
+  private static func modeVerdict(
+    _ test: SupportReportWriteTestResults.ListeningModeTest
+  ) -> String {
+    if !test.write.setterAccepted {
+      return "setter error"
     }
-    return (vendorID, productID)
+    if test.write.verified {
+      return test.targetAlreadyCurrent
+        ? "verified (already in this state; no transition demonstrated)"
+        : "verified"
+    }
+    if test.inferredOffFallback {
+      return "no-op (expected Transparency fallback)"
+    }
+    return "no-op"
   }
 
-  private static func decimalIdentifier(_ field: String) -> Int? {
-    guard !field.isEmpty,
-          field.allSatisfy({ $0.isASCII && $0.isNumber })
-    else {
-      return nil
+  private static func conversationAwarenessVerdict(
+    _ run: SupportReportWriteTestResults.ConversationAwarenessTestRun
+  ) -> String {
+    guard run.toggle.setterAccepted else { return "setter error" }
+    switch run.restoration {
+    case .stateNeverChanged:
+      // The accepted toggle never moved the readback, so there was no round
+      // trip to verify.
+      return "no-op"
+    case let .attempted(restoration):
+      guard restoration.setterAccepted else { return "restoration setter error" }
+      guard restoration.verified else { return "restoration no-op" }
+      return run.toggle.verified ? "verified round trip" : "no-op"
     }
-    return Int(field)
+  }
+
+  private static func restoredValue(_ results: SupportReportWriteTestResults) -> String {
+    var anythingWritten = false
+    var problems: [String] = []
+    if case let .ran(run) = results.listeningModes {
+      anythingWritten = true
+      if !run.restored {
+        problems.append(
+          "listening mode is now \(run.finalMode?.rawValue ?? "unknown")"
+        )
+      }
+    }
+    if case let .ran(run) = results.conversationAwareness {
+      anythingWritten = true
+      if !run.restored {
+        let state = run.finalState.map { $0 ? "on" : "off" } ?? "unknown"
+        problems.append("Conversation Awareness is now \(state)")
+      }
+    }
+    guard anythingWritten else { return "nothing was written" }
+    guard !problems.isEmpty else { return "yes" }
+    return "no, " + problems.joined(separator: "; ")
+      + ". Restore manually in System Settings."
+  }
+
+  private static func signalName(_ signalNumber: Int32) -> String {
+    switch signalNumber {
+    case SIGHUP: return "SIGHUP"
+    case SIGINT: return "SIGINT"
+    case SIGTERM: return "SIGTERM"
+    default: return "signal \(signalNumber)"
+    }
   }
 
   static func issueURL(for draft: SupportReportIssueDraft, includeBody: Bool) -> URL? {
@@ -224,71 +217,5 @@ struct SupportReport {
       return (prefilled, true)
     }
     return (issueURL(for: draft, includeBody: false)!, false)
-  }
-}
-
-enum SupportReportInteraction {
-  static func present(
-    outcome: CommandOutcome,
-    inputIsInteractive: Bool = isatty(STDIN_FILENO) == 1,
-    readResponse: () -> String? = { readLine() },
-    openURL: (URL) -> Bool = openInDefaultBrowser,
-    writeOutput: (String) -> Void = { print($0); fflush(stdout) },
-    writeError: (String) -> Void = { fputs($0, stderr) }
-  ) -> Int32 {
-    writeOutput(outcome.plain)
-    guard let draft = outcome.issueDraft else {
-      return outcome.exitCode
-    }
-
-    let issueURL = SupportReport.safeIssueURL(for: draft)
-    if !issueURL.prefilled {
-      writeError(
-        "\nThis report is too long for a prefilled GitHub URL. It is still printed above.\n"
-      )
-    }
-
-    guard inputIsInteractive else {
-      writeError(
-        "\nReview the report, then open this GitHub issue draft manually "
-          + "if you want to submit it:\n"
-          + issueURL.url.absoluteString + "\n"
-      )
-      return outcome.exitCode
-    }
-
-    let prompt = issueURL.prefilled
-      ? "\nOpen a prefilled GitHub issue in your browser? [y/N] "
-      : "\nOpen the GitHub compatibility-report template in your browser? [y/N] "
-    writeError(prompt)
-    guard let response = readResponse()?.trimmingCharacters(in: .whitespacesAndNewlines),
-          ["y", "yes"].contains(response.lowercased())
-    else {
-      writeError("Not opened. The report remains above.\n")
-      return outcome.exitCode
-    }
-
-    if openURL(issueURL.url) {
-      writeError("Opened the draft in your browser. GitHub has not submitted it.\n")
-    } else {
-      writeError(
-        "Could not open a browser. Open this URL manually:\n"
-          + issueURL.url.absoluteString + "\n"
-      )
-    }
-    return outcome.exitCode
-  }
-
-  private static func openInDefaultBrowser(_ url: URL) -> Bool {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = [url.absoluteString]
-    do {
-      try process.run()
-      process.waitUntilExit()
-      return process.terminationStatus == 0
-    } catch {
-      return false
-    }
   }
 }

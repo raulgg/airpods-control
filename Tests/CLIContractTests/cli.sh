@@ -81,7 +81,11 @@ assert_contains "$("$CLI" conversation-awareness set on -h)" \
 assert_contains "$("$CLI" --json lm set adaptive --json --help)" \
   'listening-mode set <mode>' "help precedence"
 assert_contains "$("$CLI" support-report --help)" \
-  'Builds a local compatibility report' "support-report help"
+  'Build a local compatibility report' "support-report help"
+assert_contains "$("$CLI" support-report --help)" \
+  '--with-write-tests' "support-report consent flag help"
+assert_contains "$("$CLI" support-report --help)" \
+  '--no-write-tests' "support-report decline flag help"
 
 assert_equal '0.1.0' "$("$CLI" --version)" "--version"
 assert_equal '0.1.0' "$("$CLI" -v)" "-v"
@@ -127,6 +131,10 @@ expect_failure 2 bad-args "$CLI" --device AirPods version
 expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" support-report --json
 expect_failure 2 bad-args "$CLI" --device AirPods support-report
 expect_failure 2 bad-args "$CLI" support-report extra
+expect_failure 2 bad-args "$CLI" support-report --with-write-tests --no-write-tests
+expect_failure 2 bad-args "$CLI" support-report --with-write-tests --with-write-tests
+expect_failure 2 bad-args "$CLI" lm get --with-write-tests
+expect_failure 2 bad-args "$CLI" --no-write-tests version
 expect_failure 2 bad-args "$CLI" lm get --device
 expect_failure 2 bad-args "$CLI" --device One --device Two lm get
 expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" --json
@@ -184,12 +192,37 @@ support_report_status=$?
 set -e
 assert_equal 1 "$support_report_status" "support-report no-device exit status"
 assert_contains "$support_report_output" \
-  'No identifiable AirPods or Beats device is connected.' \
-  "support-report no-device guidance"
+  'Connect exactly one compatible AirPods or Beats device' \
+  "support-report unique-device guidance"
 assert_contains "$support_report_output" \
   'Nothing was sent to GitHub.' "support-report does not offer issue creation"
 assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
   "support-report no-device has no prompt"
+
+# Safety guard for the consented invocation below: --with-write-tests
+# authorizes real device writes without prompting, and CONTRIBUTING.md
+# promises that tests never write device settings. The probe copy excludes
+# avbypass.dylib, so the entitlement gate must block device discovery. Prove
+# that here, immediately before the consented flag, so the guard travels with
+# this test instead of depending on earlier tests or file ordering. If this
+# assertion ever fails, the consented invocation could switch listening modes
+# on a contributor's connected AirPods.
+expect_failure 1 no-device "$CLI" lm get
+
+set +e
+support_report_writes_output=$(
+  "$CLI" support-report --with-write-tests \
+    2>"$PROBE_DIR/support-report-writes.stderr"
+)
+support_report_writes_status=$?
+set -e
+assert_equal 1 "$support_report_writes_status" \
+  "consented support-report no-device exit status"
+assert_contains "$support_report_writes_output" \
+  'Connect exactly one compatible AirPods or Beats device' \
+  "consented support-report unique-device guidance"
+assert_equal '' "$(cat "$PROBE_DIR/support-report-writes.stderr")" \
+  "no device means no consent prompt and no writes"
 
 set +e
 "$CLI" --debug lm get >"$PROBE_DIR/operation.stdout" 2>"$PROBE_DIR/operation.stderr"

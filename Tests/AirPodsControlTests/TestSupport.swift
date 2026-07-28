@@ -25,3 +25,43 @@ func commandOutcome(
   let invocation = try! parseInvocation(arguments)
   return CommandExecution.execute(invocation) { _, _ in device }
 }
+
+// Captures and renders in one step for tests that only need the finished
+// read-only document. Write-test renders should follow the production order
+// instead: capture, run, render.
+func passiveSupportReport(
+  device: any CompatibleAudioDevice,
+  operatingSystemVersion: OperatingSystemVersion =
+    ProcessInfo.processInfo.operatingSystemVersion
+) -> SupportReport? {
+  SupportReportSnapshot.capture(
+    device: device,
+    operatingSystemVersion: operatingSystemVersion
+  ).map { SupportReport.render($0) }
+}
+
+// Case accessors so tests can assert one payload field without unpacking the
+// whole outcome. Production code switches instead; keep it that way.
+extension CapabilityWriteTestOutcome {
+  var testRun: Run? {
+    if case let .ran(run) = self { return run }
+    return nil
+  }
+
+  var skipReason: String? {
+    if case let .skipped(reason) = self { return reason }
+    return nil
+  }
+}
+
+extension RestorationOutcome {
+  var attempted: Attempt? {
+    if case let .attempted(attempt) = self { return attempt }
+    return nil
+  }
+
+  var stateNeverChanged: Bool {
+    if case .stateNeverChanged = self { return true }
+    return false
+  }
+}

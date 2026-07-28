@@ -1,3 +1,24 @@
+import Foundation
+
+extension SupportReportDeviceMetadata {
+  // Defaults to AirPods Pro 3 (`BTHeadphones76,8231`, Bluetooth product ID
+  // 0x2027), the verified baseline device. Tests pass only the fields they
+  // actually vary.
+  static func fixture(
+    family: SupportReportDeviceFamily? = .airPods,
+    modelIdentifier: String? = "BTHeadphones76,8231",
+    unrecognizedListeningModes: [String] = [],
+    listeningModeQueryAnswered: Bool = true
+  ) -> SupportReportDeviceMetadata {
+    SupportReportDeviceMetadata(
+      family: family,
+      modelIdentifier: modelIdentifier,
+      unrecognizedListeningModes: unrecognizedListeningModes,
+      listeningModeQueryAnswered: listeningModeQueryAnswered
+    )
+  }
+}
+
 final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   let name: String
   var listeningModes: [ListeningMode]
@@ -7,7 +28,19 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var conversationAwarenessEnabled: Bool?
   var appliesConversationAwarenessWrite: Bool
   var reportMetadata: SupportReportDeviceMetadata
+  var exposesListeningModeSetter = true
+  var exposesConversationAwarenessSetter = true
+  var listeningModeSetterAccepted: (ListeningMode) -> Bool = { _ in true }
+  var conversationAwarenessSetterAccepted: (Bool) -> Bool = { _ in true }
+  // When set, a listening-mode write lands on the returned mode instead of
+  // the requested one (nil = the device reports no mode after the write).
+  var listeningModeWriteOverride: ((ListeningMode) -> ListeningMode?)?
+  // Runs on each settle, simulating state that changes during the hold.
+  var settleEffect: (() -> Void)?
+  var conversationAwarenessStateEffect: (() -> Void)?
+  var lastListeningModeTarget: ListeningMode?
   var listeningModeSetCount = 0
+  var settleIntervals: [TimeInterval] = []
   var conversationAwarenessSetCount = 0
 
   init(
@@ -21,8 +54,8 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     reportMetadata: SupportReportDeviceMetadata = SupportReportDeviceMetadata(
       family: .airPods,
       modelIdentifier: "AirPodsTest1,1",
-      firmwareVersion: "1.0",
-      connectionState: .connected
+      unrecognizedListeningModes: [],
+      listeningModeQueryAnswered: true
     )
   ) {
     self.name = name
@@ -48,20 +81,29 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   }
 
   func canSetListeningMode() -> Bool {
-    true
+    exposesListeningModeSetter
   }
 
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode> {
     listeningModeSetCount += 1
-    if appliesListeningModeWrite {
+    lastListeningModeTarget = target
+    let setterAccepted = listeningModeSetterAccepted(target)
+    if setterAccepted, let listeningModeWriteOverride {
+      listeningMode = listeningModeWriteOverride(target)
+    } else if setterAccepted, appliesListeningModeWrite {
       listeningMode = target
     }
     return DeviceWriteObservation(
-      setterAccepted: true,
+      setterAccepted: setterAccepted,
       observed: listeningMode
     )
+  }
+
+  func settle(for interval: TimeInterval) {
+    settleIntervals.append(interval)
+    settleEffect?()
   }
 
   func supportsConversationAwareness() -> Bool? {
@@ -69,22 +111,24 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   }
 
   func conversationAwarenessState() -> Bool? {
-    conversationAwarenessEnabled
+    conversationAwarenessStateEffect?()
+    return conversationAwarenessEnabled
   }
 
   func canSetConversationAwareness() -> Bool {
-    true
+    exposesConversationAwarenessSetter
   }
 
   func setConversationAwarenessAndReadBack(
     _ target: Bool
   ) -> DeviceWriteObservation<Bool> {
     conversationAwarenessSetCount += 1
-    if appliesConversationAwarenessWrite {
+    let setterAccepted = conversationAwarenessSetterAccepted(target)
+    if setterAccepted, appliesConversationAwarenessWrite {
       conversationAwarenessEnabled = target
     }
     return DeviceWriteObservation(
-      setterAccepted: true,
+      setterAccepted: setterAccepted,
       observed: conversationAwarenessEnabled
     )
   }

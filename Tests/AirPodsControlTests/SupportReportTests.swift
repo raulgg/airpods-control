@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 func testSupportReportContentsAndPrivacy() {
@@ -7,14 +8,9 @@ func testSupportReportContentsAndPrivacy() {
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false,
-    reportMetadata: SupportReportDeviceMetadata(
-      family: .airPods,
-      modelIdentifier: "AirPodsProTest2,1",
-      firmwareVersion: "7A1",
-      connectionState: .connected
-    )
+    reportMetadata: .fixture()
   )
-  let report = SupportReport.make(
+  let report = passiveSupportReport(
     device: device,
     operatingSystemVersion: OperatingSystemVersion(
       majorVersion: 26,
@@ -25,9 +21,13 @@ func testSupportReportContentsAndPrivacy() {
 
   check(report != nil, "an identifiable AirPods device produces a report")
   let markdown = report?.markdown ?? ""
-  check(markdown.contains("Model identifier: `AirPodsProTest2,1`"), "report has model ID")
-  check(markdown.contains("Firmware: `7A1`"), "report has exposed firmware")
-  check(markdown.contains("Connection state: connected"), "report has connection state")
+  check(markdown.contains("Model: AirPods Pro 3"), "report resolves the model name")
+  check(
+    markdown.contains(
+      "Model identifier: `BTHeadphones76,8231` (Bluetooth product ID 0x2027)"
+    ),
+    "report has the model ID with its decoded Bluetooth product ID"
+  )
   check(
     markdown.contains(
       "Advertised known listening modes: off, transparency, noise-cancellation"
@@ -35,19 +35,43 @@ func testSupportReportContentsAndPrivacy() {
     "report has canonical advertised capabilities"
   )
   check(
-    markdown.contains("Current listening mode: noise-cancellation"),
-    "report has exposed current mode"
+    markdown.contains("Other advertised listening modes: none"),
+    "report is explicit when every advertised mode is recognized"
+  )
+  check(
+    markdown.contains("Listening-mode query: answers with a recognized mode"),
+    "report says the mode query answers without exposing the mode"
+  )
+  check(
+    markdown.contains("Listening-mode setter: exposed, not tested by this report"),
+    "report says the mode setter is exposed without writing"
   )
   check(
     markdown.contains("Conversation Awareness capability: supported"),
     "report has advertised Conversation Awareness support"
   )
   check(
-    markdown.contains("Conversation Awareness state: off"),
-    "report has exposed Conversation Awareness state"
+    markdown.contains("Conversation Awareness query: answers"),
+    "report says the Conversation Awareness query answers without exposing the state"
+  )
+  check(
+    markdown.contains(
+      "Conversation Awareness setter: exposed, not tested by this report"
+    ),
+    "report says the Conversation Awareness setter is exposed without writing"
   )
   check(markdown.contains("macOS: 26.1.0"), "report has normalized macOS version")
   check(markdown.contains("airpods-control: \(VERSION)"), "report has CLI version")
+  check(!markdown.contains("Firmware:"), "report omits firmware")
+  check(!markdown.contains("Connection state:"), "report omits connection state")
+  check(
+    !markdown.contains("Current listening mode:"),
+    "report omits the current listening-mode value"
+  )
+  check(
+    !markdown.contains("Conversation Awareness state:"),
+    "report omits the Conversation Awareness state value"
+  )
   for excluded in ["serial", "MAC address", "account", "device name", "raw dump"] {
     check(
       !markdown.lowercased().contains(excluded.lowercased()),
@@ -59,14 +83,34 @@ func testSupportReportContentsAndPrivacy() {
     device.conversationAwarenessSetCount == 0,
     "report does not write Conversation Awareness"
   )
+  check(
+    report?.issueDraft.title == "[Compatibility] AirPods Pro 3 on macOS 26.1.0",
+    "the issue title names the resolved model"
+  )
 
   let invocation = try! parseInvocation(["support-report"])
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
   check(outcome.exitCode == 0, "supported-device command path succeeds")
   check(outcome.issueDraft != nil, "supported-device command path creates an issue draft")
   check(
-    outcome.plain == outcome.issueDraft?.body,
-    "the reviewed local report exactly matches the prefilled body"
+    outcome.plain.contains(
+      "Created locally by `airpods-control support-report`. Check it before submitting."
+    ),
+    "the local report carries its local-only footer"
+  )
+  check(
+    outcome.issueDraft?.body.contains("Created locally by") == false,
+    "the issue body omits the local-only footer"
+  )
+  check(
+    outcome.issueDraft?.body.hasSuffix(
+      """
+      ### Notes (optional)
+
+      Add any other compatibility details that are safe to publish.
+      """
+    ) == true,
+    "the prefilled issue retains the editable notes section from the issue template"
   )
 }
 
@@ -77,45 +121,61 @@ func testSupportReportUnavailableValuesAndIdentification() {
     listeningMode: nil,
     conversationAwarenessSupported: nil,
     conversationAwarenessEnabled: nil,
-    reportMetadata: SupportReportDeviceMetadata(
+    reportMetadata: .fixture(
       family: .beats,
       modelIdentifier: "BeatsTest1,1",
-      firmwareVersion: nil,
-      connectionState: .connected
+      listeningModeQueryAnswered: false
     )
   )
-  let report = SupportReport.make(device: unavailable)
+  unavailable.exposesListeningModeSetter = false
+  unavailable.exposesConversationAwarenessSetter = false
+  let report = passiveSupportReport(device: unavailable)
   let markdown = report?.markdown ?? ""
   check(report != nil, "an identifiable Beats device produces an exploratory report")
   check(markdown.contains("Beats (exploratory)"), "Beats report is marked exploratory")
   check(
-    markdown.contains("Firmware: unavailable/not reported"),
-    "missing firmware is explicit"
+    markdown.contains("Model: not recognized by this CLI version"),
+    "an unmapped identifier keeps the model explicit"
+  )
+  check(
+    markdown.contains("Model identifier: `BeatsTest1,1`\n"),
+    "a marketing-style identifier carries no Bluetooth product ID"
   )
   check(
     markdown.contains("Advertised known listening modes: unavailable/not reported"),
     "missing advertised modes are explicit"
   )
   check(
+    markdown.contains("Listening-mode query: unavailable/not reported"),
+    "an unanswered mode query is explicit"
+  )
+  check(
+    markdown.contains("Listening-mode setter: not exposed"),
+    "a missing mode setter is explicit"
+  )
+  check(
     markdown.contains("Conversation Awareness capability: unavailable/not reported"),
     "missing capability is explicit"
   )
   check(
-    markdown.contains("Conversation Awareness state: unavailable"),
-    "missing state is explicit"
+    markdown.contains("Conversation Awareness query: unavailable/not reported"),
+    "an unanswered Conversation Awareness query is explicit"
+  )
+  check(
+    markdown.contains("Conversation Awareness setter: not exposed"),
+    "a missing Conversation Awareness setter is explicit"
   )
 
   let unidentified = FakeCompatibleAudioDevice(
     name: "",
-    reportMetadata: SupportReportDeviceMetadata(
+    reportMetadata: .fixture(
       family: nil,
       modelIdentifier: nil,
-      firmwareVersion: nil,
-      connectionState: .connected
+      listeningModeQueryAnswered: false
     )
   )
   check(
-    SupportReport.make(device: unidentified) == nil,
+    SupportReportSnapshot.capture(device: unidentified) == nil,
     "unidentifiable hardware does not produce an issue report"
   )
 
@@ -140,66 +200,161 @@ func testSupportReportUnavailableValuesAndIdentification() {
 func testSupportReportFencesDeviceControlledText() {
   let hostile = FakeCompatibleAudioDevice(
     name: "",
-    reportMetadata: SupportReportDeviceMetadata(
-      family: .airPods,
+    reportMetadata: .fixture(
       modelIdentifier: "airpods www.evil.example/x",
-      firmwareVersion: "www.evil.example",
-      connectionState: .connected
+      unrecognizedListeningModes: ["www.evil.example/mode"]
     )
   )
-  let markdown = SupportReport.make(device: hostile)?.markdown ?? ""
+  let markdown = passiveSupportReport(device: hostile)?.markdown ?? ""
   check(
     markdown.contains("Model identifier: `airpods www.evil.example/x`"),
     "device-controlled model text is fenced against markdown autolinks"
   )
   check(
-    markdown.contains("Firmware: `www.evil.example`"),
-    "device-controlled firmware text is fenced against markdown autolinks"
+    markdown.contains("Other advertised listening modes: `www.evil.example/mode`"),
+    "device-controlled mode text is fenced against markdown autolinks"
   )
 
   let unnormalized = FakeCompatibleAudioDevice(
     name: "",
-    reportMetadata: SupportReportDeviceMetadata(
-      family: .airPods,
-      modelIdentifier: "airpods` [CLICK](http://evil.example) `x",
-      firmwareVersion: nil,
-      connectionState: .connected
+    reportMetadata: .fixture(
+      modelIdentifier: "airpods` [CLICK](http://evil.example) `x"
     )
   )
   check(
-    SupportReport.make(device: unnormalized) == nil,
-    "make itself rejects metadata that escapes the allowlist"
+    SupportReportSnapshot.capture(device: unnormalized) == nil,
+    "capture itself rejects metadata that escapes the allowlist"
+  )
+
+  let hostileModes = FakeCompatibleAudioDevice(
+    name: "",
+    reportMetadata: .fixture(
+      unrecognizedListeningModes: ["mode` [CLICK](http://evil.example) `x"]
+    )
+  )
+  let hostileModesMarkdown = passiveSupportReport(device: hostileModes)?.markdown ?? ""
+  check(
+    hostileModesMarkdown.contains("Other advertised listening modes: none"),
+    "a mode name that escapes the allowlist is dropped, not printed"
+  )
+}
+
+func testSupportReportUnrecognizedListeningModes() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    listeningModes: [.off, .transparency],
+    listeningMode: nil,
+    reportMetadata: .fixture(
+      unrecognizedListeningModes: ["AVOutputDeviceBluetoothListeningModeHearingAid"]
+    )
+  )
+  let markdown = passiveSupportReport(device: device)?.markdown ?? ""
+  check(
+    markdown.contains(
+      "Other advertised listening modes: `AVOutputDeviceBluetoothListeningModeHearingAid`"
+    ),
+    "an unrecognized advertised mode is reported verbatim and fenced"
+  )
+  check(
+    markdown.contains("Listening-mode query: answers with an unrecognized mode"),
+    "an answered but unmapped mode query is distinguished from silence"
+  )
+
+  let noisy = FakeCompatibleAudioDevice(
+    name: "",
+    reportMetadata: .fixture(unrecognizedListeningModes: (1...8).map { "Mode\($0)" })
+  )
+  let noisyMarkdown = passiveSupportReport(device: noisy)?.markdown ?? ""
+  check(
+    noisyMarkdown.contains("`Mode6`, and 2 more"),
+    "overlong unrecognized-mode lists are capped with an explicit count"
+  )
+  check(
+    !noisyMarkdown.contains("`Mode7`"),
+    "capped unrecognized modes are not listed individually"
+  )
+
+  let exact = FakeCompatibleAudioDevice(
+    name: "",
+    reportMetadata: .fixture(unrecognizedListeningModes: (1...6).map { "Mode\($0)" })
+  )
+  let exactMarkdown = passiveSupportReport(device: exact)?.markdown ?? ""
+  check(
+    exactMarkdown.contains("`Mode1`, `Mode2`, `Mode3`, `Mode4`, `Mode5`, `Mode6`\n"),
+    "exactly six unrecognized modes are all listed"
+  )
+  check(
+    !exactMarkdown.contains("more"),
+    "exactly six unrecognized modes carry no overflow suffix"
+  )
+}
+
+func testSupportReportUnknownAppleProduct() {
+  let device = FakeCompatibleAudioDevice(
+    name: "",
+    reportMetadata: .fixture(
+      family: .unknownApple,
+      modelIdentifier: "BTHeadphones76,60000"
+    )
+  )
+  let report = passiveSupportReport(
+    device: device,
+    operatingSystemVersion: OperatingSystemVersion(
+      majorVersion: 26,
+      minorVersion: 1,
+      patchVersion: 0
+    )
+  )
+  let markdown = report?.markdown ?? ""
+  check(
+    markdown.contains("Device family: Apple or Beats (unidentified, exploratory)"),
+    "an unlisted Apple product ID reports the exploratory family"
+  )
+  check(
+    markdown.contains("Model: not recognized by this CLI version"),
+    "an unlisted Apple product ID has no model name"
+  )
+  check(
+    markdown.contains(
+      "Model identifier: `BTHeadphones76,60000` (Bluetooth product ID 0xEA60)"
+    ),
+    "an unlisted Apple product ID still shows its decoded product ID"
+  )
+  check(
+    report?.issueDraft.title
+      == "[Compatibility] Apple or Beats (unidentified, exploratory) on macOS 26.1.0",
+    "an unresolved model falls back to the family in the issue title"
   )
 }
 
 func testSupportReportMetadataNormalization() {
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       "  AirPodsPro2,1   (USB-C) ",
       maximumLength: 80
     ) == "AirPodsPro2,1 (USB-C)",
     "model metadata trims and collapses whitespace"
   )
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       "AirPodsPro2,1\n- account: exposed",
       maximumLength: 80
     ) == nil,
     "model metadata rejects Markdown punctuation outside the allowlist"
   )
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       String(repeating: "A", count: 81),
       maximumLength: 80
     ) == nil,
     "model metadata rejects overlong values"
   )
   check(
-    SupportReport.normalizedMetadataValue("AirPods Pro\u{0301}", maximumLength: 80) == nil,
+    SupportReportSnapshot.normalizedMetadataValue("AirPods Pro\u{0301}", maximumLength: 80) == nil,
     "model metadata rejects non-ASCII combining marks"
   )
   check(
-    SupportReport.normalizedMetadataValue(
+    SupportReportSnapshot.normalizedMetadataValue(
       "AirPods" + String(repeating: "\u{034F}", count: 200_000),
       maximumLength: 80
     ) == nil,
@@ -251,7 +406,7 @@ func testSupportReportIssueURL() {
 func testSupportReportIssueURLEncodesPlusSigns() {
   let draft = SupportReportIssueDraft(
     title: "[Compatibility] Beats Studio Buds + on macOS 26.1.0",
-    body: "### Compatibility report\n\n- Firmware: 6A300+1"
+    body: "### Compatibility report\n\n- Model: Beats Studio Buds +"
   )
   let selected = SupportReport.safeIssueURL(for: draft)
   check(selected.prefilled, "a draft containing plus signs still prefills")
@@ -375,48 +530,13 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   check(openCount == 1, "no-device path never opens an issue URL")
 }
 
-func testSupportReportFamilyFromModelIdentifier() {
-  check(
-    SupportReport.family(for: "BTHeadphones76,8231") == .airPods,
-    "the Bluetooth model identifier of AirPods Pro 3 resolves to AirPods"
-  )
-  check(
-    SupportReport.family(for: "btheadphones76,8231") == .airPods,
-    "the Bluetooth model identifier prefix is matched case-insensitively"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones76,8210") == .beats,
-    "a known Beats product ID resolves to the exploratory Beats family"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones76,60000") == .unknownApple,
-    "an unlisted Apple product ID still produces an exploratory report"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones123,456") == nil,
-    "a non-Apple vendor ID stays unidentifiable"
-  )
-  check(
-    SupportReport.family(for: "BTHeadphones76,8231,0") == nil,
-    "a malformed Bluetooth model identifier stays unidentifiable"
-  )
-  check(
-    SupportReport.family(for: "AirPodsTest1,1") == .airPods,
-    "a marketing-style model identifier still matches by name"
-  )
-  check(
-    SupportReport.family(for: "BeatsTest1,1") == .beats,
-    "a marketing-style Beats identifier still matches by name"
-  )
-  check(SupportReport.family(for: nil) == nil, "missing model metadata is unidentifiable")
-}
-
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
   testSupportReportUnavailableValuesAndIdentification()
+  testSupportReportUnrecognizedListeningModes()
+  testSupportReportUnknownAppleProduct()
   testSupportReportFencesDeviceControlledText()
   testSupportReportMetadataNormalization()
-  testSupportReportFamilyFromModelIdentifier()
   testSupportReportIssueURL()
   testSupportReportIssueURLEncodesPlusSigns()
   testSupportReportRequiresConfirmationBeforeOpening()

@@ -40,8 +40,23 @@ make test
 ```
 
 `make test` builds both architectures when the installed toolchain supports
-them. It then runs the shell CLI contract tests and Swift unit tests. Tests
-must not require AirPods or write device settings.
+them. It then runs the shell CLI contract tests, the C signal-monitor race
+test, and the Swift unit tests. Tests must not require AirPods or write device
+settings.
+
+Check the product-name catalog against the pairings macOS itself publishes:
+
+```sh
+make verify-catalog
+```
+
+This reads `public.bluetooth-vendor-product-id` from the system's CoreTypes
+bundles and reports any Apple audio device the system knows about that
+`Sources/AirPodsControl/AppleAudioProducts.swift` does not. It stays out of
+`make test` because the answer depends on the macOS version of whoever runs
+it. Run it when adding hardware or after a major system upgrade. The catalog
+only supplies readable names for support reports; capability is always read
+from the device at runtime.
 
 Test changes to live private-API behavior manually on supported hardware.
 State the macOS version and device in the pull request. Automated tests must
@@ -54,8 +69,11 @@ a device or capability status.
 - `Sources/AirPodsControl` contains the single Swift executable module.
 - `Sources/AVBypass` contains the C source for the interpose dylib, which is
   built separately.
+- `Sources/SignalMonitor` contains the C termination monitor linked into the
+  executable and its Clang module header.
 - `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.
 - `Tests/CLIContractTests` verifies the built executable's output and exit codes.
+- `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in C.
 
 The names follow Swift target conventions. The Makefile is still the source of
 truth for builds because release builds combine architectures, sign both
