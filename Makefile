@@ -32,7 +32,7 @@ LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
-.PHONY: all _build test install uninstall clean
+.PHONY: all _build test verify-catalog install uninstall clean
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
@@ -120,6 +120,12 @@ test: all
 		$(SWIFT_LIBRARY_SOURCES) $(SWIFT_TEST_SOURCES) \
 		"$(SIGNAL_MONITOR_TEST_OBJECT)"
 	"$(SWIFT_TEST_BINARY)"
+
+# Deliberately outside `test`: the result depends on the macOS version of
+# whoever runs it, so a stale system would fail the suite for no fault of the
+# code. Run it when adding hardware or after a major system upgrade.
+verify-catalog:
+	./scripts/verify-catalog.sh
 
 install: all
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"

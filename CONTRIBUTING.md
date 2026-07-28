@@ -44,6 +44,20 @@ them. It then runs the shell CLI contract tests, the C signal-monitor race
 test, and the Swift unit tests. Tests must not require AirPods or write device
 settings.
 
+Check the product-name catalog against the pairings macOS itself publishes:
+
+```sh
+make verify-catalog
+```
+
+This reads `public.bluetooth-vendor-product-id` from the system's CoreTypes
+bundles and reports any Apple audio device the system knows about that
+`Sources/AirPodsControl/AppleAudioProducts.swift` does not. It stays out of
+`make test` because the answer depends on the macOS version of whoever runs
+it. Run it when adding hardware or after a major system upgrade. The catalog
+only supplies readable names for support reports; capability is always read
+from the device at runtime.
+
 Test changes to live private-API behavior manually on supported hardware.
 State the macOS version and device in the pull request. Automated tests must
 not write device settings. Update

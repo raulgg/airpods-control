@@ -12,10 +12,20 @@ enum AppleAudioProducts {
   private static let appleVendorID = 76
   private static let bluetoothModelIDPrefix = "BTHeadphones"
 
-  // Product IDs and model names from MagicPodsCore's AapModelIds table,
-  // cross-checked against AirPodsDesktop's AppleCP.cpp, librepods, and
-  // The Apple Wiki. Names follow docs/compatibility.md:
-  // https://github.com/steam3d/MagicPodsCore/blob/main/src/sdk/aap/enums/AapModelIds.h
+  // Resolves a product ID to a readable name for support reports. Presence
+  // here is not a claim that the CLI supports the device: capability is read
+  // from the hardware at runtime and tracked in docs/compatibility.md.
+  //
+  // macOS ships the authoritative pairings. Each declares a
+  // public.bluetooth-vendor-product-id tag of the form "76:<decimal PID>" in
+  //
+  //   /System/Library/CoreServices/CoreTypes.bundle/Contents/Library/
+  //     CoreTypes-NNNN.bundle/Contents/Info.plist
+  //
+  // `make verify-catalog` diffs this table against them. Those bundles only
+  // describe 0x2014 and newer; earlier entries predate that coverage and rest
+  // on community records. Names follow docs/compatibility.md rather than
+  // Apple's internal type identifiers, which lag marketing names.
   private static let catalog:
     [Int: (family: SupportReportDeviceFamily, name: String)] = [
       0x2002: (.airPods, "AirPods 1"),
@@ -24,8 +34,14 @@ enum AppleAudioProducts {
       0x200F: (.airPods, "AirPods 2"),
       0x2013: (.airPods, "AirPods 3"),
       0x2014: (.airPods, "AirPods Pro 2 (Lightning)"),
+      // macOS files every AirPods 4 unit under com.apple.airpods-gen4. Only
+      // the 0x2019 and 0x201B split into non-ANC and ANC is attested
+      // elsewhere, so the other variants stay unqualified.
       0x2019: (.airPods, "AirPods 4"),
       0x201B: (.airPods, "AirPods 4 (ANC)"),
+      0x201C: (.airPods, "AirPods 4"),
+      0x201E: (.airPods, "AirPods 4"),
+      0x2020: (.airPods, "AirPods 4"),
       0x201F: (.airPods, "AirPods Max 1 (USB-C)"),
       0x2024: (.airPods, "AirPods Pro 2 (USB-C)"),
       0x2027: (.airPods, "AirPods Pro 3"),
@@ -42,9 +58,12 @@ enum AppleAudioProducts {
       0x2012: (.beats, "Beats Fit Pro"),
       0x2016: (.beats, "Beats Studio Buds +"),
       0x2017: (.beats, "Beats Studio Pro"),
+      0x201A: (.beats, "Beats Pill"),
       0x201D: (.beats, "Powerbeats Pro 2"),
       0x2025: (.beats, "Beats Solo 4"),
       0x2026: (.beats, "Beats Solo Buds"),
+      // macOS still calls this one com.apple.beats-fit-pro-2025; "Powerbeats
+      // Fit" is the shipping name after the 2025 Beats rebrand.
       0x202F: (.beats, "Powerbeats Fit"),
     ]
 
