@@ -273,13 +273,10 @@ Write tests
 Review complete. Nothing has been submitted to GitHub.
 ```
 
-The command builds one `SupportReportDocument` and passes it to separate
-terminal and GitHub renderers. Capture, privacy filtering, verdict
-classification, and restoration interpretation happen before rendering. Each
-write gets its own row, so a Conversation Awareness toggle that verified stays
-visible even when its restore then fails. The GitHub renderer uses the same
+Each write gets its own row, so a Conversation Awareness toggle that verified
+stays visible even when its restore then fails. The GitHub report uses the same
 Device, Capabilities, and Write tests sections. It includes every per-mode
-verdict but omits the restoration status and the terminal review footer. The
+verdict but omits the restoration status and the terminal review footer; the
 issue form supplies the Compatibility report heading. The listening-mode row
 that restored the initial mode carries no restore label, and if the state never
 left the captured initial mode, the untested `listening-mode set` row does not
