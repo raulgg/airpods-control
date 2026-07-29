@@ -47,13 +47,11 @@ enum SupportReportTerminalRenderer {
       ),
     ]
 
-    if !document.capabilities.otherListeningModes.values.isEmpty
-      || document.capabilities.otherListeningModes.omittedCount > 0
-    {
+    if !document.capabilities.otherListeningModes.isEmpty {
       lines.append(
         row(
           "Other modes",
-          terminalOtherModes(document.capabilities.otherListeningModes),
+          document.capabilities.otherListeningModes.rendered(),
           options: options
         )
       )
@@ -157,17 +155,6 @@ enum SupportReportTerminalRenderer {
     modes.isEmpty
       ? "Unavailable / not reported"
       : modes.map(terminalModeName).joined(separator: ", ")
-  }
-
-  private static func terminalOtherModes(
-    _ modes: SupportReportOtherListeningModes
-  ) -> String {
-    var rendered = modes.values.joined(separator: ", ")
-    if modes.omittedCount > 0 {
-      let suffix = "\(modes.omittedCount) more"
-      rendered += rendered.isEmpty ? suffix : ", and \(suffix)"
-    }
-    return rendered
   }
 
   private static func terminalListeningModeQuery(
@@ -431,13 +418,7 @@ enum SupportReportGitHubRenderer {
   private static func githubOtherModes(
     _ modes: SupportReportOtherListeningModes
   ) -> String {
-    guard !modes.values.isEmpty || modes.omittedCount > 0 else { return "none" }
-    var rendered = modes.values.map { "`\($0)`" }.joined(separator: ", ")
-    if modes.omittedCount > 0 {
-      let suffix = "\(modes.omittedCount) more"
-      rendered += rendered.isEmpty ? suffix : ", and \(suffix)"
-    }
-    return rendered
+    modes.isEmpty ? "none" : modes.rendered { "`\($0)`" }
   }
 
   private static func githubListeningModeQuery(

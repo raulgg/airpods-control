@@ -33,6 +33,21 @@ enum SupportReportQueryAvailability {
 struct SupportReportOtherListeningModes {
   let values: [String]
   let omittedCount: Int
+
+  var isEmpty: Bool {
+    values.isEmpty && omittedCount == 0
+  }
+
+  // Lists the retained names and accounts for the ones dropped by the cap.
+  // Each renderer supplies its own quoting; the accounting is shared.
+  func rendered(quoting quote: (String) -> String = { $0 }) -> String {
+    var rendered = values.map(quote).joined(separator: ", ")
+    if omittedCount > 0 {
+      let suffix = "\(omittedCount) more"
+      rendered += rendered.isEmpty ? suffix : ", and \(suffix)"
+    }
+    return rendered
+  }
 }
 
 // Everything the report says about the device and host, captured as plain
