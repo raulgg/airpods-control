@@ -106,9 +106,11 @@ device, then run:
 airpods-control support-report
 ```
 
-Read the report before opening the GitHub issue. The write tests run only with
-explicit consent and can be disruptive (audible mode switches, noise control
-changes while the device is worn), so do not run them during a call. The
+Read the report before opening the GitHub issue form. The CLI prefills the
+generated report and title; add optional notes and complete the required
+privacy confirmation before submitting. The write tests run only with explicit
+consent and can be disruptive (audible mode switches, noise control changes
+while the device is worn), so do not run them during a call. The
 [CLI reference](cli.md#consented-write-tests) is the canonical description of
 the consent flow, the captured plan, the skip rules, restoration, and the
 exit codes.
@@ -123,8 +125,9 @@ on real hardware and recording the device and macOS version. A `verified
 (already in this state; no transition demonstrated)` verdict does not qualify
 either: the device already read as the target immediately before that write
 (for example after an Off write fell back to Transparency), so the matching
-readback proves nothing about the setter. The prefilled issue includes the
-same named listening-mode verdicts but omits the restoration outcome.
+readback proves nothing about the setter. The prefilled Compatibility report
+field includes the same named listening-mode verdicts but omits the restoration
+outcome.
 Mode-result rows do not explicitly label which write restored the initial
 state, and when the state never left the captured initial mode, that mode's
 untested `listening-mode set` row is rendered without naming the mode.

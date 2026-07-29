@@ -1,5 +1,5 @@
 .\" Manpage for airpods-control.
-.TH AIRPODS-CONTROL 1 "July 22, 2026" "airpods-control 0.1.0" "User Commands"
+.TH AIRPODS-CONTROL 1 "July 29, 2026" "airpods-control 0.1.0" "User Commands"
 .SH NAME
 airpods-control \- control AirPods listening mode and Conversation Awareness
 .SH SYNOPSIS
@@ -140,8 +140,8 @@ The read-only report does not include the setting values returned by the
 queries and never invokes a setter. A consented run reads setting values
 locally only to plan, verify, and restore its writes. If restoration cannot be
 verified, the report names the final state so it can be restored manually. The
-prefilled issue includes the same per-mode verdicts but omits the restoration
-outcome.
+prefilled Compatibility report field includes the same per-mode verdicts but
+omits the restoration outcome.
 .IP
 When at least one write test can be planned safely, an interactive run captures
 the initial settings and advertised capabilities, displays that plan, and asks
@@ -180,13 +180,14 @@ on standard error, attempts restoration first, prints any restoration warning,
 and then exits 129, 130, or 143, respectively. SIGKILL, a process crash, or
 power loss cannot guarantee restoration. The CLI does not generate
 thread-directed signals; those are outside this process-signal guarantee. An
-interrupted run does not offer or print an issue-draft URL.
+interrupted run does not offer or print an issue-form URL.
 .IP
-The prefilled GitHub issue includes every per-mode verdict but omits the
-restoration status and local creation note. Neither report labels the row that
-restored the initial state, and when the state never left the captured initial
-mode, that mode's untested listening-mode set row is rendered without naming
-the mode.
+The prefilled GitHub Compatibility report field includes every per-mode verdict
+but omits the restoration status and local creation note. The issue form
+supplies the compatibility heading and keeps optional notes separate. Neither
+report labels the row that restored the initial state, and when the state never
+left the captured initial mode, that mode's untested listening-mode set row is
+rendered without naming the mode.
 .B --with-write-tests
 answers the consent question with yes and is the only way to run the tests
 noninteractively;
@@ -208,18 +209,23 @@ it requires exactly one compatible output device. With zero or multiple
 compatible devices it exits 1 before a report, prompt, or write.
 .IP
 After any completed write-test prompt and run, the command prints the report
-before asking whether to open a GitHub issue with the Markdown template and
-report body already filled in. The contributor still edits and submits the
-issue. If the encoded URL is too long, the report stays in the terminal and
-the command offers the template without a prefilled body.
+before asking whether to open a GitHub issue form. The form keeps the generated
+Compatibility report separate from optional notes and requires an unchecked
+privacy-review confirmation. It adds the compatibility label and assigns the
+issue to raulgg. The contributor still reviews and submits the issue.
+.IP
+The CLI selects compatibility-report.yml, prefills the dynamic title, and
+prefills the generated report through the form field ID report. If the encoded
+URL is too long, the terminal prints a separate paste-ready GitHub Markdown
+block and the same form opens with the title but without the report field.
 .IP
 The issue-opening question is asked only when standard input is interactive.
 For a completed run under a script, pipeline, or CI, the command prints the
-report and writes the ready-to-open issue draft URL to standard error without
+report and writes the ready-to-open issue form URL to standard error without
 prompting or opening a browser, then returns the report outcome: normally 0,
 or 3 if consented write tests could not restore the initial settings. Unless
-the length cap above applies, that URL carries the report body with write-test
-verdicts but without restoration status.
+the length cap above applies, that URL carries the generated report field with
+write-test verdicts but without restoration status.
 .IP
 If the command cannot select one unique identifiable AirPods or Beats device,
 it prints local instructions and stops. The CLI has only been verified with

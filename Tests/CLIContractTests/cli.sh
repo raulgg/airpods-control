@@ -3,7 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 BUILT_CLI="$ROOT/build/airpods-control"
-COMPATIBILITY_TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/compatibility-report.md"
+COMPATIBILITY_TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/compatibility-report.yml"
 COMPATIBILITY_DOC="$ROOT/docs/compatibility.md"
 
 fail() {
@@ -45,13 +45,23 @@ expect_failure() {
 [ -f "$COMPATIBILITY_TEMPLATE" ] || fail "missing compatibility report issue template"
 [ -f "$COMPATIBILITY_DOC" ] || fail "missing device compatibility documentation"
 assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  'name: Compatibility report' "compatibility template frontmatter"
+  'name: Compatibility report' "compatibility form name"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  '  - compatibility' "compatibility form default label"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  '  - raulgg' "compatibility form default assignee"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  '    id: report' "compatibility form report field ID"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  '    id: notes' "compatibility form notes field ID"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  '    id: privacy' "compatibility form privacy checklist"
+assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
+  'I reviewed this report and confirmed it contains no custom device name' \
+  "compatibility form requires a privacy review"
 assert_contains "$(cat "$COMPATIBILITY_DOC")" \
   '| `support-report` metadata | Pending | Pending | Exploratory |' \
   "compatibility matrix tracks support-report verification"
-if grep -F -- '- [ ]' "$COMPATIBILITY_TEMPLATE" >/dev/null; then
-  fail "compatibility template must not contain a consent checkbox"
-fi
 
 # Excluding avbypass.dylib proves these parser-only paths return before the
 # entitlement bootstrap and private-framework lookup.

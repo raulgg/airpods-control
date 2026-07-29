@@ -80,13 +80,22 @@ enum SupportReportInteraction {
     let issueURL = SupportReport.safeIssueURL(for: draft)
     if !issueURL.prefilled {
       writeError(
-        "\nThis report is too long for a prefilled GitHub URL. It is still printed above.\n"
+        "\nThis report is too long for a prefilled GitHub URL. "
+          + "Use the paste-ready block printed below.\n"
+      )
+      writeOutput(
+        """
+
+        Paste-ready GitHub report
+        ─────────────────────────
+        \(draft.report)
+        """
       )
     }
 
     guard inputIsInteractive else {
       writeError(
-        "\nReview the report, then open this GitHub issue draft manually "
+        "\nReview the report, then open this GitHub issue form manually "
           + "if you want to submit it:\n"
           + issueURL.url.absoluteString + "\n"
       )
@@ -94,8 +103,8 @@ enum SupportReportInteraction {
     }
 
     let prompt = issueURL.prefilled
-      ? "\nOpen a prefilled GitHub issue in your browser? [y/N] "
-      : "\nOpen the GitHub compatibility-report template in your browser? [y/N] "
+      ? "\nOpen the prefilled GitHub issue form in your browser? [y/N] "
+      : "\nOpen the GitHub compatibility report form in your browser? [y/N] "
     writeError(prompt)
     guard let response = readResponse()?.trimmingCharacters(in: .whitespacesAndNewlines),
           ["y", "yes"].contains(response.lowercased())
@@ -105,7 +114,7 @@ enum SupportReportInteraction {
     }
 
     if openURL(issueURL.url) {
-      writeError("Opened the draft in your browser. GitHub has not submitted it.\n")
+      writeError("Opened the form in your browser. GitHub has not submitted it.\n")
     } else {
       writeError(
         "Could not open a browser. Open this URL manually:\n"
