@@ -776,7 +776,7 @@ func testTerminationMonitorCapturesSIGHUP() {
   )
 }
 
-func runSupportWriteTestsTests() {
+func runSupportReportWriteTesterTests() {
   testWriteTesterVerifiesAndRestores()
   testWriteTesterContinuesAfterNoOp()
   testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent()
