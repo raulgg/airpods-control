@@ -395,7 +395,7 @@ enum SupportReportGitHubRenderer {
     case .notRun:
       lines.append("- Status: not run")
     case let .ran(results):
-      lines.append("_Run with consent._")
+      lines.append("- Status: run with consent")
       lines.append("")
       lines.append(contentsOf: results.map(githubWriteTestResult))
       if let signal = document.interruptedBySignal {

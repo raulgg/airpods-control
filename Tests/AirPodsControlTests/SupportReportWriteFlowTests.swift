@@ -179,9 +179,9 @@ func testSupportReportWriteTestsCommandFlow() {
   )
   let issueReport = outcome.supportReportIssueDraft?.report ?? ""
   check(
-    issueReport.contains("#### Write tests\n\n_Run with consent._")
+    issueReport.contains("#### Write tests\n\n- Status: run with consent")
       && issueReport.contains("- `listening-mode set off`: verified"),
-    "the GitHub adapter independently renders the same write evidence"
+    "the GitHub adapter renders the same write evidence"
   )
   check(
     outcome.supportReportIssueDraft.map {

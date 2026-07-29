@@ -30,10 +30,9 @@
   observes asynchronous writes through the main run loop.
 
 **Support report document**
-: The privacy-safe, presentation-neutral compatibility evidence produced from
-  a pre-write device snapshot and optional write-test results. CLI and GitHub
-  adapters render the same document without reinterpreting device or write
-  behavior.
+: Compatibility data built from a pre-write device snapshot and optional
+  write-test results. The terminal and GitHub renderers format this document;
+  they do not inspect raw device or write-test behavior.
 
 **Device write observation**
 : What a compatible audio device reports after a write attempt: whether the

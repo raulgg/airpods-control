@@ -1,8 +1,7 @@
 import Foundation
 
-// A privacy-safe, presentation-neutral support report. It is the shared
-// interface between capture/write-test interpretation and every output
-// adapter. Renderers must not reinterpret raw device or write-test results.
+// Shared data for the terminal and GitHub renderers. Values are filtered and
+// interpreted before the document is built.
 struct SupportReportDocument {
   struct Device {
     let family: SupportReportDeviceFamily
@@ -189,8 +188,8 @@ struct SupportReportDocument {
           )
         )
       case .stateNeverChanged:
-        // Deliberately unnamed: the public report must not disclose which
-        // listening mode the device was in before the tests.
+        // Deliberately unnamed: the report is pasted publicly and must not
+        // disclose which mode the device was in.
         rendered.append(
           WriteTestResult(
             operation: .capturedInitialListeningMode,

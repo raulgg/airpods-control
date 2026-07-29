@@ -26,9 +26,8 @@ func commandOutcome(
   return CommandExecution.execute(invocation) { _, _ in device }
 }
 
-// Captures and normalizes in one step for tests that only need the finished
-// read-only document. Write-test documents should follow the production order
-// instead: capture, run, normalize.
+// Builds a read-only document for tests. Tests with writes should capture the
+// snapshot first, run the writes, and then build the document.
 func passiveSupportReport(
   device: any CompatibleAudioDevice,
   operatingSystemVersion: OperatingSystemVersion =

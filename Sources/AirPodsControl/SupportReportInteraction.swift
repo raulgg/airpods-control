@@ -68,13 +68,13 @@ enum SupportReportInteraction {
     if !issueURL.prefilled {
       writeError(
         "\nThis report is too long for a prefilled GitHub URL. "
-          + "Use the paste-ready block printed below.\n"
+          + "Copy the GitHub report printed below.\n"
       )
       writeOutput(
         """
 
-        Paste-ready GitHub report
-        ─────────────────────────
+        GitHub report
+        ─────────────
         \(draft.report)
         """
       )

@@ -103,15 +103,13 @@ func testSupportReportContentsAndPrivacy() {
     "the issue field starts with the same Device section as the CLI"
   )
   let issueReport = outcome.supportReportIssueDraft?.report ?? ""
-  let deviceSection = issueReport.range(of: "#### Device")
-  let capabilitiesSection = issueReport.range(of: "#### Capabilities")
-  let writeTestsSection = issueReport.range(of: "#### Write tests")
+  let sectionNames = ["#### Device", "#### Capabilities", "#### Write tests"]
+  let sectionOffsets = sectionNames.compactMap {
+    issueReport.range(of: $0)?.lowerBound
+  }
   check(
-    deviceSection != nil
-      && capabilitiesSection != nil
-      && writeTestsSection != nil
-      && deviceSection!.lowerBound < capabilitiesSection!.lowerBound
-      && capabilitiesSection!.lowerBound < writeTestsSection!.lowerBound,
+    sectionOffsets.count == sectionNames.count
+      && sectionOffsets == sectionOffsets.sorted(),
     "the issue field follows the CLI section order"
   )
   check(
@@ -179,7 +177,7 @@ func testSupportReportDocumentFeedsPureOutputAdapters() {
     document.summary.verified == 4
       && document.summary.inconclusive == 0
       && document.summary.errors == 0,
-    "shared verdict classification lives in the presentation-neutral document"
+    "the document classifies verdicts before either renderer runs"
   )
   check(
     firstTerminalOutput.split(separator: "\n").allSatisfy { $0.count <= 60 },
@@ -194,7 +192,7 @@ func testSupportReportDocumentFeedsPureOutputAdapters() {
     firstIssueDraft.report.contains("#### Device")
       && firstIssueDraft.report.contains("#### Capabilities")
       && firstIssueDraft.report.contains(
-        "#### Write tests\n\n_Run with consent._"
+        "#### Write tests\n\n- Status: run with consent"
       ),
     "the GitHub adapter mirrors the CLI sections with Markdown formatting"
   )
@@ -724,9 +722,9 @@ func testSupportReportPrintsPasteReadyFormFallback() {
 
   check(output.first == localReport, "fallback still prints the local report first")
   check(
-    output.last?.contains("Paste-ready GitHub report") == true
+    output.last?.contains("GitHub report") == true
       && output.last?.contains(draft.report) == true,
-    "fallback prints the exact GitHub form field for manual pasting"
+    "fallback prints the exact GitHub form field for manual copying"
   )
   check(
     errors.joined().contains("too long for a prefilled GitHub URL"),

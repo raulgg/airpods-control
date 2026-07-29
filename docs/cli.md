@@ -179,12 +179,10 @@ Review complete. Nothing has been submitted to GitHub.
 Open the prefilled GitHub issue form in your browser? [y/N]
 ```
 
-The terminal report is deliberately not Markdown. It uses separate Device,
-Capabilities, and Write tests sections, aligned labels, concise verdicts, a
-summary, and a prominent restoration result. Long values wrap within an
-88-column layout. Headings and statuses use restrained color only when stdout
-is a terminal; redirected output is plain text, and `NO_COLOR` or
-`TERM=dumb` disables color.
+The terminal report uses plain text with separate Device, Capabilities, and
+Write tests sections. Labels align in an 88-column layout and long values wrap.
+When stdout is a terminal, color distinguishes headings and statuses.
+Redirected output is plain text; `NO_COLOR` or `TERM=dumb` also disables color.
 
 The read-only compatibility document includes only the normalized model
 identifier, the advertised listening modes, the advertised Conversation
@@ -273,15 +271,15 @@ Write tests
 Review complete. Nothing has been submitted to GitHub.
 ```
 
-One presentation-neutral document feeds two pure output adapters. The terminal
-adapter produces the readable layout above. The GitHub adapter independently
-produces Markdown for the prefilled Compatibility report field. It follows the
-terminal adapter's Device, Capabilities, and Write tests section structure,
-including every per-mode verdict but omitting the restoration status and
-local-only footer. The issue form supplies the compatibility heading above
-those sections. Neither adapter labels the row that restored the initial state,
-and when the state never left the captured initial mode, that mode's untested
-`listening-mode set` row is rendered without naming the mode.
+The command builds one `SupportReportDocument` and passes it to separate
+terminal and GitHub renderers. Capture, privacy filtering, verdict
+classification, and restoration interpretation happen before rendering. The
+GitHub renderer uses the same Device, Capabilities, and Write tests sections.
+It includes every per-mode verdict but omits the restoration status and the
+terminal review footer. The issue form supplies the Compatibility report
+heading. Neither renderer labels the row that restored the initial state. If
+the state never left the captured initial mode, the untested `listening-mode
+set` row does not name that mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example
@@ -309,12 +307,12 @@ The CLI selects `compatibility-report.yml`, prefills the dynamic title through
 GitHub's `title` query parameter, and prefills the generated report through the
 form field ID `report`. If the encoded URL is too long, the command leaves the
 report in the terminal and opens the same form with the title but without the
-report field. Paste the reviewed terminal report into the required
+report field. Copy the reviewed terminal report into the required
 Compatibility report field.
 
 The issue-opening question is asked only when standard input is interactive.
 For a completed run under a script, pipeline, or CI, the command prints the
-report and writes the ready-to-open issue-form URL to stderr without prompting
+report and writes the issue form URL to stderr without prompting
 or opening a browser, then returns the report outcome: normally `0`, or `3`
 when consented write tests cannot restore the initial settings. Unless the
 length cap above applies, the URL carries the generated report field with
