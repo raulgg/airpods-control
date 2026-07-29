@@ -69,6 +69,10 @@ a device or capability status.
 ### Source layout
 
 - `Sources/AirPodsControl` contains the single Swift executable module.
+  `SupportReportDocument` is the presentation-neutral compatibility interface;
+  the terminal and GitHub renderers are pure output adapters over that same
+  document. Keep capture, verdict classification, privacy filtering, and
+  restoration interpretation out of the adapters.
 - `Sources/AVBypass` contains the C source for the interpose dylib, which is
   built separately.
 - `Sources/SignalMonitor` contains the C termination monitor linked into the

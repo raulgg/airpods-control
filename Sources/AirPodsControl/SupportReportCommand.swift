@@ -49,27 +49,28 @@ struct SupportReportCommand {
     case .ask: consented = requestWriteTestConsent(plan)
     }
     let writeTests = consented ? runWriteTests(plan, device) : nil
-    let report = SupportReport.render(snapshot, writeTests: writeTests)
+    let report = SupportReportDocument.make(snapshot: snapshot, writeTests: writeTests)
 
     switch Self.disposition(of: writeTests) {
     case .completed:
       return CommandOutcome(
-        plain: report.markdown,
+        plain: "",
         payload: ["result": "ok"],
-        issueDraft: report.issueDraft
+        supportReport: report
       )
     case .restorationFailed:
       return CommandOutcome(
-        plain: report.markdown,
+        plain: "",
         exitCode: 3,
         payload: ["result": "no-op"],
-        issueDraft: report.issueDraft
+        supportReport: report
       )
     case let .interrupted(signal):
       return CommandOutcome(
-        plain: report.markdown,
+        plain: "",
         exitCode: 128 + signal,
-        payload: ["result": "interrupted", "signal": signal]
+        payload: ["result": "interrupted", "signal": signal],
+        supportReport: report
       )
     }
   }
@@ -104,7 +105,7 @@ struct SupportReportCommand {
       as AirPods or Beats from its model metadata.
       No report was generated. Nothing was sent to GitHub.
       You can open a compatibility issue manually:
-      \(SupportReport.repositoryIssuesURL.absoluteString)?template=\(SupportReport.issueTemplateName)
+      \(SupportReportIssue.repositoryIssuesURL.absoluteString)?template=\(SupportReportIssue.templateName)
       """,
       exitCode: 1,
       payload: ["error": "unidentified-device", "result": "error"]

@@ -26,18 +26,41 @@ func commandOutcome(
   return CommandExecution.execute(invocation) { _, _ in device }
 }
 
-// Captures and renders in one step for tests that only need the finished
-// read-only document. Write-test renders should follow the production order
-// instead: capture, run, render.
+// Captures and normalizes in one step for tests that only need the finished
+// read-only document. Write-test documents should follow the production order
+// instead: capture, run, normalize.
 func passiveSupportReport(
   device: any CompatibleAudioDevice,
   operatingSystemVersion: OperatingSystemVersion =
     ProcessInfo.processInfo.operatingSystemVersion
-) -> SupportReport? {
+) -> SupportReportDocument? {
   SupportReportSnapshot.capture(
     device: device,
     operatingSystemVersion: operatingSystemVersion
-  ).map { SupportReport.render($0) }
+  ).map { SupportReportDocument.make(snapshot: $0) }
+}
+
+extension SupportReportDocument {
+  var terminalOutput: String {
+    SupportReportTerminalRenderer.render(self)
+  }
+
+  var githubIssueDraft: SupportReportIssueDraft {
+    SupportReportGitHubRenderer.render(self)
+  }
+}
+
+extension CommandOutcome {
+  var supportReportOutput: String {
+    supportReport?.terminalOutput ?? plain
+  }
+
+  var supportReportIssueDraft: SupportReportIssueDraft? {
+    guard let supportReport, supportReport.interruptedBySignal == nil else {
+      return nil
+    }
+    return supportReport.githubIssueDraft
+  }
 }
 
 // Case accessors so tests can assert one payload field without unpacking the

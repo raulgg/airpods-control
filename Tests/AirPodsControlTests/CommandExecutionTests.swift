@@ -63,7 +63,7 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
     ),
     "support-report requires an unambiguous privacy-preserving target"
   )
-  check(noDeviceReport.issueDraft == nil, "missing device does not offer issue creation")
+  check(noDeviceReport.supportReportIssueDraft == nil, "missing device does not offer issue creation")
 }
 
 func testListeningModeCommandExecution() {

@@ -69,15 +69,15 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   let report = passiveSupportReport(device: device)
   check(report != nil, "name-free private adapter produces a support report")
   check(
-    report?.markdown.contains("BTHeadphones76,8231") == true,
+    report?.terminalOutput.contains("BTHeadphones76,8231") == true,
     "name-free report includes the allowlisted model identifier"
   )
   check(
-    report?.markdown.contains("Device family: AirPods") == true,
+    report?.terminalOutput.contains("Family                   AirPods") == true,
     "the Bluetooth model identifier resolves to the AirPods family"
   )
   check(
-    report?.markdown.contains("Model: AirPods Pro 3") == true,
+    report?.terminalOutput.contains("Model                    AirPods Pro 3") == true,
     "the Bluetooth product ID resolves to a model name"
   )
   check(device.name.isEmpty, "support-report adapter retains no customizable name")
@@ -86,7 +86,7 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
     "support-report never invokes the customizable name selector"
   )
   check(
-    report?.markdown.contains("Custom Owner Name") == false,
+    report?.terminalOutput.contains("Custom Owner Name") == false,
     "support-report output never contains the customizable name"
   )
   check(!device.canSetListeningMode(), "support-report fixture exposes no mode setter")
@@ -375,20 +375,20 @@ func testSupportReportMetadataForUnrecognizedModes() {
     modelIdentifier: "BTHeadphones76,8231"
   )
   let report = passiveSupportReport(device: privateAudioDevice(allUnknown))
-  let markdown = report?.markdown ?? ""
+  let cliOutput = report?.terminalOutput ?? ""
   check(report != nil, "a device advertising only unknown modes still reports")
   check(
-    markdown.contains("Advertised known listening modes: unavailable/not reported"),
+    cliOutput.contains("Listening modes          Unavailable / not reported"),
     "unknown-only advertised modes leave the known list empty"
   )
   check(
-    markdown.contains(
-      "Other advertised listening modes: `AVOutputDeviceBluetoothListeningModeFuture`"
+    cliOutput.contains(
+      "Other modes              AVOutputDeviceBluetoothListeningModeFuture"
     ),
     "unknown-only advertised modes are still reported verbatim"
   )
   check(
-    markdown.contains("Listening-mode query: answers with an unrecognized mode"),
+    cliOutput.contains("Mode query               Available · unrecognized mode"),
     "an unmapped current mode is distinguished in the report"
   )
 }

@@ -159,8 +159,11 @@ To share compatibility details:
 5. Add any optional notes, confirm that you reviewed the report for private
    information, and submit it.
 
-The report is built locally and shown to you before anything else happens. It
-contains only a fixed set of compatibility metadata. It never reads the
+The report is built locally and shown to you before anything else happens. The
+terminal uses readable Device, Capabilities, and Write tests sections; the
+prefilled GitHub field is rendered separately as Markdown from the same
+privacy-safe data. The report contains only a fixed set of compatibility
+metadata. It never reads the
 customizable device name, firmware version, serial numbers, Bluetooth/MAC
 addresses, account data, or raw logs and system dumps. It never uses the
 clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub

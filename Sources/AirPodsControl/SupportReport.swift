@@ -1,218 +1,274 @@
-import Darwin
 import Foundation
 
-struct SupportReportIssueDraft {
-  let title: String
-  let report: String
-}
+// A privacy-safe, presentation-neutral support report. It is the shared
+// interface between capture/write-test interpretation and every output
+// adapter. Renderers must not reinterpret raw device or write-test results.
+struct SupportReportDocument {
+  struct Device {
+    let family: SupportReportDeviceFamily
+    let model: String
+    let modelIdentifier: String
+    let bluetoothProductID: String?
+    let macOS: String
+    let cliVersion: String
+    let titleSubject: String
+  }
 
-// The rendered support-report document: the local markdown and the GitHub
-// issue draft, produced in one pass from a pre-write snapshot and the
-// write-test results, if any ran.
-struct SupportReport {
-  static let repositoryIssuesURL =
-    URL(string: "https://github.com/raulgg/airpods-control/issues/new")!
-  static let issueTemplateName = "compatibility-report.yml"
-  static let reportFieldID = "report"
-  static let maximumPrefilledURLLength = 6_000
+  struct Capabilities {
+    let listeningModes: [ListeningMode]
+    let otherListeningModes: SupportReportOtherListeningModes
+    let listeningModeQuery: SupportReportListeningModeQuery
+    let listeningModeSetter: SetterStatus
+    let conversationAwarenessSupport: SupportReportCapabilitySupport
+    let conversationAwarenessQuery: SupportReportQueryAvailability
+    let conversationAwarenessSetter: SetterStatus
+  }
 
-  let markdown: String
-  let issueDraft: SupportReportIssueDraft
+  enum SetterStatus {
+    case notExposed
+    case exposedNotTested
+    case exposedTested
+  }
 
-  static func render(
-    _ snapshot: SupportReportSnapshot,
+  enum WriteTests {
+    case notRun
+    case ran([WriteTestResult])
+
+    var results: [WriteTestResult] {
+      if case let .ran(results) = self { return results }
+      return []
+    }
+  }
+
+  struct WriteTestResult {
+    enum Operation {
+      case listeningMode(ListeningMode)
+      case listeningModes
+      case capturedInitialListeningMode
+      case remainingListeningModes
+      case conversationAwareness
+    }
+
+    enum Verdict {
+      case verified
+      case verifiedRoundTrip
+      case inconclusive(reason: String)
+      case noOp(reason: String?)
+      case setterError
+      case restorationSetterError
+      case restorationNoOp
+      case skipped(reason: String)
+    }
+
+    let operation: Operation
+    let verdict: Verdict
+  }
+
+  enum RestorationProblem {
+    case listeningMode(ListeningMode?)
+    case conversationAwareness(Bool?)
+  }
+
+  enum Restoration {
+    case notRun
+    case nothingWritten
+    case restored
+    case failed([RestorationProblem])
+  }
+
+  struct Summary {
+    var verified = 0
+    var inconclusive = 0
+    var noOp = 0
+    var errors = 0
+    var skipped = 0
+  }
+
+  let device: Device
+  let capabilities: Capabilities
+  let writeTests: WriteTests
+  let restoration: Restoration
+  let interruptedBySignal: Int32?
+
+  var summary: Summary {
+    writeTests.results.reduce(into: Summary()) { summary, result in
+      switch result.verdict {
+      case .verified, .verifiedRoundTrip:
+        summary.verified += 1
+      case .inconclusive:
+        summary.inconclusive += 1
+      case .noOp, .restorationNoOp:
+        summary.noOp += 1
+      case .setterError, .restorationSetterError:
+        summary.errors += 1
+      case .skipped:
+        summary.skipped += 1
+      }
+    }
+  }
+
+  static func make(
+    snapshot: SupportReportSnapshot,
     writeTests: SupportReportWriteTestResults? = nil
-  ) -> SupportReport {
+  ) -> SupportReportDocument {
     let setterTested = writeTests != nil
-    let listeningModeSetter = setterValue(
-      snapshot.listeningModeSetterExposed, tested: setterTested
-    )
-    let conversationAwarenessSetter = setterValue(
-      snapshot.conversationAwarenessSetterExposed, tested: setterTested
-    )
-    let writeTestsSummaryLine = writeTests == nil ? "\n- Write tests: not run" : ""
-    let localWriteTestsSection = writeTests.map {
-      "\n\n" + writeTestsSection($0, heading: "### Write tests (run with consent)")
-    } ?? ""
-    let issueWriteTestsSection = writeTests.map {
-      "\n\n" + writeTestsSection($0, heading: "#### Write tests (run with consent)")
-    } ?? ""
-    let localRestorationStatus = writeTests.map {
-      "\n\nInitial state restored: \(restoredValue($0))"
-    } ?? ""
+    let results = writeTests.map(writeTestResults) ?? []
 
-    let compatibilityDetails = """
-    - Device family: \(snapshot.family.rawValue)
-    - Model: \(snapshot.model)
-    - Model identifier: \(snapshot.modelIdentifier)
-    - Advertised known listening modes: \(snapshot.listeningModes)
-    - Other advertised listening modes: \(snapshot.otherModes)
-    - Listening-mode query: \(snapshot.listeningModeQuery)
-    - Listening-mode setter: \(listeningModeSetter)
-    - Conversation Awareness capability: \(snapshot.conversationAwarenessSupport)
-    - Conversation Awareness query: \(snapshot.conversationAwarenessQuery)
-    - Conversation Awareness setter: \(conversationAwarenessSetter)\(writeTestsSummaryLine)
-    - macOS: \(snapshot.macOS)
-    - airpods-control: \(VERSION)
-    """
-    let compatibilityReport = "### Compatibility report\n\n" + compatibilityDetails
-    let markdown = compatibilityReport + localWriteTestsSection
-      + localRestorationStatus
-      + "\n\nCreated locally by `airpods-control support-report`. Check it before submitting."
-
-    return SupportReport(
-      markdown: markdown,
-      issueDraft: SupportReportIssueDraft(
-        title: "[Compatibility] \(snapshot.titleSubject) on macOS \(snapshot.macOS)",
-        report: compatibilityDetails + issueWriteTestsSection
-      )
+    return SupportReportDocument(
+      device: Device(
+        family: snapshot.family,
+        model: snapshot.model,
+        modelIdentifier: snapshot.modelIdentifier,
+        bluetoothProductID: snapshot.bluetoothProductID,
+        macOS: snapshot.macOS,
+        cliVersion: VERSION,
+        titleSubject: snapshot.titleSubject
+      ),
+      capabilities: Capabilities(
+        listeningModes: snapshot.listeningModes,
+        otherListeningModes: snapshot.otherListeningModes,
+        listeningModeQuery: snapshot.listeningModeQuery,
+        listeningModeSetter: setterStatus(
+          exposed: snapshot.listeningModeSetterExposed,
+          tested: setterTested
+        ),
+        conversationAwarenessSupport: snapshot.conversationAwarenessSupport,
+        conversationAwarenessQuery: snapshot.conversationAwarenessQuery,
+        conversationAwarenessSetter: setterStatus(
+          exposed: snapshot.conversationAwarenessSetterExposed,
+          tested: setterTested
+        )
+      ),
+      writeTests: writeTests == nil ? .notRun : .ran(results),
+      restoration: restoration(from: writeTests),
+      interruptedBySignal: writeTests?.interruptedBySignal
     )
   }
 
-  private static func setterValue(_ exposed: Bool, tested: Bool) -> String {
-    guard exposed else { return "not exposed" }
-    return tested ? "exposed (see write tests)" : "exposed, not tested by this report"
+  private static func setterStatus(exposed: Bool, tested: Bool) -> SetterStatus {
+    guard exposed else { return .notExposed }
+    return tested ? .exposedTested : .exposedNotTested
   }
 
-  private static func writeTestsSection(
-    _ results: SupportReportWriteTestResults,
-    heading: String
-  ) -> String {
-    var lines: [String] = []
+  private static func writeTestResults(
+    _ results: SupportReportWriteTestResults
+  ) -> [WriteTestResult] {
+    var rendered: [WriteTestResult] = []
+
     switch results.listeningModes {
     case let .skipped(reason):
-      lines.append("- `listening-mode set`: skipped (\(reason))")
-    case let .ran(run):
-      for test in run.tests {
-        lines.append(
-          "- `listening-mode set \(test.mode.rawValue)`: \(modeVerdict(test))"
+      rendered.append(
+        WriteTestResult(
+          operation: .listeningModes,
+          verdict: .skipped(reason: reason)
         )
-      }
+      )
+    case let .ran(run):
+      rendered.append(
+        contentsOf: run.tests.map {
+          WriteTestResult(
+            operation: .listeningMode($0.mode),
+            verdict: modeVerdict($0)
+          )
+        }
+      )
       if run.stoppedAfterSetterError {
-        lines.append("- Remaining listening-mode tests: skipped after setter error")
+        rendered.append(
+          WriteTestResult(
+            operation: .remainingListeningModes,
+            verdict: .skipped(reason: "after setter error")
+          )
+        )
       }
       switch run.restoration {
       case let .attempted(restoration):
-        lines.append(
-          "- `listening-mode set \(restoration.mode.rawValue)`: "
-            + modeVerdict(restoration)
+        rendered.append(
+          WriteTestResult(
+            operation: .listeningMode(restoration.mode),
+            verdict: modeVerdict(restoration)
+          )
         )
       case .stateNeverChanged:
-        // Deliberately unnamed: the report is pasted publicly and must not
-        // disclose which mode the device was in.
-        lines.append(
-          "- `listening-mode set` (captured initial mode): "
-            + "skipped (state never changed from initial)"
+        // Deliberately unnamed: the public report must not disclose which
+        // listening mode the device was in before the tests.
+        rendered.append(
+          WriteTestResult(
+            operation: .capturedInitialListeningMode,
+            verdict: .skipped(reason: "state never changed from initial")
+          )
         )
       }
     }
+
     switch results.conversationAwareness {
     case let .skipped(reason):
-      lines.append("- `conversation-awareness set`: skipped (\(reason))")
+      rendered.append(
+        WriteTestResult(
+          operation: .conversationAwareness,
+          verdict: .skipped(reason: reason)
+        )
+      )
     case let .ran(run):
-      lines.append(
-        "- `conversation-awareness set`: \(conversationAwarenessVerdict(run))"
+      rendered.append(
+        WriteTestResult(
+          operation: .conversationAwareness,
+          verdict: conversationAwarenessVerdict(run)
+        )
       )
     }
-    let section = heading + "\n\n" + lines.joined(separator: "\n")
-    let interruption = results.interruptedBySignal.map {
-      "\n\nWrite tests interrupted by \(signalName($0)); "
-        + "remaining exploratory writes skipped."
-    } ?? ""
-    return section + interruption
+
+    return rendered
   }
 
   private static func modeVerdict(
     _ test: SupportReportWriteTestResults.ListeningModeTest
-  ) -> String {
-    if !test.write.setterAccepted {
-      return "setter error"
-    }
+  ) -> WriteTestResult.Verdict {
+    guard test.write.setterAccepted else { return .setterError }
     if test.write.verified {
       return test.targetAlreadyCurrent
-        ? "verified (already in this state; no transition demonstrated)"
-        : "verified"
+        ? .inconclusive(reason: "already in this state; no transition demonstrated")
+        : .verified
     }
-    if test.inferredOffFallback {
-      return "no-op (expected Transparency fallback)"
-    }
-    return "no-op"
+    return .noOp(
+      reason: test.inferredOffFallback ? "expected Transparency fallback" : nil
+    )
   }
 
   private static func conversationAwarenessVerdict(
     _ run: SupportReportWriteTestResults.ConversationAwarenessTestRun
-  ) -> String {
-    guard run.toggle.setterAccepted else { return "setter error" }
+  ) -> WriteTestResult.Verdict {
+    guard run.toggle.setterAccepted else { return .setterError }
     switch run.restoration {
     case .stateNeverChanged:
-      // The accepted toggle never moved the readback, so there was no round
-      // trip to verify.
-      return "no-op"
+      return .noOp(reason: nil)
     case let .attempted(restoration):
-      guard restoration.setterAccepted else { return "restoration setter error" }
-      guard restoration.verified else { return "restoration no-op" }
-      return run.toggle.verified ? "verified round trip" : "no-op"
+      guard restoration.setterAccepted else { return .restorationSetterError }
+      guard restoration.verified else { return .restorationNoOp }
+      return run.toggle.verified ? .verifiedRoundTrip : .noOp(reason: nil)
     }
   }
 
-  private static func restoredValue(_ results: SupportReportWriteTestResults) -> String {
+  private static func restoration(
+    from results: SupportReportWriteTestResults?
+  ) -> Restoration {
+    guard let results else { return .notRun }
+
     var anythingWritten = false
-    var problems: [String] = []
+    var problems: [RestorationProblem] = []
     if case let .ran(run) = results.listeningModes {
       anythingWritten = true
       if !run.restored {
-        problems.append(
-          "listening mode is now \(run.finalMode?.rawValue ?? "unknown")"
-        )
+        problems.append(.listeningMode(run.finalMode))
       }
     }
     if case let .ran(run) = results.conversationAwareness {
       anythingWritten = true
       if !run.restored {
-        let state = run.finalState.map { $0 ? "on" : "off" } ?? "unknown"
-        problems.append("Conversation Awareness is now \(state)")
+        problems.append(.conversationAwareness(run.finalState))
       }
     }
-    guard anythingWritten else { return "nothing was written" }
-    guard !problems.isEmpty else { return "yes" }
-    return "no, " + problems.joined(separator: "; ")
-      + ". Restore manually in System Settings."
-  }
 
-  private static func signalName(_ signalNumber: Int32) -> String {
-    switch signalNumber {
-    case SIGHUP: return "SIGHUP"
-    case SIGINT: return "SIGINT"
-    case SIGTERM: return "SIGTERM"
-    default: return "signal \(signalNumber)"
-    }
-  }
-
-  static func issueURL(for draft: SupportReportIssueDraft, includeReport: Bool) -> URL? {
-    var components = URLComponents(
-      url: repositoryIssuesURL,
-      resolvingAgainstBaseURL: false
-    )
-    var queryItems = [
-      URLQueryItem(name: "template", value: issueTemplateName),
-      URLQueryItem(name: "title", value: draft.title),
-    ]
-    if includeReport {
-      queryItems.append(URLQueryItem(name: reportFieldID, value: draft.report))
-    }
-    components?.queryItems = queryItems
-    let encodedQuery = components?.percentEncodedQuery
-    components?.percentEncodedQuery = encodedQuery?
-      .replacingOccurrences(of: "+", with: "%2B")
-    return components?.url
-  }
-
-  static func safeIssueURL(for draft: SupportReportIssueDraft) -> (url: URL, prefilled: Bool) {
-    if let prefilled = issueURL(for: draft, includeReport: true),
-       prefilled.absoluteString.count <= maximumPrefilledURLLength
-    {
-      return (prefilled, true)
-    }
-    return (issueURL(for: draft, includeReport: false)!, false)
+    guard anythingWritten else { return .nothingWritten }
+    return problems.isEmpty ? .restored : .failed(problems)
   }
 }

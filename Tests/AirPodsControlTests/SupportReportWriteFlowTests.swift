@@ -13,33 +13,28 @@ func testSupportReportWriteTestConsent() {
   )
   check(!declined, "answering n declines the write tests")
   let prompt = errors.joined()
-  check(prompt.contains("Run the write tests? [y/N]"), "consent is an explicit question")
-  check(prompt.contains("may be disruptive"), "consent warns about disruption")
+  check(prompt.contains("Run write tests? [y/N]"), "consent is an explicit question")
+  check(prompt.contains("Changes are audible"), "consent warns about disruption")
   check(
-    prompt.contains("After you confirm, the command will run only the checks listed above."),
+    prompt.contains("Plan"),
     "consent makes the fixed scope clear"
   )
   check(
-    prompt.contains("tries to restore"),
+    prompt.contains("restored when possible; failures are reported"),
     "consent accurately describes restoration as best effort"
   )
   check(
     prompt.contains(
-      "switch through advertised listening modes recognized by this CLI: "
-        + "off, adaptive, noise-cancellation"
+      "off, adaptive, noise-cancellation (about 2s each)"
     ),
     "consent lists the exact exploratory modes from the captured plan"
   )
   check(
-    prompt.contains(
-      "restore the captured initial listening mode (transparency) if needed"
-    ),
+    prompt.contains("Restore mode             transparency"),
     "consent identifies the separate restoration target"
   )
   check(
-    prompt.contains(
-      "toggle Conversation Awareness away from the captured initial state and back"
-    ),
+    prompt.contains("Conversation Awareness   toggle and restore"),
     "consent lists the Conversation Awareness toggle"
   )
   check(prompt.contains("read-only"), "declining explains the fallback report")
@@ -100,16 +95,34 @@ func testSupportReportWriteTestConsent() {
   )
   let unreadableCAPrompt = errors.joined()
   check(
-    unreadableCAPrompt.contains(
-      "switch through advertised listening modes recognized by this CLI"
-    ),
+    unreadableCAPrompt.contains("Listening modes"),
     "readable modes are still promised"
   )
   check(
-    !unreadableCAPrompt.contains(
-      "toggle Conversation Awareness away from the captured initial state and back"
-    ),
+    !unreadableCAPrompt.contains("Conversation Awareness   toggle and restore"),
     "a Conversation Awareness test that would be skipped is not promised"
+  )
+}
+
+func testSupportReportConsentRendererIsPureAndTTYOptional() {
+  let plan = SupportReportWriteTestPlan.make(
+    device: FakeCompatibleAudioDevice(name: "")
+  )
+  let first = SupportReportConsentRenderer.render(plan, colorEnabled: false)
+  let second = SupportReportConsentRenderer.render(plan, colorEnabled: false)
+  let colored = SupportReportConsentRenderer.render(plan, colorEnabled: true)
+
+  check(first == second, "the consent renderer is deterministic for the same plan")
+  check(
+    first?.contains("\u{001B}[") == false
+      && colored?.contains("\u{001B}[") == true,
+    "consent color is controlled only by an explicit rendering option"
+  )
+  check(
+    first?.contains("Plan") == true
+      && first?.contains("Caution") == true
+      && first?.contains("Restore") == true,
+    "the compact consent output keeps plan, disruption, and restoration distinct"
   )
 }
 
@@ -136,72 +149,77 @@ func testSupportReportWriteTestsCommandFlow() {
   check(consentRequests == 0, "--with-write-tests never asks again")
   check(outcome.exitCode == 0, "a restored write-test run succeeds")
   check(
-    outcome.plain.contains("### Write tests (run with consent)"),
-    "the consented report carries the write-test section"
+    outcome.supportReportOutput.contains("Write tests"),
+    "the consented CLI report carries the write-test section"
   )
   check(
-    outcome.plain.contains("- `listening-mode set off`: verified"),
-    "each mode write gets a verdict line"
+    outcome.supportReportOutput.contains("Off")
+      && outcome.supportReportOutput.contains("VERIFIED"),
+    "each mode write gets a readable verdict row"
   )
   check(
-    outcome.plain.contains("- `conversation-awareness set`: verified round trip"),
-    "the Conversation Awareness round trip gets a verdict line"
+    outcome.supportReportOutput.contains("VERIFIED · round trip"),
+    "the Conversation Awareness round trip gets a terminal verdict"
   )
   check(
-    outcome.plain.contains("\n\nInitial state restored: yes"),
-    "a clean run reports restoration"
+    outcome.supportReportOutput.contains("RESTORED"),
+    "a clean run makes restoration prominent"
   )
   check(
-    !outcome.plain.contains("- Initial state restored:"),
-    "restoration status is not part of the write-result list"
+    outcome.supportReportOutput.contains("4 verified"),
+    "the CLI report summarizes the write-test outcomes"
   )
   check(
-    outcome.plain.contains("Listening-mode setter: exposed (see write tests)"),
-    "the setter line points at the write-test section"
+    outcome.supportReportOutput.contains("Available · tested below"),
+    "the setter row points at the write-test section"
   )
   check(
-    !outcome.plain.contains("Write tests: not run"),
+    !outcome.supportReportOutput.contains("NOT RUN"),
     "a consented report has no not-run marker"
   )
-  let issueReport = outcome.issueDraft?.report ?? ""
+  let issueReport = outcome.supportReportIssueDraft?.report ?? ""
   check(
-    issueReport.hasPrefix("- Device family: AirPods")
-      && issueReport.contains("#### Write tests (run with consent)")
+    issueReport.contains("#### Write tests (run with consent)")
       && issueReport.contains("- `listening-mode set off`: verified"),
-    "the form field contains the compatibility details and write results"
+    "the GitHub adapter independently renders the same write evidence"
   )
   check(
-    outcome.issueDraft.map { SupportReport.safeIssueURL(for: $0).prefilled } == true,
+    outcome.supportReportIssueDraft.map {
+      SupportReportIssue.safeURL(for: $0).prefilled
+    } == true,
     "a four-mode write report fits in the prefilled issue URL"
   )
   check(
-    !issueReport.contains("Initial state restored:"),
+    outcome.supportReportIssueDraft?.report.contains("Initial state restored:") == false,
     "the issue field omits the restoration status"
   )
   check(
-    outcome.issueDraft?.report.contains(
+    outcome.supportReportIssueDraft?.report.contains(
       "- `listening-mode set noise-cancellation`: verified"
     ) == true,
     "the issue field includes the final mode-write verdict without a restoration label"
   )
   check(
-    outcome.issueDraft?.report.contains("- `listening-mode set off`: verified") == true,
+    outcome.supportReportIssueDraft?.report.contains("- `listening-mode set off`: verified") == true,
     "the issue field includes each named mode-result row"
   )
   check(
-    outcome.plain.contains(
-      "- `listening-mode set noise-cancellation`: verified"
-    ),
-    "the terminal includes the final mode-write verdict without a restoration label"
+    outcome.supportReportOutput.contains("Noise cancellation"),
+    "the CLI includes the final mode-write verdict without a restoration label"
   )
   check(
-    !outcome.plain.contains("(restoration)")
-      && outcome.issueDraft?.report.contains("(restoration)") == false,
+    !outcome.supportReportOutput.contains("(restoration)")
+      && outcome.supportReportIssueDraft?.report.contains("(restoration)") == false,
     "neither report uses a restoration label"
   )
   check(
-    outcome.issueDraft?.report.contains("Created locally by") == false,
-    "the issue field omits the local-only footer"
+    !outcome.supportReportOutput.contains("###")
+      && !outcome.supportReportOutput.contains("`"),
+    "the CLI adapter emits terminal-native output"
+  )
+  check(
+    outcome.supportReportIssueDraft?.report.contains("Review complete") == false,
+    "the issue field omits the CLI-only footer"
   )
   check(
     device.currentListeningMode() == .noiseCancellation,
@@ -218,16 +236,16 @@ func testSupportReportWriteTestsCommandFlow() {
     })
   )
   check(
-    skippedOutcome.plain.contains("- Write tests: not run"),
+    skippedOutcome.supportReportOutput.contains("Status                   NOT RUN"),
     "a passive report says the write tests did not run"
   )
   check(
-    skippedOutcome.plain.contains("exposed, not tested by this report"),
+    skippedOutcome.supportReportOutput.contains("Available · not tested"),
     "a passive report keeps the untested setter wording"
   )
   check(
-    !skippedOutcome.plain.contains("### Write tests"),
-    "a passive report has no write-test section"
+    !skippedOutcome.supportReportOutput.contains("VERIFIED"),
+    "a passive report has no write-test verdicts"
   )
 
   let asked = try! parseInvocation(["support-report"])
@@ -242,7 +260,7 @@ func testSupportReportWriteTestsCommandFlow() {
   )
   check(askCount == 1, "the default invocation asks for consent exactly once")
   check(
-    askedOutcome.plain.contains("### Write tests (run with consent)"),
+    askedOutcome.supportReportOutput.contains("VERIFIED"),
     "granted consent runs the write tests"
   )
 }
@@ -259,7 +277,7 @@ func testSupportReportIssueReportIncludesCompleteModeResults() {
     )
     let snapshot = SupportReportSnapshot.capture(device: device)!
     let results = SupportReportWriteTester.run(device: device)
-    return SupportReport.render(snapshot, writeTests: results).issueDraft.report
+    return SupportReportDocument.make(snapshot: snapshot, writeTests: results).githubIssueDraft.report
   }
 
   let transparencyInitial = issueReport(initialMode: .transparency)
@@ -286,7 +304,7 @@ func testSupportReportIssueReportDoesNotNameTheUntestedInitialMode() {
   )
   let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let issueReport = SupportReport.render(snapshot, writeTests: results).issueDraft.report
+  let issueReport = SupportReportDocument.make(snapshot: snapshot, writeTests: results).githubIssueDraft.report
 
   check(
     results.listeningModes.testRun?.restoration.stateNeverChanged == true,
@@ -314,14 +332,14 @@ func testSupportReportIssueReportIncludesStateDependentModeSkipReasons() {
   )
   let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let report = SupportReport.render(snapshot, writeTests: results)
+  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results)
 
   check(
-    report.markdown.contains("initial mode is not advertised"),
+    report.terminalOutput.contains("initial mode is not advertised"),
     "the local report keeps the actionable mode skip reason"
   )
   check(
-    report.issueDraft.report.contains("initial mode is not advertised"),
+    report.githubIssueDraft.report.contains("initial mode is not advertised"),
     "the issue draft includes the actionable mode skip reason"
   )
 }
@@ -357,13 +375,11 @@ func testSupportReportRunsOnlyTheConsentedWritePlan() {
     "a capability appearing after consent is not written"
   )
   check(
-    !outcome.plain.contains("listening-mode set noise-cancellation"),
+    !outcome.supportReportIssueDraft!.report.contains("listening-mode set noise-cancellation"),
     "the report contains no undisclosed mode write"
   )
   check(
-    outcome.plain.contains(
-      "`conversation-awareness set`: skipped (capability unavailable)"
-    ),
+    outcome.supportReportOutput.contains("SKIPPED · capability unavailable"),
     "the report preserves the consented capability snapshot"
   )
 }
@@ -398,17 +414,17 @@ func testSupportReportSkipsCapabilitiesRemovedDuringConsent() {
     "a setter that disappears during consent is not invoked"
   )
   check(
-    outcome.plain.contains(
-      "`listening-mode set`: skipped "
-        + "(planned listening modes are no longer advertised, nothing written)"
-    ),
+    outcome.supportReportOutput.contains(
+      "SKIPPED · planned listening modes are no longer advertised,"
+    )
+      && outcome.supportReportOutput.contains("nothing written"),
     "the local report explains the stale mode capability"
   )
   check(
-    outcome.plain.contains(
-      "`conversation-awareness set`: skipped "
-        + "(capability or setter no longer exposed, nothing written)"
-    ),
+    outcome.supportReportOutput.contains(
+      "SKIPPED · capability or setter no longer exposed,"
+    )
+      && outcome.supportReportOutput.contains("nothing written"),
     "the local report explains the stale Conversation Awareness capability"
   )
 }
@@ -440,10 +456,7 @@ func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
     "a listening-mode setter removed during consent is not invoked"
   )
   check(
-    modeOutcome.plain.contains(
-      "`listening-mode set`: skipped "
-        + "(setter no longer exposed, nothing written)"
-    ),
+    modeOutcome.supportReportOutput.contains("SKIPPED · setter no longer exposed, nothing written"),
     "the local report explains the stale listening-mode setter"
   )
 
@@ -473,10 +486,11 @@ func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
     "Conversation Awareness support removed during consent prevents a write"
   )
   check(
-    awarenessOutcome.plain.contains(
-      "`conversation-awareness set`: skipped "
-        + "(capability or setter no longer exposed, nothing written)"
-    ),
+    awarenessOutcome.supportReportOutput.contains(
+      "capability or setter no longer exposed"
+    )
+      && awarenessOutcome.supportReportOutput.contains("nothing")
+      && awarenessOutcome.supportReportOutput.contains("written"),
     "the local report explains stale Conversation Awareness support"
   )
 }
@@ -509,10 +523,11 @@ func testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() {
     "the user's newer listening mode remains active"
   )
   check(
-    outcome.plain.contains(
-      "`listening-mode set`: skipped "
-        + "(initial state changed after planning, nothing written)"
-    ),
+    outcome.supportReportOutput.contains(
+      "initial state changed after planning"
+    )
+      && outcome.supportReportOutput.contains("nothing")
+      && outcome.supportReportOutput.contains("written"),
     "the report explains why the stale mode plan was skipped"
   )
 }
@@ -545,10 +560,11 @@ func testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() {
     "the user's newer Conversation Awareness state remains active"
   )
   check(
-    outcome.plain.contains(
-      "`conversation-awareness set`: skipped "
-        + "(initial state changed after planning, nothing written)"
-    ),
+    outcome.supportReportOutput.contains(
+      "initial state changed after planning"
+    )
+      && outcome.supportReportOutput.contains("nothing")
+      && outcome.supportReportOutput.contains("written"),
     "the report explains why the stale Conversation Awareness plan was skipped"
   )
 }
@@ -577,15 +593,15 @@ func testSupportReportPreservesThePreflightSnapshotDuringWrites() {
     "losing model metadata after a restored run does not replace the report outcome"
   )
   check(
-    outcome.plain.contains("Model: AirPods Pro 3"),
+    outcome.supportReportOutput.contains("Model                    AirPods Pro 3"),
     "the report retains the compatibility snapshot captured before writes"
   )
   check(
-    outcome.plain.contains("Initial state restored: yes"),
+    outcome.supportReportOutput.contains("Restoration              RESTORED"),
     "the report still states the final restoration result"
   )
   check(
-    outcome.issueDraft != nil,
+    outcome.supportReportIssueDraft != nil,
     "a transient post-write metadata loss does not discard the reviewed issue draft"
   )
 }
@@ -605,17 +621,17 @@ func testSupportReportWriteTestsRestoreFailure() {
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
   check(outcome.exitCode == 3, "a failed restoration exits no-op")
   check(
-    outcome.plain.contains(
-      "Initial state restored: no, listening mode is now transparency. "
-        + "Restore manually in System Settings."
-    ),
+    outcome.supportReportOutput.contains("NOT RESTORED")
+      && outcome.supportReportOutput.contains("listening mode is now")
+      && outcome.supportReportOutput.contains("Transparency")
+      && outcome.supportReportOutput.contains("manually in System Settings."),
     "a failed restoration names the final state and the manual fix"
   )
   check(
-    outcome.issueDraft?.report.contains("Initial state restored:") == false,
+    outcome.supportReportIssueDraft?.report.contains("Initial state restored:") == false,
     "a failed restoration and manual fix remain terminal-only"
   )
-  check(outcome.issueDraft != nil, "a failed restoration still offers the issue draft")
+  check(outcome.supportReportIssueDraft != nil, "a failed restoration still offers the issue draft")
 }
 
 func testSupportReportInterruptedWriteTestsUseSignalExit() {
@@ -657,9 +673,11 @@ func testSupportReportInterruptedWriteTestsUseSignalExit() {
     outcome.payload["signal"] as? Int32 == SIGTERM,
     "the outcome records the caught signal"
   )
-  check(outcome.issueDraft == nil, "an interrupted run never opens an issue prompt")
+  check(outcome.supportReportIssueDraft == nil, "an interrupted run never opens an issue prompt")
   check(
-    outcome.plain.contains("Write tests interrupted by SIGTERM"),
+    outcome.supportReportOutput.contains(
+      "INTERRUPTED · SIGTERM; remaining tests skipped"
+    ),
     "the interrupted local report explains why testing stopped"
   )
   check(
@@ -708,7 +726,9 @@ func testSupportReportHangupWriteTestsUseSignalExit() {
     "the outcome records the caught hangup signal"
   )
   check(
-    outcome.plain.contains("Write tests interrupted by SIGHUP"),
+    outcome.supportReportOutput.contains(
+      "INTERRUPTED · SIGHUP; remaining tests skipped"
+    ),
     "the interrupted local report names SIGHUP"
   )
   check(
@@ -719,6 +739,7 @@ func testSupportReportHangupWriteTestsUseSignalExit() {
 
 func runSupportReportWriteFlowTests() {
   testSupportReportWriteTestConsent()
+  testSupportReportConsentRendererIsPureAndTTYOptional()
   testSupportReportWriteTestsCommandFlow()
   testSupportReportIssueReportIncludesCompleteModeResults()
   testSupportReportIssueReportDoesNotNameTheUntestedInitialMode()

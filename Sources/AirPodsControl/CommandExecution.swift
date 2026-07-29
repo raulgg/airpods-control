@@ -4,18 +4,18 @@ struct CommandOutcome {
   let plain: String
   let exitCode: Int32
   let payload: [String: Any]
-  let issueDraft: SupportReportIssueDraft?
+  let supportReport: SupportReportDocument?
 
   init(
     plain: String,
     exitCode: Int32 = 0,
     payload: [String: Any],
-    issueDraft: SupportReportIssueDraft? = nil
+    supportReport: SupportReportDocument? = nil
   ) {
     self.plain = plain
     self.exitCode = exitCode
     self.payload = payload
-    self.issueDraft = issueDraft
+    self.supportReport = supportReport
   }
 }
 

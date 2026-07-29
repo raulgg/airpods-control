@@ -139,30 +139,54 @@ device, then run:
 
 ```console
 $ airpods-control support-report
-This report can also test write support on your device:
- - switch through advertised listening modes recognized by this CLI: off, transparency, adaptive (holding each for about two seconds)
- - restore the captured initial listening mode (noise-cancellation) if needed
- - toggle Conversation Awareness away from the captured initial state and back
-...
-Run the write tests? [y/N] n
+Write tests
+────────────────────────────────────────────
+Plan
+  Listening modes          off, transparency, adaptive (about 2s each)
+  Restore mode             noise-cancellation
+  Conversation Awareness   toggle and restore
+
+Caution   Changes are audible. Do not run these tests during a call.
+Safety    A setting is skipped if it changes before testing.
+Restore   Captured settings are restored when possible; failures are reported.
+
+Run write tests? [y/N] n
 Write tests skipped. The report below is read-only.
 
-### Compatibility report
+Compatibility report
+════════════════════════════════════════════
 
-- Device family: AirPods
-- Model: AirPods Pro 3
-- Model identifier: `BTHeadphones76,8231` (Bluetooth product ID 0x2027)
-- Advertised known listening modes: off, transparency, adaptive, noise-cancellation
-- Other advertised listening modes: none
-- Listening-mode query: answers with a recognized mode
-- Listening-mode setter: exposed, not tested by this report
-...
-- Write tests: not run
+Device
+  Model                    AirPods Pro 3
+  Identifier               BTHeadphones76,8231 · product 0x2027
+  Family                   AirPods
+  macOS                    26.5.2
+  airpods-control          0.1.0
+
+Capabilities
+  Listening modes          Off, Transparency, Adaptive, Noise cancellation
+  Mode query               Available · recognized mode
+  Mode setter              Available · not tested
+  Conversation Awareness   Supported
+  CA query                 Available
+  CA setter                Available · not tested
+
+Write tests
+  Status                   NOT RUN
+
+Review complete. Nothing has been submitted to GitHub.
 
 Open the prefilled GitHub issue form in your browser? [y/N]
 ```
 
-The read-only compatibility report includes only the normalized model
+The terminal report is deliberately not Markdown. It uses separate Device,
+Capabilities, and Write tests sections, aligned labels, concise verdicts, a
+summary, and a prominent restoration result. Long values wrap within an
+88-column layout. Headings and statuses use restrained color only when stdout
+is a terminal; redirected output is plain text, and `NO_COLOR` or
+`TERM=dumb` disables color.
+
+The read-only compatibility document includes only the normalized model
 identifier, the advertised listening modes, the advertised Conversation
 Awareness capability, whether the listening-mode and Conversation Awareness
 queries answer, whether macOS exposes their setters, the macOS version, and the
@@ -170,10 +194,10 @@ CLI version. The model name is resolved locally: the model identifier embeds
 the Bluetooth product ID, and the CLI maps known product IDs to model names
 (see the [device compatibility matrix](compatibility.md)).
 
-Unknown advertised listening modes appear verbatim under `Other advertised
-listening modes`. The report lists at most six and drops names outside its
-character allowlist. Missing values appear as `unavailable/not reported`. The
-command does not guess them.
+Unknown advertised listening modes appear verbatim under `Other modes`. The
+report lists at most six and drops names outside its character allowlist.
+Missing values appear as `Unavailable / not reported`. The command does not
+guess them.
 
 The read-only report says whether queries answer and setters exist, but it does
 not include the setting values returned by those queries and never invokes a
@@ -215,44 +239,48 @@ rejection is reported as `setter error` and stops the remaining tests for that
 setting; restoration setter errors and restoration no-ops remain distinct in
 the report. A write whose target already equals the state read immediately
 before it (for example after an Off write fell back to Transparency) cannot
-demonstrate a transition; if its readback still matches, it is reported as
-`verified (already in this state; no transition demonstrated)` rather than
-bare `verified`.
+demonstrate a transition; if its readback still matches, both output adapters
+report it as `inconclusive (already in this state; no transition
+demonstrated)` rather than `verified`.
 
-The terminal always states the restoration outcome. `Initial state restored:
-yes` indicates success; otherwise it names the final state, gives a manual-fix
-hint, and exits `3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught
-during the tests stops further writes, prints `Interrupt caught; restoring
-initial settings...` on stderr, attempts restoration first, prints any
-restoration warning, and then exits `129`, `130`, or `143`, respectively.
+The terminal always states the restoration outcome: `RESTORED`, `NOT NEEDED`,
+or `NOT RESTORED`. A failed restoration names the final state, gives a
+manual-fix hint, and exits `3`. An externally delivered SIGHUP, SIGINT, or
+SIGTERM caught during the tests stops further writes, prints `Interrupt caught;
+restoring initial settings...` on stderr, attempts restoration first, prints
+any restoration warning, and then exits `129`, `130`, or `143`, respectively.
 SIGKILL, a process crash, or power loss cannot guarantee restoration. The CLI
 does not generate thread-directed signals; those are outside this
 process-signal guarantee. An interrupted run does not offer or print an
-issue-form URL. A
-consented report adds a `Write tests (run with consent)` section:
+issue-form URL. A consented report shows each result and a compact summary:
 
 ```console
 $ airpods-control support-report --with-write-tests
-### Compatibility report
+Compatibility report
+════════════════════════════════════════════
 ...
 
-### Write tests (run with consent)
+Write tests
+  Off                      NO-OP
+  Transparency             INCONCLUSIVE · already in this state; no transition
+                           demonstrated
+  Adaptive                 VERIFIED
+  Noise cancellation       VERIFIED
+  Conversation Awareness   VERIFIED · round trip
+  Summary                  3 verified · 1 inconclusive · 1 no-op
+  Restoration              RESTORED
 
-- `listening-mode set off`: verified
-- `listening-mode set transparency`: verified
-- `listening-mode set adaptive`: verified
-- `listening-mode set noise-cancellation`: verified
-- `conversation-awareness set`: verified round trip
-Initial state restored: yes
-...
+Review complete. Nothing has been submitted to GitHub.
 ```
 
-The prefilled GitHub Compatibility report field includes every per-mode verdict
-but omits the restoration status and local creation note. The issue form
-supplies the compatibility heading and keeps optional notes separate. Neither
-report labels the row that restored the initial state, and when the state never
-left the captured initial mode, that mode's untested `listening-mode set` row
-is rendered without naming the mode.
+One presentation-neutral document feeds two pure output adapters. The terminal
+adapter produces the readable layout above. The GitHub adapter independently
+produces Markdown for the prefilled Compatibility report field, including every
+per-mode verdict but omitting the restoration status and local-only footer. The
+issue form supplies the compatibility heading. Neither adapter labels the row
+that restored the initial state, and when the state never left the captured
+initial mode, that mode's untested `listening-mode set` row is rendered without
+naming the mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example
@@ -271,15 +299,17 @@ requires exactly one compatible output device. With zero or multiple compatible
 devices it exits `1` before a report, prompt, or write.
 
 After the write-test prompt and any tests finish, the report appears in the
-terminal before the issue-opening question. The form keeps the generated
-Compatibility report separate from optional notes, requires an unchecked
-privacy confirmation, adds the `compatibility` label, and assigns the issue to
-`raulgg`. You still review and submit the issue.
+terminal before the issue-opening question. The GitHub issue form keeps the
+generated Compatibility report separate from optional contributor notes and
+requires an unchecked privacy-review confirmation. It adds the `compatibility`
+label and assigns the issue to `raulgg`; you still review and submit the issue.
 
-The CLI selects `compatibility-report.yml`, prefills the dynamic title, and
-prefills the generated report through the form field ID `report`. If the
-encoded URL is too long, it prints a paste-ready GitHub report block and opens
-the same form with the title but without the report field.
+The CLI selects `compatibility-report.yml`, prefills the dynamic title through
+GitHub's `title` query parameter, and prefills the generated report through the
+form field ID `report`. If the encoded URL is too long, the command leaves the
+report in the terminal and opens the same form with the title but without the
+report field. Paste the reviewed terminal report into the required
+Compatibility report field.
 
 The issue-opening question is asked only when standard input is interactive.
 For a completed run under a script, pipeline, or CI, the command prints the
@@ -402,5 +432,5 @@ contains the final observed canonical mode or `null`.
 
 Operational plain stdout uses a single token such as `ok`, `no-op`,
 `no-device`, `unsupported`, or a mode name. `support-report` instead emits its
-reviewable Markdown report or local guidance. Scripts can branch on the exit
-code.
+terminal-native compatibility report or local guidance. Scripts can branch on
+the exit code.

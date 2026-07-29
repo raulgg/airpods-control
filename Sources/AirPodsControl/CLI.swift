@@ -80,7 +80,7 @@ Resources:
 Contributor command:
   support-report
                Build a local compatibility report. Open a prefilled GitHub
-               issue form only after confirmation.
+               issue only after confirmation.
 
 Global options:
   --device NAME
@@ -160,6 +160,10 @@ plan and asks for consent. Declining produces a read-only report. Exactly one
 compatible output device must be available; the command does not read device
 names or choose arbitrarily among devices.
 
+Terminal output uses distinct Device, Capabilities, and Write tests sections,
+with a compact summary and restoration result. GitHub issue content is rendered
+separately as Markdown from the same privacy-safe report data.
+
 The optional tests switch through the advertised listening modes recognized by
 this CLI and toggle Conversation Awareness away from the captured initial state
 and back. If a setting changes while consent is pending, or its initial state
@@ -185,7 +189,7 @@ audio. The command does not read the customizable device name, firmware
 version, serial numbers, Bluetooth/MAC addresses, account data, or raw system
 dumps and logs. It never uses the clipboard, sends telemetry, or submits
 anything. Check the report before choosing whether to open a prefilled GitHub
-issue form.
+issue.
 """
 
 func helpText(for rawArgs: [String]) -> String? {

@@ -13,6 +13,28 @@ struct SupportReportDeviceMetadata {
   let listeningModeQueryAnswered: Bool
 }
 
+enum SupportReportListeningModeQuery {
+  case recognized
+  case unrecognized
+  case unavailable
+}
+
+enum SupportReportCapabilitySupport {
+  case supported
+  case notSupported
+  case unavailable
+}
+
+enum SupportReportQueryAvailability {
+  case available
+  case unavailable
+}
+
+struct SupportReportOtherListeningModes {
+  let values: [String]
+  let omittedCount: Int
+}
+
 // Everything the report says about the device and host, captured as plain
 // values in a single pass. Capturing before any consented write is what
 // guarantees the rendered report reflects the pre-write state.
@@ -24,12 +46,13 @@ struct SupportReportSnapshot {
   let family: SupportReportDeviceFamily
   let model: String
   let modelIdentifier: String
-  let listeningModes: String
-  let otherModes: String
-  let listeningModeQuery: String
+  let bluetoothProductID: String?
+  let listeningModes: [ListeningMode]
+  let otherListeningModes: SupportReportOtherListeningModes
+  let listeningModeQuery: SupportReportListeningModeQuery
   let listeningModeSetterExposed: Bool
-  let conversationAwarenessSupport: String
-  let conversationAwarenessQuery: String
+  let conversationAwarenessSupport: SupportReportCapabilitySupport
+  let conversationAwarenessQuery: SupportReportQueryAvailability
   let conversationAwarenessSetterExposed: Bool
   let macOS: String
   let titleSubject: String
@@ -51,40 +74,34 @@ struct SupportReportSnapshot {
 
     let availableModes = Set(device.availableListeningModes())
     let listeningModes = ListeningMode.allCases.filter { availableModes.contains($0) }
-    let listeningModesValue = listeningModes.isEmpty
-      ? "unavailable/not reported"
-      : listeningModes.map(\.rawValue).joined(separator: ", ")
 
-    let listeningModeQuery: String
+    let listeningModeQuery: SupportReportListeningModeQuery
     if device.currentListeningMode() != nil {
-      listeningModeQuery = "answers with a recognized mode"
+      listeningModeQuery = .recognized
     } else if metadata.listeningModeQueryAnswered {
-      listeningModeQuery = "answers with an unrecognized mode"
+      listeningModeQuery = .unrecognized
     } else {
-      listeningModeQuery = "unavailable/not reported"
+      listeningModeQuery = .unavailable
     }
 
-    let conversationAwarenessSupport: String
+    let conversationAwarenessSupport: SupportReportCapabilitySupport
     switch device.supportsConversationAwareness() {
-    case .some(true): conversationAwarenessSupport = "supported"
-    case .some(false): conversationAwarenessSupport = "not supported"
-    case .none: conversationAwarenessSupport = "unavailable/not reported"
+    case .some(true): conversationAwarenessSupport = .supported
+    case .some(false): conversationAwarenessSupport = .notSupported
+    case .none: conversationAwarenessSupport = .unavailable
     }
     let conversationAwarenessQuery = device.conversationAwarenessState() != nil
-      ? "answers"
-      : "unavailable/not reported"
+      ? SupportReportQueryAvailability.available
+      : SupportReportQueryAvailability.unavailable
 
-    let resolvedProduct = AppleAudioProducts.product(for: metadata.modelIdentifier)
+    let resolvedProduct = AppleAudioProducts.product(for: modelIdentifier)
     let model = resolvedProduct?.modelName ?? "not recognized by this CLI version"
-    let modelIdentifierValue: String
-    if let productID = resolvedProduct?.bluetoothProductID {
-      modelIdentifierValue =
-        "`\(modelIdentifier)` (Bluetooth product ID "
-        + "\(AppleAudioProducts.hexProductID(productID)))"
-    } else {
-      modelIdentifierValue = "`\(modelIdentifier)`"
+    let bluetoothProductID = resolvedProduct?.bluetoothProductID.map {
+      AppleAudioProducts.hexProductID($0)
     }
-    let otherModes = unrecognizedListeningModesValue(metadata.unrecognizedListeningModes)
+    let otherListeningModes = normalizedUnrecognizedListeningModes(
+      metadata.unrecognizedListeningModes
+    )
 
     let macOS = [
       operatingSystemVersion.majorVersion,
@@ -95,9 +112,10 @@ struct SupportReportSnapshot {
     return SupportReportSnapshot(
       family: family,
       model: model,
-      modelIdentifier: modelIdentifierValue,
-      listeningModes: listeningModesValue,
-      otherModes: otherModes,
+      modelIdentifier: modelIdentifier,
+      bluetoothProductID: bluetoothProductID,
+      listeningModes: listeningModes,
+      otherListeningModes: otherListeningModes,
       listeningModeQuery: listeningModeQuery,
       listeningModeSetterExposed: device.canSetListeningMode(),
       conversationAwarenessSupport: conversationAwarenessSupport,
@@ -108,18 +126,20 @@ struct SupportReportSnapshot {
     )
   }
 
-  private static func unrecognizedListeningModesValue(_ rawModes: [String]) -> String {
+  private static func normalizedUnrecognizedListeningModes(
+    _ rawModes: [String]
+  ) -> SupportReportOtherListeningModes {
     let normalized = rawModes.compactMap {
       normalizedMetadataValue(
         $0,
         maximumLength: maximumUnrecognizedListeningModeLength
       )
     }
-    guard !normalized.isEmpty else { return "none" }
-    let listed = normalized.prefix(maximumUnrecognizedListeningModeCount)
-    let overflow = normalized.count - listed.count
-    let suffix = overflow > 0 ? ", and \(overflow) more" : ""
-    return listed.map { "`\($0)`" }.joined(separator: ", ") + suffix
+    let listed = Array(normalized.prefix(maximumUnrecognizedListeningModeCount))
+    return SupportReportOtherListeningModes(
+      values: listed,
+      omittedCount: normalized.count - listed.count
+    )
   }
 
   static func normalizedMetadataValue(_ value: String?, maximumLength: Int) -> String? {
