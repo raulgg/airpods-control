@@ -37,6 +37,11 @@ struct ListeningModeWriteResolution {
   let inferredOffFallback: Bool
 }
 
+// verified means the device reads as requested now, not that this write put it
+// there: a write whose target the device already holds verifies even if the
+// setter does nothing. Right for listening-mode set; a capability probe needs
+// the pre-write reading SupportReportWriteTester keeps in targetAlreadyCurrent,
+// which SupportReport.modeVerdict downgrades to inconclusive.
 func resolveListeningModeWrite(
   requested: ListeningMode,
   setterAccepted: Bool,
