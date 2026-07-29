@@ -80,7 +80,7 @@ Resources:
 Contributor command:
   support-report
                Build a local compatibility report. Open a prefilled GitHub
-               issue only after confirmation.
+               issue form only after confirmation.
 
 Global options:
   --device NAME
@@ -171,7 +171,7 @@ After normal completion or a setter error, the command makes one restoration
 attempt. An unverified restoration reports the final state and
 exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the
 tests prints an interrupt notice on stderr, attempts restoration first, then
-exits 129, 130, or 143, respectively, without offering an issue draft.
+exits 129, 130, or 143, respectively, without offering an issue form.
 
 Options:
   --with-write-tests
@@ -185,7 +185,7 @@ audio. The command does not read the customizable device name, firmware
 version, serial numbers, Bluetooth/MAC addresses, account data, or raw system
 dumps and logs. It never uses the clipboard, sends telemetry, or submits
 anything. Check the report before choosing whether to open a prefilled GitHub
-issue.
+issue form.
 """
 
 func helpText(for rawArgs: [String]) -> String? {

@@ -116,14 +116,14 @@ func testWriteTesterContinuesAfterNoOp() {
   )
   let report = SupportReport.render(snapshot, writeTests: results)
   check(
-    report.issueDraft.body.contains("- `listening-mode set off`: no-op"),
-    "the issue body includes the detailed no-op result"
+    report.issueDraft.report.contains("- `listening-mode set off`: no-op"),
+    "the issue field includes the detailed no-op result"
   )
   check(
-    report.issueDraft.body.contains(
+    report.issueDraft.report.contains(
       "- `listening-mode set noise-cancellation`: verified"
     ),
-    "the issue body includes the final mode-write result without a restoration label"
+    "the issue field includes the final mode-write result without a restoration label"
   )
 }
 
@@ -161,20 +161,20 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
     "restoration only runs from a different state, so it is never flagged"
   )
 
-  let body = SupportReport.render(snapshot, writeTests: results).issueDraft.body
+  let issueReport = SupportReport.render(snapshot, writeTests: results).issueDraft.report
   check(
-    body.contains(
+    issueReport.contains(
       "- `listening-mode set transparency`: "
         + "verified (already in this state; no transition demonstrated)"
     ),
     "an undemonstrated transition gets a distinct qualified verdict"
   )
   check(
-    !body.contains("- `listening-mode set transparency`: verified\n"),
+    !issueReport.contains("- `listening-mode set transparency`: verified\n"),
     "an undemonstrated transition never renders as a bare verified verdict"
   )
   check(
-    body.contains("- `listening-mode set adaptive`: verified\n"),
+    issueReport.contains("- `listening-mode set adaptive`: verified\n"),
     "a demonstrated transition keeps the bare verified verdict"
   )
 }

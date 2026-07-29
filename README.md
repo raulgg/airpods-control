@@ -154,15 +154,17 @@ To share compatibility details:
    device.
 2. Run `airpods-control support-report`.
 3. Choose whether to run the consented write tests when asked.
-4. Read the report. You can then open a prefilled GitHub issue, edit it, and
-   submit it.
+4. Read the report. You can then open a GitHub issue form with the generated
+   compatibility field and title prefilled.
+5. Add any optional notes, confirm that you reviewed the report for private
+   information, and submit it.
 
 The report is built locally and shown to you before anything else happens. It
 contains only a fixed set of compatibility metadata. It never reads the
 customizable device name, firmware version, serial numbers, Bluetooth/MAC
 addresses, account data, or raw logs and system dumps. It never uses the
 clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub
-issue is always your explicit choice. The
+form is always your explicit choice, and GitHub does not submit it for you. The
 [CLI reference](docs/cli.md#contributor-compatibility-report) documents the
 exact report contents and privacy rules.
 

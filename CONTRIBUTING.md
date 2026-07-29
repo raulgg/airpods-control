@@ -8,7 +8,9 @@ requests are welcome.
 - Search existing issues first.
 - For a compatibility report, connect AirPods and run
   `airpods-control support-report`. Check the local report before choosing
-  whether to open and edit a GitHub issue.
+  whether to open the GitHub form. The CLI prefills the generated report and
+  title; add optional notes and complete the privacy confirmation before
+  submitting.
 - Beats owners can use the same command. We welcome the reports, but have not
   verified Beats support.
 - Check the [device compatibility matrix](docs/compatibility.md) for verified

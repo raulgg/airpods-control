@@ -99,18 +99,17 @@ func testSupportReportContentsAndPrivacy() {
     "the local report carries its local-only footer"
   )
   check(
-    outcome.issueDraft?.body.contains("Created locally by") == false,
-    "the issue body omits the local-only footer"
+    outcome.issueDraft?.report.hasPrefix("- Device family: AirPods") == true,
+    "the issue field starts with the generated compatibility details"
   )
   check(
-    outcome.issueDraft?.body.hasSuffix(
-      """
-      ### Notes (optional)
-
-      Add any other compatibility details that are safe to publish.
-      """
-    ) == true,
-    "the prefilled issue retains the editable notes section from the issue template"
+    outcome.issueDraft?.report.contains("### Compatibility report") == false,
+    "the issue field lets the form supply its compatibility heading"
+  )
+  check(
+    outcome.issueDraft?.report.contains("Created locally by") == false
+      && outcome.issueDraft?.report.contains("Notes (optional)") == false,
+    "the issue field omits local-only and user-authored form sections"
   )
 }
 
@@ -187,7 +186,7 @@ func testSupportReportUnavailableValuesAndIdentification() {
     "a connected but unidentifiable device explains the metadata failure"
   )
   check(
-    outcome.plain.contains("template=compatibility-report.md"),
+    outcome.plain.contains("template=compatibility-report.yml"),
     "a connected but unidentifiable device gets a manual filing instruction"
   )
   check(
@@ -365,7 +364,7 @@ func testSupportReportMetadataNormalization() {
 func testSupportReportIssueURL() {
   let draft = SupportReportIssueDraft(
     title: "[Compatibility] AirPods",
-    body: "### Compatibility report\n\n- Model identifier: AirPodsTest1,1"
+    report: "- Model identifier: AirPodsTest1,1"
   )
   let selected = SupportReport.safeIssueURL(for: draft)
   let components = URLComponents(url: selected.url, resolvingAgainstBaseURL: false)
@@ -377,14 +376,18 @@ func testSupportReportIssueURL() {
   check(selected.prefilled, "concise report uses a prefilled issue URL")
   check(
     query["template"] == SupportReport.issueTemplateName,
-    "issue URL selects the dedicated Markdown template"
+    "issue URL selects the dedicated YAML form"
   )
   check(query["title"] == draft.title, "issue URL prefills the title")
-  check(query["body"] == draft.body, "issue URL prefills the reviewed report body")
+  check(
+    query[SupportReport.reportFieldID] == draft.report,
+    "issue URL prefills the reviewed report field by its form ID"
+  )
+  check(query["body"] == nil, "issue URL does not bypass the form with a body parameter")
 
   let oversized = SupportReportIssueDraft(
     title: draft.title,
-    body: String(repeating: "x", count: SupportReport.maximumPrefilledURLLength)
+    report: String(repeating: "x", count: SupportReport.maximumPrefilledURLLength)
   )
   let fallback = SupportReport.safeIssueURL(for: oversized)
   let fallbackQuery = URLComponents(
@@ -398,15 +401,19 @@ func testSupportReportIssueURL() {
     "fallback still selects the compatibility template"
   )
   check(
-    fallbackQuery?.first(where: { $0.name == "body" }) == nil,
-    "fallback omits the overlong body"
+    fallbackQuery?.first(where: { $0.name == "title" })?.value == draft.title,
+    "fallback retains the concise dynamic title"
+  )
+  check(
+    fallbackQuery?.first(where: { $0.name == SupportReport.reportFieldID }) == nil,
+    "fallback omits only the overlong report field"
   )
 }
 
 func testSupportReportIssueURLEncodesPlusSigns() {
   let draft = SupportReportIssueDraft(
     title: "[Compatibility] Beats Studio Buds + on macOS 26.1.0",
-    body: "### Compatibility report\n\n- Model: Beats Studio Buds +"
+    report: "- Model: Beats Studio Buds +"
   )
   let selected = SupportReport.safeIssueURL(for: draft)
   check(selected.prefilled, "a draft containing plus signs still prefills")
@@ -419,26 +426,27 @@ func testSupportReportIssueURLEncodesPlusSigns() {
     "the prefilled query never carries a literal plus sign"
   )
 
-  let encodedBody = encodedQuery
+  let encodedReport = encodedQuery
     .components(separatedBy: "&")
-    .first { $0.hasPrefix("body=") }
-    .map { String($0.dropFirst("body=".count)) } ?? ""
-  let formDecodedBody = encodedBody
+    .first { $0.hasPrefix("\(SupportReport.reportFieldID)=") }
+    .map { String($0.dropFirst("\(SupportReport.reportFieldID)=".count)) } ?? ""
+  let formDecodedReport = encodedReport
     .replacingOccurrences(of: "+", with: " ")
     .removingPercentEncoding
   check(
-    formDecodedBody == draft.body,
-    "GitHub's form decoding restores the reviewed body exactly"
+    formDecodedReport == draft.report,
+    "GitHub's form decoding restores the reviewed report exactly"
   )
 }
 
 func testSupportReportRequiresConfirmationBeforeOpening() {
   let draft = SupportReportIssueDraft(
     title: "[Compatibility] AirPods",
-    body: "### Compatibility report"
+    report: "- Device family: AirPods"
   )
+  let localReport = "### Compatibility report"
   let outcome = CommandOutcome(
-    plain: draft.body,
+    plain: localReport,
     payload: ["result": "ok"],
     issueDraft: draft
   )
@@ -458,7 +466,7 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
     writeError: { errors.append($0) }
   )
   check(openCount == 0, "declining confirmation never opens a browser")
-  check(output == [draft.body], "interaction prints the report for review first")
+  check(output == [localReport], "interaction prints the local report for review first")
   check(errors.joined().contains("[y/N]"), "interaction explicitly asks before opening")
 
   var openedURL: URL?
@@ -474,7 +482,7 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
     writeOutput: { _ in },
     writeError: { _ in }
   )
-  check(openCount == 1, "affirmative confirmation opens exactly one issue draft")
+  check(openCount == 1, "affirmative confirmation opens exactly one issue form")
   check(
     openedURL == SupportReport.safeIssueURL(for: draft).url,
     "affirmative confirmation opens exactly the reviewed issue URL"
@@ -530,6 +538,47 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   check(openCount == 1, "no-device path never opens an issue URL")
 }
 
+func testSupportReportPrintsPasteReadyFormFallback() {
+  let draft = SupportReportIssueDraft(
+    title: "[Compatibility] AirPods",
+    report: String(repeating: "report ", count: SupportReport.maximumPrefilledURLLength)
+  )
+  let localReport = "### Compatibility report"
+  let outcome = CommandOutcome(
+    plain: localReport,
+    payload: ["result": "ok"],
+    issueDraft: draft
+  )
+  var output: [String] = []
+  var errors: [String] = []
+
+  _ = SupportReportInteraction.present(
+    outcome: outcome,
+    inputIsInteractive: false,
+    readResponse: {
+      check(false, "an overlong noninteractive report never reads input")
+      return nil
+    },
+    openURL: { _ in
+      check(false, "an overlong noninteractive report never opens a browser")
+      return false
+    },
+    writeOutput: { output.append($0) },
+    writeError: { errors.append($0) }
+  )
+
+  check(output.first == localReport, "fallback still prints the local report first")
+  check(
+    output.last?.contains("Paste-ready GitHub report") == true
+      && output.last?.contains(draft.report) == true,
+    "fallback prints the exact GitHub form field for manual pasting"
+  )
+  check(
+    errors.joined().contains("too long for a prefilled GitHub URL"),
+    "fallback explains why the form field was not prefilled"
+  )
+}
+
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
   testSupportReportUnavailableValuesAndIdentification()
@@ -540,4 +589,5 @@ func runSupportReportTests() {
   testSupportReportIssueURL()
   testSupportReportIssueURLEncodesPlusSigns()
   testSupportReportRequiresConfirmationBeforeOpening()
+  testSupportReportPrintsPasteReadyFormFallback()
 }

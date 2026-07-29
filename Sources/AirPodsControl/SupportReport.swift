@@ -3,7 +3,7 @@ import Foundation
 
 struct SupportReportIssueDraft {
   let title: String
-  let body: String
+  let report: String
 }
 
 // The rendered support-report document: the local markdown and the GitHub
@@ -12,7 +12,8 @@ struct SupportReportIssueDraft {
 struct SupportReport {
   static let repositoryIssuesURL =
     URL(string: "https://github.com/raulgg/airpods-control/issues/new")!
-  static let issueTemplateName = "compatibility-report.md"
+  static let issueTemplateName = "compatibility-report.yml"
+  static let reportFieldID = "report"
   static let maximumPrefilledURLLength = 6_000
 
   let markdown: String
@@ -30,16 +31,17 @@ struct SupportReport {
       snapshot.conversationAwarenessSetterExposed, tested: setterTested
     )
     let writeTestsSummaryLine = writeTests == nil ? "\n- Write tests: not run" : ""
-    let renderedWriteTestsSection = writeTests.map {
-      "\n\n" + writeTestsSection($0)
+    let localWriteTestsSection = writeTests.map {
+      "\n\n" + writeTestsSection($0, heading: "### Write tests (run with consent)")
+    } ?? ""
+    let issueWriteTestsSection = writeTests.map {
+      "\n\n" + writeTestsSection($0, heading: "#### Write tests (run with consent)")
     } ?? ""
     let localRestorationStatus = writeTests.map {
       "\n\nInitial state restored: \(restoredValue($0))"
     } ?? ""
 
-    let compatibilityReport = """
-    ### Compatibility report
-
+    let compatibilityDetails = """
     - Device family: \(snapshot.family.rawValue)
     - Model: \(snapshot.model)
     - Model identifier: \(snapshot.modelIdentifier)
@@ -53,22 +55,16 @@ struct SupportReport {
     - macOS: \(snapshot.macOS)
     - airpods-control: \(VERSION)
     """
-    let markdown = compatibilityReport + renderedWriteTestsSection
+    let compatibilityReport = "### Compatibility report\n\n" + compatibilityDetails
+    let markdown = compatibilityReport + localWriteTestsSection
       + localRestorationStatus
       + "\n\nCreated locally by `airpods-control support-report`. Check it before submitting."
-    let issueBody = compatibilityReport + renderedWriteTestsSection + """
-
-
-    ### Notes (optional)
-
-    Add any other compatibility details that are safe to publish.
-    """
 
     return SupportReport(
       markdown: markdown,
       issueDraft: SupportReportIssueDraft(
         title: "[Compatibility] \(snapshot.titleSubject) on macOS \(snapshot.macOS)",
-        body: issueBody
+        report: compatibilityDetails + issueWriteTestsSection
       )
     )
   }
@@ -79,7 +75,8 @@ struct SupportReport {
   }
 
   private static func writeTestsSection(
-    _ results: SupportReportWriteTestResults
+    _ results: SupportReportWriteTestResults,
+    heading: String
   ) -> String {
     var lines: [String] = []
     switch results.listeningModes {
@@ -117,7 +114,7 @@ struct SupportReport {
         "- `conversation-awareness set`: \(conversationAwarenessVerdict(run))"
       )
     }
-    let section = "### Write tests (run with consent)\n\n" + lines.joined(separator: "\n")
+    let section = heading + "\n\n" + lines.joined(separator: "\n")
     let interruption = results.interruptedBySignal.map {
       "\n\nWrite tests interrupted by \(signalName($0)); "
         + "remaining exploratory writes skipped."
@@ -191,17 +188,17 @@ struct SupportReport {
     }
   }
 
-  static func issueURL(for draft: SupportReportIssueDraft, includeBody: Bool) -> URL? {
+  static func issueURL(for draft: SupportReportIssueDraft, includeReport: Bool) -> URL? {
     var components = URLComponents(
       url: repositoryIssuesURL,
       resolvingAgainstBaseURL: false
     )
     var queryItems = [
       URLQueryItem(name: "template", value: issueTemplateName),
+      URLQueryItem(name: "title", value: draft.title),
     ]
-    if includeBody {
-      queryItems.append(URLQueryItem(name: "title", value: draft.title))
-      queryItems.append(URLQueryItem(name: "body", value: draft.body))
+    if includeReport {
+      queryItems.append(URLQueryItem(name: reportFieldID, value: draft.report))
     }
     components?.queryItems = queryItems
     let encodedQuery = components?.percentEncodedQuery
@@ -211,11 +208,11 @@ struct SupportReport {
   }
 
   static func safeIssueURL(for draft: SupportReportIssueDraft) -> (url: URL, prefilled: Bool) {
-    if let prefilled = issueURL(for: draft, includeBody: true),
+    if let prefilled = issueURL(for: draft, includeReport: true),
        prefilled.absoluteString.count <= maximumPrefilledURLLength
     {
       return (prefilled, true)
     }
-    return (issueURL(for: draft, includeBody: false)!, false)
+    return (issueURL(for: draft, includeReport: false)!, false)
   }
 }

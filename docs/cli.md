@@ -159,7 +159,7 @@ Write tests skipped. The report below is read-only.
 ...
 - Write tests: not run
 
-Open a prefilled GitHub issue in your browser? [y/N]
+Open the prefilled GitHub issue form in your browser? [y/N]
 ```
 
 The read-only compatibility report includes only the normalized model
@@ -179,8 +179,8 @@ The read-only report says whether queries answer and setters exist, but it does
 not include the setting values returned by those queries and never invokes a
 setter. A consented run reads setting values locally only to plan, verify, and
 restore its writes. If restoration cannot be verified, the report names the
-final state so it can be restored manually. The prefilled issue includes the
-same per-mode verdicts but omits the restoration outcome.
+final state so it can be restored manually. The prefilled Compatibility report
+field includes the same per-mode verdicts but omits the restoration outcome.
 
 ### Consented write tests
 
@@ -228,7 +228,7 @@ restoration warning, and then exits `129`, `130`, or `143`, respectively.
 SIGKILL, a process crash, or power loss cannot guarantee restoration. The CLI
 does not generate thread-directed signals; those are outside this
 process-signal guarantee. An interrupted run does not offer or print an
-issue-draft URL. A
+issue-form URL. A
 consented report adds a `Write tests (run with consent)` section:
 
 ```console
@@ -247,11 +247,12 @@ Initial state restored: yes
 ...
 ```
 
-The prefilled GitHub issue includes every per-mode verdict but omits the
-restoration status and local creation note. Neither report labels the row that
-restored the initial state, and when the state never left the captured initial
-mode, that mode's untested `listening-mode set` row is rendered without naming
-the mode.
+The prefilled GitHub Compatibility report field includes every per-mode verdict
+but omits the restoration status and local creation note. The issue form
+supplies the compatibility heading and keeps optional notes separate. Neither
+report labels the row that restored the initial state, and when the state never
+left the captured initial mode, that mode's untested `listening-mode set` row
+is rendered without naming the mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example
@@ -270,17 +271,23 @@ requires exactly one compatible output device. With zero or multiple compatible
 devices it exits `1` before a report, prompt, or write.
 
 After the write-test prompt and any tests finish, the report appears in the
-terminal before the issue-opening question. You still edit and submit the issue.
-If the encoded URL is too long, the command leaves the report in the terminal
-and offers the template without a prefilled body.
+terminal before the issue-opening question. The form keeps the generated
+Compatibility report separate from optional notes, requires an unchecked
+privacy confirmation, adds the `compatibility` label, and assigns the issue to
+`raulgg`. You still review and submit the issue.
+
+The CLI selects `compatibility-report.yml`, prefills the dynamic title, and
+prefills the generated report through the form field ID `report`. If the
+encoded URL is too long, it prints a paste-ready GitHub report block and opens
+the same form with the title but without the report field.
 
 The issue-opening question is asked only when standard input is interactive.
 For a completed run under a script, pipeline, or CI, the command prints the
-report and writes the ready-to-open issue-draft URL to stderr without prompting
+report and writes the ready-to-open issue-form URL to stderr without prompting
 or opening a browser, then returns the report outcome: normally `0`, or `3`
 when consented write tests cannot restore the initial settings. Unless the
-length cap above applies, the URL carries the report body with write-test
-verdicts but without restoration status.
+length cap above applies, the URL carries the generated report field with
+write-test verdicts but without restoration status.
 
 If the command cannot select one unique identifiable AirPods or Beats device,
 it prints local instructions, exits `1`, and stops. Reports from other AirPods
