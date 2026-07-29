@@ -159,7 +159,9 @@ To share compatibility details:
 5. Add any optional notes, confirm that you reviewed the report for private
    information, and submit it.
 
-The report is built locally and shown to you before anything else happens. It
+The report is built locally and shown to you before anything else happens. The
+terminal groups the data under Device, Capabilities, and Write tests. The
+GitHub issue field uses the same data, formatted as Markdown. The report
 contains only a fixed set of compatibility metadata. It never reads the
 customizable device name, firmware version, serial numbers, Bluetooth/MAC
 addresses, account data, or raw logs and system dumps. It never uses the

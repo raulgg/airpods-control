@@ -29,6 +29,13 @@
   AVFoundation objects, translates private values, invokes selectors, and
   observes asynchronous writes through the main run loop.
 
+**Support report document**
+: Compatibility data built from a pre-write device snapshot and optional
+  write-test results. It carries one result row per attempted write and leaves
+  unresolved values absent rather than phrased. The terminal and GitHub
+  renderers format this document and choose their own wording for what is
+  absent; they do not inspect raw device or write-test behavior.
+
 **Device write observation**
 : What a compatible audio device reports after a write attempt: whether the
   underlying setter accepted the request and which final state was observed

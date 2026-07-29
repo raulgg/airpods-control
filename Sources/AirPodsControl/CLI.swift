@@ -160,6 +160,10 @@ plan and asks for consent. Declining produces a read-only report. Exactly one
 compatible output device must be available; the command does not read device
 names or choose arbitrarily among devices.
 
+Terminal output uses distinct Device, Capabilities, and Write tests sections,
+with a compact summary and restoration result. The GitHub issue field uses the
+same report data, formatted as Markdown.
+
 The optional tests switch through the advertised listening modes recognized by
 this CLI and toggle Conversation Awareness away from the captured initial state
 and back. If a setting changes while consent is pending, or its initial state

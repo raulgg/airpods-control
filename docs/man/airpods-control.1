@@ -136,6 +136,12 @@ recognize are listed verbatim, capped at six, and filtered through the
 report's character allowlist. Missing data is marked unavailable or not
 reported. The command does not guess it.
 .IP
+Terminal output uses Device, Capabilities, and Write tests sections. Labels
+align in an 88-column layout and long values wrap. Color distinguishes headings
+and statuses only when output goes to a terminal; redirected output is plain.
+NO_COLOR or TERM=dumb also disables color. The GitHub issue field uses the same
+report data, formatted as Markdown.
+.IP
 The read-only report does not include the setting values returned by the
 queries and never invokes a setter. A consented run reads setting values
 locally only to plan, verify, and restore its writes. If restoration cannot be
@@ -163,12 +169,13 @@ attempt if needed. Accepted but unverified writes are reported as
 .BR no-op ;
 setter rejections are reported as
 .B setter error
-and stop the remaining tests for that setting. Restoration setter errors and
-restoration no-ops remain distinct in the report. A write whose target already
+and stop the remaining tests for that setting. Each write gets its own result
+row, so a restoration failure is attributed to the restoring write rather than
+folded into the write it was restoring. A write whose target already
 equals the state read immediately before it cannot demonstrate a transition;
 if its readback still matches, it is reported as
-.B "verified (already in this state; no transition demonstrated)"
-rather than bare
+.B "inconclusive (already in this state; no transition demonstrated)"
+rather than
 .BR verified .
 An unverified restoration
 names the final state, gives a manual-fix hint, and exits 3.
@@ -183,11 +190,12 @@ thread-directed signals; those are outside this process-signal guarantee. An
 interrupted run does not offer or print an issue-form URL.
 .IP
 The prefilled GitHub Compatibility report field includes every per-mode verdict
-but omits the restoration status and local creation note. The issue form
-supplies the compatibility heading and keeps optional notes separate. Neither
-report labels the row that restored the initial state, and when the state never
-left the captured initial mode, that mode's untested listening-mode set row is
-rendered without naming the mode.
+but omits the restoration status, terminal review footer, and Compatibility
+report heading. The issue form supplies that heading. The field uses the same
+Device, Capabilities, and Write tests sections, one level below the form's
+heading. Neither report labels the mode row that restored the initial mode. If
+the state never left the captured initial mode, the untested listening-mode set row
+does not name that mode.
 .B --with-write-tests
 answers the consent question with yes and is the only way to run the tests
 noninteractively;
@@ -216,12 +224,13 @@ issue to raulgg. The contributor still reviews and submits the issue.
 .IP
 The CLI selects compatibility-report.yml, prefills the dynamic title, and
 prefills the generated report through the form field ID report. If the encoded
-URL is too long, the terminal prints a separate paste-ready GitHub Markdown
-block and the same form opens with the title but without the report field.
+URL is too long, the terminal prints the GitHub Markdown separately and opens
+the same form with the title but without the report field. The contributor must
+copy the reviewed Markdown into the required Compatibility report field.
 .IP
 The issue-opening question is asked only when standard input is interactive.
 For a completed run under a script, pipeline, or CI, the command prints the
-report and writes the ready-to-open issue form URL to standard error without
+report and writes the issue form URL to standard error without
 prompting or opening a browser, then returns the report outcome: normally 0,
 or 3 if consented write tests could not restore the initial settings. Unless
 the length cap above applies, that URL carries the generated report field with

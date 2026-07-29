@@ -114,13 +114,13 @@ func testWriteTesterContinuesAfterNoOp() {
     results.conversationAwareness.testRun?.restored == true,
     "an unchanged Conversation Awareness state counts as restored"
   )
-  let report = SupportReport.render(snapshot, writeTests: results)
+  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results)
   check(
-    report.issueDraft.report.contains("- `listening-mode set off`: no-op"),
+    report.githubIssueDraft.report.contains("- `listening-mode set off`: no-op"),
     "the issue field includes the detailed no-op result"
   )
   check(
-    report.issueDraft.report.contains(
+    report.githubIssueDraft.report.contains(
       "- `listening-mode set noise-cancellation`: verified"
     ),
     "the issue field includes the final mode-write result without a restoration label"
@@ -161,13 +161,25 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
     "restoration only runs from a different state, so it is never flagged"
   )
 
-  let issueReport = SupportReport.render(snapshot, writeTests: results).issueDraft.report
+  let document = SupportReportDocument.make(
+    snapshot: snapshot,
+    writeTests: results
+  )
+  let issueReport = document.githubIssueDraft.report
+  let terminalReport = document.terminalOutput
   check(
     issueReport.contains(
       "- `listening-mode set transparency`: "
-        + "verified (already in this state; no transition demonstrated)"
+        + "inconclusive (already in this state; no transition demonstrated)"
     ),
-    "an undemonstrated transition gets a distinct qualified verdict"
+    "an undemonstrated transition gets the shared inconclusive verdict"
+  )
+  check(
+    terminalReport.contains("Transparency")
+      && terminalReport.contains(
+        "INCONCLUSIVE · already in this state; no transition"
+      ),
+    "the terminal adapter renders the same inconclusive verdict"
   )
   check(
     !issueReport.contains("- `listening-mode set transparency`: verified\n"),
@@ -251,13 +263,13 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
     modeRun?.restoration.attempted?.mode == .noiseCancellation,
     "restoration is recorded after the interrupted tests"
   )
-  let report = SupportReport.render(snapshot, writeTests: results).markdown
+  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results).terminalOutput
   check(
-    report.contains("- `listening-mode set adaptive`: setter error"),
+    report.contains("Adaptive") && report.contains("SETTER ERROR"),
     "the report distinguishes a setter error from a no-op"
   )
   check(
-    report.contains("- Remaining listening-mode tests: skipped after setter error"),
+    report.contains("Remaining mode tests     SKIPPED · after setter error"),
     "the report explains why later mode tests are absent"
   )
 }
@@ -273,14 +285,14 @@ func testWriteTesterReportsConversationAwarenessSetterError() {
 
   let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let report = SupportReport.render(snapshot, writeTests: results).markdown
+  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results).terminalOutput
 
   check(
     device.conversationAwarenessSetCount == 1,
     "an unchanged state needs no restoration attempt after a setter error"
   )
   check(
-    report.contains("- `conversation-awareness set`: setter error"),
+    report.contains("Conversation Awareness   SETTER ERROR"),
     "the report distinguishes a Conversation Awareness setter error from a no-op"
   )
 }
@@ -296,17 +308,23 @@ func testWriteTesterReportsConversationAwarenessRestorationSetterError() {
 
   let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
-  let report = SupportReport.render(snapshot, writeTests: results).markdown
+  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results).terminalOutput
 
   check(
     results.conversationAwareness.testRun?.restored == false,
     "a rejected Conversation Awareness restoration is not treated as restored"
   )
   check(
-    report.contains(
-      "- `conversation-awareness set`: restoration setter error"
-    ),
-    "the report distinguishes a restoration setter error from a no-op"
+    report.contains("CA restoration           SETTER ERROR"),
+    "the report attributes the rejected setter to the restoration write"
+  )
+  check(
+    report.contains("Conversation Awareness   VERIFIED"),
+    "a failed restoration does not erase the toggle that did verify"
+  )
+  check(
+    report.contains("Restoration              NOT RESTORED"),
+    "the restoration row still reports the unrestored final state"
   )
 }
 
@@ -428,7 +446,7 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
     interruptionSignal: { caughtSignal },
     writeError: { _ in }
   )
-  let report = SupportReport.render(snapshot, writeTests: results).markdown
+  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results).terminalOutput
 
   check(
     results.interruptedBySignal == SIGINT,
@@ -456,11 +474,11 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
   )
   check(results.fullyRestored, "interrupted write tests still finish restoration")
   check(
-    report.contains("Write tests interrupted by SIGINT"),
+    report.contains("INTERRUPTED · SIGINT; remaining tests skipped"),
     "the local report records the interruption"
   )
   check(
-    report.contains("Initial state restored: yes"),
+    report.contains("Restoration              RESTORED"),
     "the local report confirms cleanup after interruption"
   )
 }
@@ -766,7 +784,7 @@ func testTerminationMonitorCapturesSIGHUP() {
   )
 }
 
-func runSupportWriteTestsTests() {
+func runSupportReportWriteTesterTests() {
   testWriteTesterVerifiesAndRestores()
   testWriteTesterContinuesAfterNoOp()
   testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent()
