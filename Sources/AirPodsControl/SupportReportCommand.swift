@@ -105,7 +105,7 @@ struct SupportReportCommand {
       as AirPods or Beats from its model metadata.
       No report was generated. Nothing was sent to GitHub.
       You can open a compatibility issue manually:
-      \(SupportReportIssue.repositoryIssuesURL.absoluteString)?template=\(SupportReportIssue.templateName)
+      \(SupportReportIssue.formURL.absoluteString)
       """,
       exitCode: 1,
       payload: ["error": "unidentified-device", "result": "error"]

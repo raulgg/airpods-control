@@ -8,6 +8,12 @@ struct SupportReportIssueDraft {
 enum SupportReportIssue {
   static let repositoryIssuesURL =
     URL(string: "https://github.com/raulgg/airpods-control/issues/new")!
+  // The empty form, with no prefilled fields. Printed when the CLI cannot
+  // identify the device, and the fallback when composition fails.
+  static let formURL = URL(
+    string: "https://github.com/raulgg/airpods-control/issues/new"
+      + "?template=compatibility-report.yml"
+  )!
   static let templateName = "compatibility-report.yml"
   static let reportFieldID = "report"
   static let maximumPrefilledURLLength = 6_000
@@ -40,6 +46,6 @@ enum SupportReportIssue {
     {
       return (prefilled, true)
     }
-    return (url(for: draft, includeReport: false)!, false)
+    return (url(for: draft, includeReport: false) ?? formURL, false)
   }
 }
