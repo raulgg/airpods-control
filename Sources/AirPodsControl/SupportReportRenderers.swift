@@ -477,11 +477,6 @@ enum SupportReportGitHubRenderer {
       operation = "`conversation-awareness set`"
     }
 
-    if case let .skipped(reason) = result.verdict,
-       case .remainingListeningModes = result.operation
-    {
-      return "- \(operation): skipped \(reason)"
-    }
     return "- \(operation): \(githubVerdict(result.verdict))"
   }
 
