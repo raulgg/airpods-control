@@ -174,7 +174,7 @@ func testSupportReportDocumentFeedsPureOutputAdapters() {
     "the GitHub adapter is deterministic for the same document"
   )
   check(
-    document.summary.verified == 4
+    document.summary.verified == 5
       && document.summary.inconclusive == 0
       && document.summary.errors == 0,
     "the document classifies verdicts before either renderer runs"

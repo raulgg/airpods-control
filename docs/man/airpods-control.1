@@ -169,8 +169,9 @@ attempt if needed. Accepted but unverified writes are reported as
 .BR no-op ;
 setter rejections are reported as
 .B setter error
-and stop the remaining tests for that setting. Restoration setter errors and
-restoration no-ops remain distinct in the report. A write whose target already
+and stop the remaining tests for that setting. Each write gets its own result
+row, so a restoration failure is attributed to the restoring write rather than
+folded into the write it was restoring. A write whose target already
 equals the state read immediately before it cannot demonstrate a transition;
 if its readback still matches, it is reported as
 .B "inconclusive (already in this state; no transition demonstrated)"
@@ -192,8 +193,8 @@ The prefilled GitHub Compatibility report field includes every per-mode verdict
 but omits the restoration status, terminal review footer, and Compatibility
 report heading. The issue form supplies that heading. The field uses the same
 Device, Capabilities, and Write tests sections, one level below the form's
-heading. Neither report labels the row that restored the initial state. If the
-state never left the captured initial mode, the untested listening-mode set row
+heading. Neither report labels the mode row that restored the initial mode. If
+the state never left the captured initial mode, the untested listening-mode set row
 does not name that mode.
 .B --with-write-tests
 answers the consent question with yes and is the only way to run the tests

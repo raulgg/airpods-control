@@ -209,6 +209,7 @@ enum SupportReportTerminalRenderer {
     case .capturedInitialListeningMode: return "Captured initial mode"
     case .remainingListeningModes: return "Remaining mode tests"
     case .conversationAwareness: return "Conversation Awareness"
+    case .conversationAwarenessRestoration: return "CA restoration"
     }
   }
 
@@ -227,8 +228,6 @@ enum SupportReportTerminalRenderer {
     switch verdict {
     case .verified:
       return ("VERIFIED", .positive)
-    case .verifiedRoundTrip:
-      return ("VERIFIED · round trip", .positive)
     case let .inconclusive(reason):
       return ("INCONCLUSIVE · \(reason)", .caution)
     case let .noOp(reason):
@@ -236,10 +235,6 @@ enum SupportReportTerminalRenderer {
       return ("NO-OP\(suffix)", .caution)
     case .setterError:
       return ("SETTER ERROR", .negative)
-    case .restorationSetterError:
-      return ("RESTORATION ERROR · setter rejected", .negative)
-    case .restorationNoOp:
-      return ("RESTORATION NO-OP", .negative)
     case let .skipped(reason):
       return ("SKIPPED · \(reason)", .muted)
     }
@@ -482,6 +477,8 @@ enum SupportReportGitHubRenderer {
       operation = "Remaining listening-mode tests"
     case .conversationAwareness:
       operation = "`conversation-awareness set`"
+    case .conversationAwarenessRestoration:
+      operation = "`conversation-awareness set` (restore)"
     }
 
     return "- \(operation): \(githubVerdict(result.verdict))"
@@ -492,13 +489,10 @@ enum SupportReportGitHubRenderer {
   ) -> String {
     switch verdict {
     case .verified: return "verified"
-    case .verifiedRoundTrip: return "verified round trip"
     case let .inconclusive(reason): return "inconclusive (\(reason))"
     case let .noOp(reason):
       return reason.map { "no-op (\($0))" } ?? "no-op"
     case .setterError: return "setter error"
-    case .restorationSetterError: return "restoration setter error"
-    case .restorationNoOp: return "restoration no-op"
     case let .skipped(reason): return "skipped (\(reason))"
     }
   }

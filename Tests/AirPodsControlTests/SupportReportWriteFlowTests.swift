@@ -158,15 +158,16 @@ func testSupportReportWriteTestsCommandFlow() {
     "each mode write gets a readable verdict row"
   )
   check(
-    outcome.supportReportOutput.contains("VERIFIED · round trip"),
-    "the Conversation Awareness round trip gets a terminal verdict"
+    outcome.supportReportOutput.contains("Conversation Awareness   VERIFIED")
+      && outcome.supportReportOutput.contains("CA restoration           VERIFIED"),
+    "the Conversation Awareness toggle and its restore each get a verdict row"
   )
   check(
     outcome.supportReportOutput.contains("RESTORED"),
     "a clean run makes restoration prominent"
   )
   check(
-    outcome.supportReportOutput.contains("4 verified"),
+    outcome.supportReportOutput.contains("5 verified"),
     "the CLI report summarizes the write-test outcomes"
   )
   check(
@@ -208,9 +209,17 @@ func testSupportReportWriteTestsCommandFlow() {
     "the CLI includes the final mode-write verdict without a restoration label"
   )
   check(
-    !outcome.supportReportOutput.contains("(restoration)")
-      && outcome.supportReportIssueDraft?.report.contains("(restoration)") == false,
-    "neither report uses a restoration label"
+    !outcome.supportReportOutput.contains("Noise cancellation       VERIFIED · restore")
+      && outcome.supportReportIssueDraft?.report.contains(
+        "`listening-mode set noise-cancellation` (restore)"
+      ) == false,
+    "neither report labels the mode row that restored the initial mode"
+  )
+  check(
+    outcome.supportReportIssueDraft?.report.contains(
+      "- `conversation-awareness set` (restore): verified"
+    ) == true,
+    "the Conversation Awareness restore row is labeled; its value is not disclosed"
   )
   check(
     !outcome.supportReportOutput.contains("###")

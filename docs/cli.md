@@ -234,8 +234,9 @@ After normal completion or a setter error, the command makes one restoration
 attempt if needed. An accepted write whose readback does not verify
 is reported as a `no-op` and does not stop the remaining tests. A setter
 rejection is reported as `setter error` and stops the remaining tests for that
-setting; restoration setter errors and restoration no-ops remain distinct in
-the report. A write whose target already equals the state read immediately
+setting. Each write gets its own result row, so a restoration failure is
+attributed to the restoring write rather than folded into the write it was
+restoring. A write whose target already equals the state read immediately
 before it (for example after an Off write fell back to Transparency) cannot
 demonstrate a transition; if its readback still matches, both output adapters
 report it as `inconclusive (already in this state; no transition
@@ -264,8 +265,9 @@ Write tests
                            demonstrated
   Adaptive                 VERIFIED
   Noise cancellation       VERIFIED
-  Conversation Awareness   VERIFIED · round trip
-  Summary                  3 verified · 1 inconclusive · 1 no-op
+  Conversation Awareness   VERIFIED
+  CA restoration           VERIFIED
+  Summary                  4 verified · 1 inconclusive · 1 no-op
   Restoration              RESTORED
 
 Review complete. Nothing has been submitted to GitHub.
@@ -273,13 +275,15 @@ Review complete. Nothing has been submitted to GitHub.
 
 The command builds one `SupportReportDocument` and passes it to separate
 terminal and GitHub renderers. Capture, privacy filtering, verdict
-classification, and restoration interpretation happen before rendering. The
-GitHub renderer uses the same Device, Capabilities, and Write tests sections.
-It includes every per-mode verdict but omits the restoration status and the
-terminal review footer. The issue form supplies the Compatibility report
-heading. Neither renderer labels the row that restored the initial state. If
-the state never left the captured initial mode, the untested `listening-mode
-set` row does not name that mode.
+classification, and restoration interpretation happen before rendering. Each
+write gets its own row, so a Conversation Awareness toggle that verified stays
+visible even when its restore then fails. The GitHub renderer uses the same
+Device, Capabilities, and Write tests sections. It includes every per-mode
+verdict but omits the restoration status and the terminal review footer. The
+issue form supplies the Compatibility report heading. The listening-mode row
+that restored the initial mode carries no restore label, and if the state never
+left the captured initial mode, the untested `listening-mode set` row does not
+name that mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example

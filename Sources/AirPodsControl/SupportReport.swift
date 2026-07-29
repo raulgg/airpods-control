@@ -45,16 +45,14 @@ struct SupportReportDocument {
       case capturedInitialListeningMode
       case remainingListeningModes
       case conversationAwareness
+      case conversationAwarenessRestoration
     }
 
     enum Verdict {
       case verified
-      case verifiedRoundTrip
       case inconclusive(reason: String)
       case noOp(reason: String?)
       case setterError
-      case restorationSetterError
-      case restorationNoOp
       case skipped(reason: String)
     }
 
@@ -91,13 +89,13 @@ struct SupportReportDocument {
   var summary: Summary {
     writeTests.results.reduce(into: Summary()) { summary, result in
       switch result.verdict {
-      case .verified, .verifiedRoundTrip:
+      case .verified:
         summary.verified += 1
       case .inconclusive:
         summary.inconclusive += 1
-      case .noOp, .restorationNoOp:
+      case .noOp:
         summary.noOp += 1
-      case .setterError, .restorationSetterError:
+      case .setterError:
         summary.errors += 1
       case .skipped:
         summary.skipped += 1
@@ -206,12 +204,22 @@ struct SupportReportDocument {
         )
       )
     case let .ran(run):
+      // One row per write, as the listening-mode tests already do: a toggle
+      // that verified stays visible even when its restoration then fails.
       rendered.append(
         WriteTestResult(
           operation: .conversationAwareness,
-          verdict: conversationAwarenessVerdict(run)
+          verdict: writeVerdict(run.toggle)
         )
       )
+      if case let .attempted(restoration) = run.restoration {
+        rendered.append(
+          WriteTestResult(
+            operation: .conversationAwarenessRestoration,
+            verdict: writeVerdict(restoration)
+          )
+        )
+      }
     }
 
     return rendered
@@ -231,18 +239,9 @@ struct SupportReportDocument {
     )
   }
 
-  private static func conversationAwarenessVerdict(
-    _ run: SupportReportWriteTestResults.ConversationAwarenessTestRun
-  ) -> WriteTestResult.Verdict {
-    guard run.toggle.setterAccepted else { return .setterError }
-    switch run.restoration {
-    case .stateNeverChanged:
-      return .noOp(reason: nil)
-    case let .attempted(restoration):
-      guard restoration.setterAccepted else { return .restorationSetterError }
-      guard restoration.verified else { return .restorationNoOp }
-      return run.toggle.verified ? .verifiedRoundTrip : .noOp(reason: nil)
-    }
+  private static func writeVerdict(_ write: WriteAttempt<Bool>) -> WriteTestResult.Verdict {
+    guard write.setterAccepted else { return .setterError }
+    return write.verified ? .verified : .noOp(reason: nil)
   }
 
   private static func restoration(

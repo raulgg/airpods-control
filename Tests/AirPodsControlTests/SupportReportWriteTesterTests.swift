@@ -315,8 +315,16 @@ func testWriteTesterReportsConversationAwarenessRestorationSetterError() {
     "a rejected Conversation Awareness restoration is not treated as restored"
   )
   check(
-    report.contains("Conversation Awareness   RESTORATION ERROR · setter rejected"),
-    "the report distinguishes a restoration setter error from a no-op"
+    report.contains("CA restoration           SETTER ERROR"),
+    "the report attributes the rejected setter to the restoration write"
+  )
+  check(
+    report.contains("Conversation Awareness   VERIFIED"),
+    "a failed restoration does not erase the toggle that did verify"
+  )
+  check(
+    report.contains("Restoration              NOT RESTORED"),
+    "the restoration row still reports the unrestored final state"
   )
 }
 
