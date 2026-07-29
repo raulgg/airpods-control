@@ -29,7 +29,11 @@ enum SupportReportTerminalRenderer {
       styled(String(repeating: "═", count: 44), tone: .heading, options: options),
       "",
       styled("Device", tone: .heading, options: options),
-      row("Model", document.device.model, options: options),
+      row(
+        "Model",
+        document.device.modelName ?? "Not recognized by this CLI version",
+        options: options
+      ),
       row(
         "Identifier",
         terminalModelIdentifier(document.device),
@@ -351,7 +355,8 @@ enum SupportReportGitHubRenderer {
     var lines = [
       "#### Device",
       "",
-      "- Model: \(document.device.model)",
+      "- Model: "
+        + (document.device.modelName ?? "not recognized by this CLI version"),
       "- Model identifier: \(githubModelIdentifier(document.device))",
       "- Device family: \(document.device.family.rawValue)",
       "- macOS: \(document.device.macOS)",
@@ -394,9 +399,11 @@ enum SupportReportGitHubRenderer {
       }
     }
 
+    // An unresolved model falls back to the family so the title still says
+    // what kind of device the report is about.
+    let subject = document.device.modelName ?? document.device.family.rawValue
     return SupportReportIssueDraft(
-      title: "[Compatibility] \(document.device.titleSubject) "
-        + "on macOS \(document.device.macOS)",
+      title: "[Compatibility] \(subject) on macOS \(document.device.macOS)",
       report: lines.joined(separator: "\n")
     )
   }

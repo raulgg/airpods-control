@@ -5,12 +5,11 @@ import Foundation
 struct SupportReportDocument {
   struct Device {
     let family: SupportReportDeviceFamily
-    let model: String
+    let modelName: String?
     let modelIdentifier: String
     let bluetoothProductID: String?
     let macOS: String
     let cliVersion: String
-    let titleSubject: String
   }
 
   struct Capabilities {
@@ -116,12 +115,11 @@ struct SupportReportDocument {
     return SupportReportDocument(
       device: Device(
         family: snapshot.family,
-        model: snapshot.model,
+        modelName: snapshot.modelName,
         modelIdentifier: snapshot.modelIdentifier,
         bluetoothProductID: snapshot.bluetoothProductID,
         macOS: snapshot.macOS,
-        cliVersion: VERSION,
-        titleSubject: snapshot.titleSubject
+        cliVersion: VERSION
       ),
       capabilities: Capabilities(
         listeningModes: snapshot.listeningModes,

@@ -235,8 +235,14 @@ func testSupportReportUnavailableValuesAndIdentification() {
   check(report != nil, "an identifiable Beats device produces an exploratory report")
   check(cliOutput.contains("Beats (exploratory)"), "Beats report is marked exploratory")
   check(
-    cliOutput.contains("not recognized by this CLI version"),
+    cliOutput.contains("Model                    Not recognized by this CLI version"),
     "an unmapped identifier keeps the model explicit"
+  )
+  check(
+    report?.githubIssueDraft.report.contains(
+      "- Model: not recognized by this CLI version"
+    ) == true,
+    "each renderer words the unresolved model in its own register"
   )
   check(
     cliOutput.contains("Identifier               BeatsTest1,1"),
@@ -435,7 +441,7 @@ func testSupportReportUnknownAppleProduct() {
     "an unlisted Apple product ID reports the exploratory family"
   )
   check(
-    cliOutput.contains("Model                    not recognized by this CLI version"),
+    cliOutput.contains("Model                    Not recognized by this CLI version"),
     "an unlisted Apple product ID has no model name"
   )
   check(
@@ -679,15 +685,14 @@ func testSupportReportPrintsPasteReadyFormFallback() {
   let oversizedDocument = SupportReportDocument(
     device: SupportReportDocument.Device(
       family: baseDocument.device.family,
-      model: baseDocument.device.model,
+      modelName: baseDocument.device.modelName,
       modelIdentifier: String(
         repeating: "x",
         count: SupportReportIssue.maximumPrefilledURLLength
       ),
       bluetoothProductID: nil,
       macOS: baseDocument.device.macOS,
-      cliVersion: baseDocument.device.cliVersion,
-      titleSubject: baseDocument.device.titleSubject
+      cliVersion: baseDocument.device.cliVersion
     ),
     capabilities: baseDocument.capabilities,
     writeTests: baseDocument.writeTests,

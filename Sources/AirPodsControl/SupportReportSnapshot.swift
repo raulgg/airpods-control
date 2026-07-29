@@ -59,7 +59,9 @@ struct SupportReportSnapshot {
   static let maximumUnrecognizedListeningModeCount = 6
 
   let family: SupportReportDeviceFamily
-  let model: String
+  // nil when no catalog entry matches. Each renderer words the gap itself
+  // rather than inheriting a phrase chosen here.
+  let modelName: String?
   let modelIdentifier: String
   let bluetoothProductID: String?
   let listeningModes: [ListeningMode]
@@ -70,7 +72,6 @@ struct SupportReportSnapshot {
   let conversationAwarenessQuery: SupportReportQueryAvailability
   let conversationAwarenessSetterExposed: Bool
   let macOS: String
-  let titleSubject: String
 
   static func capture(
     device: any CompatibleAudioDevice,
@@ -110,7 +111,6 @@ struct SupportReportSnapshot {
       : SupportReportQueryAvailability.unavailable
 
     let resolvedProduct = AppleAudioProducts.product(for: modelIdentifier)
-    let model = resolvedProduct?.modelName ?? "not recognized by this CLI version"
     let bluetoothProductID = resolvedProduct?.bluetoothProductID.map {
       AppleAudioProducts.hexProductID($0)
     }
@@ -126,7 +126,7 @@ struct SupportReportSnapshot {
 
     return SupportReportSnapshot(
       family: family,
-      model: model,
+      modelName: resolvedProduct?.modelName,
       modelIdentifier: modelIdentifier,
       bluetoothProductID: bluetoothProductID,
       listeningModes: listeningModes,
@@ -136,8 +136,7 @@ struct SupportReportSnapshot {
       conversationAwarenessSupport: conversationAwarenessSupport,
       conversationAwarenessQuery: conversationAwarenessQuery,
       conversationAwarenessSetterExposed: device.canSetConversationAwareness(),
-      macOS: macOS,
-      titleSubject: resolvedProduct?.modelName ?? family.rawValue
+      macOS: macOS
     )
   }
 
