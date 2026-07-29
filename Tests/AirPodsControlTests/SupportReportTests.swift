@@ -55,7 +55,6 @@ func testSupportReportContentsAndPrivacy() {
   )
   check(cliOutput.contains("26.1.0"), "report has normalized macOS version")
   check(cliOutput.contains(VERSION), "report has CLI version")
-  check(!cliOutput.contains("Firmware"), "report omits firmware")
   check(!cliOutput.contains("Connection state"), "report omits connection state")
   check(
     !cliOutput.contains("Current listening mode"),
@@ -69,11 +68,30 @@ func testSupportReportContentsAndPrivacy() {
     !cliOutput.contains("###") && !cliOutput.contains("`"),
     "CLI report uses terminal-native formatting rather than Markdown"
   )
-  for excluded in ["serial", "MAC address", "account", "device name", "raw dump"] {
-    check(
-      !cliOutput.lowercased().contains(excluded.lowercased()),
-      "report omits excluded field \(excluded)"
-    )
+  // One term per item the privacy promise makes, checked against both
+  // renderers. "bluetooth" alone is deliberately not a term: the GitHub
+  // renderer names the Bluetooth product ID, which the promise allows.
+  let excludedTerms = [
+    "firmware",
+    "serial",
+    "mac address",
+    "bluetooth address",
+    "account",
+    "device name",
+    "raw dump",
+    "system log",
+  ]
+  let renderedSurfaces = [
+    ("terminal", cliOutput),
+    ("GitHub", report?.githubIssueDraft.report ?? ""),
+  ]
+  for (surface, rendered) in renderedSurfaces {
+    for excluded in excludedTerms {
+      check(
+        !rendered.lowercased().contains(excluded),
+        "the \(surface) report omits excluded field \(excluded)"
+      )
+    }
   }
   check(device.listeningModeSetCount == 0, "report does not write listening mode")
   check(
