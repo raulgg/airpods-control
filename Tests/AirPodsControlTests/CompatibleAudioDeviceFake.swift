@@ -20,7 +20,7 @@ extension SupportReportDeviceMetadata {
 }
 
 final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
-  let name: String
+  let name: String?
   var listeningModes: [ListeningMode]
   var listeningMode: ListeningMode?
   var appliesListeningModeWrite: Bool
@@ -43,8 +43,10 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var settleIntervals: [TimeInterval] = []
   var conversationAwarenessSetCount = 0
 
+  // Defaults to no name, matching a device discovered without reading the
+  // name selector. Tests that select or print a name pass one.
   init(
-    name: String,
+    name: String? = nil,
     listeningModes: [ListeningMode] = ListeningMode.allCases,
     listeningMode: ListeningMode? = .transparency,
     appliesListeningModeWrite: Bool = true,

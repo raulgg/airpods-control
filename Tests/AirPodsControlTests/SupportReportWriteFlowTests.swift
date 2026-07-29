@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 func testSupportReportWriteTestConsent() {
-  let device = FakeCompatibleAudioDevice(name: "")
+  let device = FakeCompatibleAudioDevice()
   var errors = [String]()
 
   let declined = SupportReportInteraction.requestWriteTestConsent(
@@ -64,7 +64,6 @@ func testSupportReportWriteTestConsent() {
   )
 
   let nothingToTest = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     conversationAwarenessSupported: false
   )
@@ -82,7 +81,6 @@ func testSupportReportWriteTestConsent() {
   check(errors.isEmpty, "nothing to test asks nothing")
 
   let unreadableCA = FakeCompatibleAudioDevice(
-    name: "",
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: nil
   )
@@ -106,7 +104,7 @@ func testSupportReportWriteTestConsent() {
 
 func testSupportReportConsentRendererIsPureAndTTYOptional() {
   let plan = SupportReportWriteTestPlan.make(
-    device: FakeCompatibleAudioDevice(name: "")
+    device: FakeCompatibleAudioDevice()
   )
   let first = SupportReportConsentRenderer.render(plan, colorEnabled: false)
   let second = SupportReportConsentRenderer.render(plan, colorEnabled: false)
@@ -128,7 +126,6 @@ func testSupportReportConsentRendererIsPureAndTTYOptional() {
 
 func testSupportReportWriteTestsCommandFlow() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -277,7 +274,6 @@ func testSupportReportWriteTestsCommandFlow() {
 func testSupportReportIssueReportIncludesCompleteModeResults() {
   func issueReport(initialMode: ListeningMode) -> String {
     let device = FakeCompatibleAudioDevice(
-      name: "",
       listeningModes: [.off, .transparency, .adaptive],
       listeningMode: initialMode,
       appliesListeningModeWrite: false,
@@ -304,7 +300,6 @@ func testSupportReportIssueReportIncludesCompleteModeResults() {
 
 func testSupportReportIssueReportDoesNotNameTheUntestedInitialMode() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive],
     listeningMode: .adaptive,
     appliesListeningModeWrite: false,
@@ -334,7 +329,6 @@ func testSupportReportIssueReportDoesNotNameTheUntestedInitialMode() {
 
 func testSupportReportIssueReportIncludesStateDependentModeSkipReasons() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
@@ -355,7 +349,6 @@ func testSupportReportIssueReportIncludesStateDependentModeSkipReasons() {
 
 func testSupportReportRunsOnlyTheConsentedWritePlan() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive],
     listeningMode: .transparency,
     conversationAwarenessSupported: nil,
@@ -395,7 +388,6 @@ func testSupportReportRunsOnlyTheConsentedWritePlan() {
 
 func testSupportReportSkipsCapabilitiesRemovedDuringConsent() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive],
     listeningMode: .transparency,
     conversationAwarenessSupported: true,
@@ -441,7 +433,6 @@ func testSupportReportSkipsCapabilitiesRemovedDuringConsent() {
 func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
   let invocation = try! parseInvocation(["support-report"])
   let modeDevice = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive],
     listeningMode: .transparency,
     conversationAwarenessSupported: false
@@ -470,7 +461,6 @@ func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
   )
 
   let awarenessDevice = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     listeningMode: nil,
     conversationAwarenessSupported: true,
@@ -506,7 +496,6 @@ func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
 
 func testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive],
     listeningMode: .transparency,
     conversationAwarenessSupported: false,
@@ -543,7 +532,6 @@ func testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() {
 
 func testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false,
@@ -580,7 +568,6 @@ func testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() {
 
 func testSupportReportPreservesThePreflightSnapshotDuringWrites() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive],
     listeningMode: .transparency,
     conversationAwarenessSupported: false,
@@ -617,7 +604,6 @@ func testSupportReportPreservesThePreflightSnapshotDuringWrites() {
 
 func testSupportReportWriteTestsRestoreFailure() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -645,7 +631,6 @@ func testSupportReportWriteTestsRestoreFailure() {
 
 func testSupportReportInterruptedWriteTestsUseSignalExit() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -701,7 +686,6 @@ func testSupportReportInterruptedWriteTestsUseSignalExit() {
 
 func testSupportReportHangupWriteTestsUseSignalExit() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,

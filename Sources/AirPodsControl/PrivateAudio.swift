@@ -116,10 +116,10 @@ enum PrivateAudioDiscovery {
 
 final class PrivateAudioDevice: CompatibleAudioDevice {
   private let object: AnyObject
-  let name: String
+  let name: String?
   private let logger: DebugLogger
 
-  private init(object: AnyObject, name: String, logger: DebugLogger) {
+  private init(object: AnyObject, name: String?, logger: DebugLogger) {
     self.object = object
     self.name = name
     self.logger = logger
@@ -168,7 +168,9 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       return nil
     }
 
-    let name: String
+    // The name selector stays uninvoked unless the caller wants the name, so
+    // the device keeps no name at all rather than a blank one.
+    var name: String?
     if includeDeviceName {
       guard let nameValue = object.perform(nameSelector)?.takeUnretainedValue(),
             let value = nameValue as? String,
@@ -177,9 +179,8 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
         logger.debug("device.\(index).name", "unavailable")
         return nil
       }
+      logger.debug("device.\(index).name", value)
       name = value
-    } else {
-      name = ""
     }
 
     guard let modesValue = object.perform(availableModesSelector)?.takeUnretainedValue(),
@@ -187,15 +188,9 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
           !modes.isEmpty
     else {
       logger.debug("device.\(index).compatible", false)
-      if includeDeviceName {
-        logger.debug("device.\(index).name", name)
-      }
       return nil
     }
 
-    if includeDeviceName {
-      logger.debug("device.\(index).name", name)
-    }
     logger.debug("device.\(index).compatible", true)
     logger.debug("device.\(index).available_modes", modes.joined(separator: ","))
     return PrivateAudioDevice(object: object, name: name, logger: logger)
@@ -396,7 +391,7 @@ final class PrivateAudioController {
         logger.warning("device_selection", "no-compatible-device")
         return nil
       }
-      logger.info("selected_device", includesDeviceNames ? selected.name : "name-not-read")
+      logger.info("selected_device", selected.name ?? "name-not-read")
       return selected
     }
 
@@ -406,7 +401,7 @@ final class PrivateAudioController {
     }
 
     let matches = devices.filter {
-      $0.name.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
+      $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
     }
 
     guard matches.count == 1, let selected = matches.first else {

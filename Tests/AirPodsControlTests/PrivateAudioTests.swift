@@ -80,10 +80,18 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
     report?.terminalOutput.contains("Model                    AirPods Pro 3") == true,
     "the Bluetooth product ID resolves to a model name"
   )
-  check(device.name.isEmpty, "support-report adapter retains no customizable name")
+  check(device.name == nil, "support-report adapter retains no customizable name")
   check(
     rawDevice.nameReadCount == 0,
     "support-report never invokes the customizable name selector"
+  )
+  check(
+    controller.selectDevice(named: "Custom Owner Name") == nil,
+    "name-free discovery refuses --device selection"
+  )
+  check(
+    rawDevice.nameReadCount == 0,
+    "refusing --device selection reads no customizable name"
   )
   check(
     report?.terminalOutput.contains("Custom Owner Name") == false,

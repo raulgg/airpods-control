@@ -5,7 +5,6 @@ private func supportWriteTestSignalHandler(_: Int32) {}
 
 func testWriteTesterVerifiesAndRestores() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -65,7 +64,6 @@ func testWriteTesterVerifiesAndRestores() {
 
 func testWriteTesterContinuesAfterNoOp() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -129,7 +127,6 @@ func testWriteTesterContinuesAfterNoOp() {
 
 func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
@@ -193,7 +190,6 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
 
 func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive],
     listeningMode: .transparency,
     appliesListeningModeWrite: false,
@@ -228,7 +224,6 @@ func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
 
 func testWriteTesterStopsOnSetterErrorAndRestores() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
@@ -276,7 +271,6 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
 
 func testWriteTesterReportsConversationAwarenessSetterError() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false
@@ -299,7 +293,6 @@ func testWriteTesterReportsConversationAwarenessSetterError() {
 
 func testWriteTesterReportsConversationAwarenessRestorationSetterError() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false
@@ -330,7 +323,6 @@ func testWriteTesterReportsConversationAwarenessRestorationSetterError() {
 
 func testWriteTesterSkipsUnreadableAndUnexposedCapabilities() {
   let unreadable = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency],
     listeningMode: nil,
     conversationAwarenessSupported: true,
@@ -358,7 +350,6 @@ func testWriteTesterSkipsUnreadableAndUnexposedCapabilities() {
   )
 
   let unexposed = FakeCompatibleAudioDevice(
-    name: "",
     conversationAwarenessSupported: false
   )
   unexposed.exposesListeningModeSetter = false
@@ -376,7 +367,6 @@ func testWriteTesterSkipsUnreadableAndUnexposedCapabilities() {
 
 func testWriteTesterSkipsAnUnadvertisedInitialMode() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.adaptive, .noiseCancellation],
     listeningMode: .transparency,
     conversationAwarenessSupported: false
@@ -397,7 +387,6 @@ func testWriteTesterSkipsAnUnadvertisedInitialMode() {
 
 func testWriteTesterReportsFailedRestore() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -425,7 +414,6 @@ func testWriteTesterReportsFailedRestore() {
 
 func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -485,7 +473,6 @@ func testWriteTesterStopsExplorationAndRestoresAfterInterruption() {
 
 func testRunInterruptiblyRestoresAfterARealSignalDuringModeHold() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -596,7 +583,6 @@ func testTerminationMonitorRestoresCompleteSignalAction() {
 
 func testWriteTesterRestoresConversationAwarenessAfterInterruption() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false
@@ -636,7 +622,6 @@ func testWriteTesterRestoresConversationAwarenessAfterInterruption() {
 
 func testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     conversationAwarenessSupported: true,
     conversationAwarenessEnabled: false
@@ -670,7 +655,6 @@ func testWriteTesterDoesNotStartAwarenessAfterBoundaryInterruption() {
 
 func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -720,7 +704,6 @@ func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
 
 func testWriteTesterInterruptionNoticeDefaultsToStandardError() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
