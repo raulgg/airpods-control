@@ -246,7 +246,10 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     let accepted = setter.setListeningMode(mode, &error)
     logger.debug("write.listening_mode.accepted", accepted)
     if let error {
-      logger.warning("write.listening_mode.error", error.localizedDescription)
+      // Domain and code, not localizedDescription. support-report accepts
+      // --debug, so this stream gets pasted into public issues, and a
+      // system-supplied message is an unbounded string this code never sees.
+      logger.warning("write.listening_mode.error", "\(error.domain):\(error.code)")
     }
     return accepted
   }
@@ -325,7 +328,7 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     let accepted = setter.setConversationAwareness(enabled, &error)
     logger.debug("write.conversation_awareness.accepted", accepted)
     if let error {
-      logger.warning("write.conversation_awareness.error", error.localizedDescription)
+      logger.warning("write.conversation_awareness.error", "\(error.domain):\(error.code)")
     }
     return accepted
   }

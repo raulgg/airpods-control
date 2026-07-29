@@ -48,6 +48,7 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .B airpods-control
 .B support-report
 .RB [ --with-write-tests " | " --no-write-tests ]
+.RB [ --debug ]
 .br
 .B airpods-control
 .RB [ --version | -v | version ]
@@ -201,6 +202,9 @@ answers the consent question with yes and is the only way to run the tests
 noninteractively;
 .B --no-write-tests
 answers it with no.
+.B --debug
+is accepted and documented under
+.BR OPTIONS .
 .IP
 It never reads the customizable device name, firmware version, serial numbers,
 Bluetooth/MAC addresses, account data, or raw system dumps and logs. A
@@ -310,6 +314,18 @@ The listening-mode list command additionally returns
 Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code.
 Diagnostics cover the entitlement bypass, framework and selector discovery,
 device selection, raw state, capability checks, writes, and read-back attempts.
+Accepted anywhere in an operational command, a global version command, or
+.BR support-report ,
+where the diagnostics are the quickest way to see why a device is not
+recognized. Because
+.B support-report
+resolves its device without reading names, no diagnostic line carries the
+customizable device name; selection logs
+.B name-not-read
+instead. Its diagnostics share stderr with the consent and issue-form prompts.
+Unlike the report, the diagnostics are not filtered through the report's
+character allowlist, and they can name the installed dylib path, so review them
+before pasting them into an issue.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -378,14 +394,14 @@ rather than crashing when selectors are missing.
 .PP
 .B support-report
 accepts no
-.BR --device ,
-.BR --json ,
+.B --device
 or
-.B --debug
-option. Its only options are
-.B --with-write-tests
+.B --json
+option. Its options are
+.BR --with-write-tests ,
+.BR --no-write-tests ,
 and
-.BR --no-write-tests .
+.BR --debug .
 The write-test consent prompt is device-specific; report result rows depend on
 the captured plan and its outcomes.
 .SH SEE ALSO

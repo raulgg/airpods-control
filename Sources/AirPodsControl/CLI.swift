@@ -69,7 +69,7 @@ struct CLIParseError: Error {}
 let globalHelp = """
 Usage:
   airpods-control [--device NAME] <resource> <command> [--json] [--debug]
-  airpods-control support-report [--with-write-tests | --no-write-tests]
+  airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
   airpods-control --version | -v | version
   airpods-control --help | -h
 
@@ -152,7 +152,7 @@ Options:
 
 let supportReportHelp = """
 Usage:
-  airpods-control support-report [--with-write-tests | --no-write-tests]
+  airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
 
 Build a local compatibility report from device and macOS metadata. When the
 command can plan at least one write test safely, an interactive run shows the
@@ -183,6 +183,9 @@ Options:
                way to run them when standard input is not interactive.
   --no-write-tests
                Skip the write tests and the consent question.
+  --debug      Emit selector and device-discovery diagnostics to stderr
+               without changing the report. They share stderr with the
+               prompts, so the consent question appears among them.
 
 A read-only report does not change device settings or intentionally interrupt
 audio. The command does not read the customizable device name, firmware
@@ -305,11 +308,14 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
     )
   }
 
+  // --debug is allowed: whoever runs support-report is whoever's device the CLI
+  // does not recognize, and the diagnostics say why. Resolving the report device
+  // with includeDeviceNames: false keeps the customizable name out of the
+  // stream. --json is not allowed; the report is not a JSON payload.
   if positional == ["support-report"] {
     guard requestedDeviceName == nil,
           requestedCycleModes == nil,
           !jsonOutput,
-          !debugEnabled,
           !(withWriteTests && noWriteTests)
     else {
       throw CLIParseError()
@@ -325,7 +331,7 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
     return CLIInvocation(
       command: .supportReport(writeTests: writeTests),
       jsonOutput: false,
-      debugEnabled: false,
+      debugEnabled: debugEnabled,
       requestedDeviceName: nil
     )
   }

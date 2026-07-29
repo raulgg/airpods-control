@@ -96,6 +96,8 @@ assert_contains "$("$CLI" support-report --help)" \
   '--with-write-tests' "support-report consent flag help"
 assert_contains "$("$CLI" support-report --help)" \
   '--no-write-tests' "support-report decline flag help"
+assert_contains "$("$CLI" support-report --help)" \
+  '--debug' "support-report debug flag help"
 
 assert_equal '0.1.0' "$("$CLI" --version)" "--version"
 assert_equal '0.1.0' "$("$CLI" -v)" "-v"
@@ -152,17 +154,6 @@ expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" lm get --json --json
 
 set +e
-support_report_debug_output=$(
-  "$CLI" support-report --debug 2>"$PROBE_DIR/support-report-debug.stderr"
-)
-support_report_debug_status=$?
-set -e
-assert_equal 2 "$support_report_debug_status" "support-report debug exit status"
-assert_equal bad-args "$support_report_debug_output" "support-report rejects debug"
-assert_contains "$(cat "$PROBE_DIR/support-report-debug.stderr")" \
-  'warning: cli.parse="bad-args"' "support-report debug only reports the parse error"
-
-set +e
 duplicate_debug_output=$(
   "$CLI" --debug --debug lm get 2>"$PROBE_DIR/duplicate-debug.stderr"
 )
@@ -208,6 +199,19 @@ assert_contains "$support_report_output" \
   'Nothing was sent to GitHub.' "support-report does not offer issue creation"
 assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
   "support-report no-device has no prompt"
+
+set +e
+support_report_debug_output=$(
+  "$CLI" support-report --debug 2>"$PROBE_DIR/support-report-debug.stderr"
+)
+support_report_debug_status=$?
+set -e
+assert_equal 1 "$support_report_debug_status" "support-report --debug exit status"
+assert_contains "$support_report_debug_output" \
+  'Connect exactly one compatible AirPods or Beats device' \
+  "--debug leaves support-report stdout alone"
+assert_contains "$(cat "$PROBE_DIR/support-report-debug.stderr")" \
+  'debug: cli.command="support-report"' "support-report accepts --debug"
 
 # Safety guard for the consented invocation below: --with-write-tests
 # authorizes real device writes without prompting, and CONTRIBUTING.md
