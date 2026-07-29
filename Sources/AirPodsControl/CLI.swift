@@ -187,12 +187,11 @@ Options:
                without changing the report. They share stderr with the
                prompts, so the consent question appears among them.
 
-A read-only report does not change device settings or intentionally interrupt
-audio. The command does not read the customizable device name, firmware
-version, serial numbers, Bluetooth/MAC addresses, account data, or raw system
-dumps and logs. It never uses the clipboard, sends telemetry, or submits
-anything. Check the report before choosing whether to open a prefilled GitHub
-issue form.
+The command never reads the customizable device name, firmware version, serial
+numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It
+never uses the clipboard, sends telemetry, or submits anything. A read-only
+report does not change device settings or intentionally interrupt audio. Check
+the report before choosing whether to open a prefilled GitHub issue form.
 """
 
 func helpText(for rawArgs: [String]) -> String? {

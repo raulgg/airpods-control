@@ -145,8 +145,8 @@ device or hardware feature.
 
 The CLI has only been verified with AirPods Pro 3. Other AirPods may work when
 macOS exposes the same private audio capabilities. We have not verified Beats,
-but reports are welcome. See the
-[device and capability matrix](docs/compatibility.md).
+but reports are welcome; a report does not by itself make a device supported.
+See the [device and capability matrix](docs/compatibility.md).
 
 To share compatibility details:
 
@@ -160,30 +160,27 @@ To share compatibility details:
    information, and submit it.
 
 The report is built locally and shown to you before anything else happens. The
-terminal groups the data under Device, Capabilities, and Write tests. The
-GitHub issue field uses the same data, formatted as Markdown. The report
-contains only a fixed set of compatibility metadata. It never reads the
+terminal groups the data under Device, Capabilities, and Write tests, and the
+GitHub issue field uses the same data formatted as Markdown. The report contains
+only a fixed set of compatibility metadata. The command never reads the
 customizable device name, firmware version, serial numbers, Bluetooth/MAC
-addresses, account data, or raw logs and system dumps. It never uses the
+addresses, account data, or raw system dumps and logs. It never uses the
 clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub
-form is always your explicit choice, and GitHub does not submit it for you. The
-[CLI reference](docs/cli.md#contributor-compatibility-report) documents the
-exact report contents and privacy rules.
+form is always your explicit choice, and GitHub does not submit it for you.
 
-The optional write tests run only with your consent (the interactive question
-or `--with-write-tests`). They temporarily switch through the advertised
-listening modes recognized by this CLI, toggle Conversation Awareness, and
-then try to restore the captured initial settings. The terminal names the
-final state whenever restoration cannot be verified. The tests may be
-disruptive: mode switches are audible and noise control changes while the
-device is worn. Do not run them during a call. Consent only if you accept
-this. Without consent, `support-report` does not change device settings or
-intentionally interrupt audio. See the
-[CLI reference](docs/cli.md#consented-write-tests) for the exact plan, skip
+The optional write tests run only with your consent (the interactive question or
+`--with-write-tests`). They temporarily switch through the advertised listening
+modes recognized by this CLI, toggle Conversation Awareness, and then try to
+restore the captured initial settings. The tests may be disruptive: mode
+switches are audible and noise control changes while the device is worn. Do not
+run them during a call. Consent only if you accept this. Without consent,
+`support-report` does not change device settings or intentionally interrupt
+audio.
+
+The [CLI reference](docs/cli.md#contributor-compatibility-report) documents the
+exact report contents and privacy rules, and its
+[write-test section](docs/cli.md#consented-write-tests) covers the plan, skip
 rules, verdict vocabulary, restoration behavior, and exit codes.
-
-Reports from other AirPods and Beats owners are welcome. A report does not make
-a Beats device supported.
 
 ## Credits
 
