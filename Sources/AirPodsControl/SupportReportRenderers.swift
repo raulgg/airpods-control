@@ -362,9 +362,16 @@ enum SupportReportTerminalRenderer {
 enum SupportReportGitHubRenderer {
   static func render(_ document: SupportReportDocument) -> SupportReportIssueDraft {
     var lines = [
-      "- Device family: \(document.device.family.rawValue)",
+      "#### Device",
+      "",
       "- Model: \(document.device.model)",
       "- Model identifier: \(githubModelIdentifier(document.device))",
+      "- Device family: \(document.device.family.rawValue)",
+      "- macOS: \(document.device.macOS)",
+      "- airpods-control: \(document.device.cliVersion)",
+      "",
+      "#### Capabilities",
+      "",
       "- Advertised known listening modes: "
         + githubListeningModes(document.capabilities.listeningModes),
       "- Other advertised listening modes: "
@@ -379,19 +386,16 @@ enum SupportReportGitHubRenderer {
         + githubQuery(document.capabilities.conversationAwarenessQuery),
       "- Conversation Awareness setter: "
         + githubSetter(document.capabilities.conversationAwarenessSetter),
+      "",
+      "#### Write tests",
+      "",
     ]
 
-    if case .notRun = document.writeTests {
-      lines.append("- Write tests: not run")
-    }
-    lines.append(contentsOf: [
-      "- macOS: \(document.device.macOS)",
-      "- airpods-control: \(document.device.cliVersion)",
-    ])
-
-    if case let .ran(results) = document.writeTests {
-      lines.append("")
-      lines.append("#### Write tests (run with consent)")
+    switch document.writeTests {
+    case .notRun:
+      lines.append("- Status: not run")
+    case let .ran(results):
+      lines.append("_Run with consent._")
       lines.append("")
       lines.append(contentsOf: results.map(githubWriteTestResult))
       if let signal = document.interruptedBySignal {

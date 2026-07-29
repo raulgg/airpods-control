@@ -97,11 +97,29 @@ func testSupportReportContentsAndPrivacy() {
     "the CLI report carries its local-only completion note"
   )
   check(
-    outcome.supportReportIssueDraft?.report.hasPrefix("- Device family: AirPods") == true,
-    "the issue field starts with the generated compatibility details"
+    outcome.supportReportIssueDraft?.report.hasPrefix(
+      "#### Device\n\n- Model: AirPods Pro 3"
+    ) == true,
+    "the issue field starts with the same Device section as the CLI"
+  )
+  let issueReport = outcome.supportReportIssueDraft?.report ?? ""
+  let deviceSection = issueReport.range(of: "#### Device")
+  let capabilitiesSection = issueReport.range(of: "#### Capabilities")
+  let writeTestsSection = issueReport.range(of: "#### Write tests")
+  check(
+    deviceSection != nil
+      && capabilitiesSection != nil
+      && writeTestsSection != nil
+      && deviceSection!.lowerBound < capabilitiesSection!.lowerBound
+      && capabilitiesSection!.lowerBound < writeTestsSection!.lowerBound,
+    "the issue field follows the CLI section order"
   )
   check(
-    outcome.supportReportIssueDraft?.report.contains("### Compatibility report") == false,
+    issueReport.contains("#### Write tests\n\n- Status: not run"),
+    "the issue field reports skipped write tests inside their own section"
+  )
+  check(
+    !issueReport.contains("### Compatibility report"),
     "the issue field lets the form supply its own compatibility heading"
   )
   check(
@@ -171,6 +189,14 @@ func testSupportReportDocumentFeedsPureOutputAdapters() {
     !firstTerminalOutput.contains("`")
       && firstIssueDraft.report.contains("`listening-mode set off`"),
     "each adapter applies only its own output syntax"
+  )
+  check(
+    firstIssueDraft.report.contains("#### Device")
+      && firstIssueDraft.report.contains("#### Capabilities")
+      && firstIssueDraft.report.contains(
+        "#### Write tests\n\n_Run with consent._"
+      ),
+    "the GitHub adapter mirrors the CLI sections with Markdown formatting"
   )
 
   let coloredTerminalOutput = SupportReportTerminalRenderer.render(

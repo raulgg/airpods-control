@@ -191,8 +191,9 @@ interrupted run does not offer or print an issue-form URL.
 .IP
 The prefilled GitHub Compatibility report field includes every per-mode verdict
 but omits the terminal-only restoration status, review footer, and heading.
-The issue form supplies that heading separately and renders the write-test
-heading one level below it. Neither report labels the row that restored the
+The issue form supplies that heading separately. The field follows the
+terminal report's Device, Capabilities, and Write tests structure, with those
+headings one level below it. Neither report labels the row that restored the
 initial state, and when the state never left the captured initial mode, that
 mode's untested listening-mode set row is rendered without naming the mode.
 .B --with-write-tests

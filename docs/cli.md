@@ -275,12 +275,13 @@ Review complete. Nothing has been submitted to GitHub.
 
 One presentation-neutral document feeds two pure output adapters. The terminal
 adapter produces the readable layout above. The GitHub adapter independently
-produces Markdown for the prefilled Compatibility report field, including every
-per-mode verdict but omitting the restoration status and local-only footer. The
-issue form supplies the compatibility heading. Neither adapter labels the row
-that restored the initial state, and when the state never left the captured
-initial mode, that mode's untested `listening-mode set` row is rendered without
-naming the mode.
+produces Markdown for the prefilled Compatibility report field. It follows the
+terminal adapter's Device, Capabilities, and Write tests section structure,
+including every per-mode verdict but omitting the restoration status and
+local-only footer. The issue form supplies the compatibility heading above
+those sections. Neither adapter labels the row that restored the initial state,
+and when the state never left the captured initial mode, that mode's untested
+`listening-mode set` row is rendered without naming the mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example
