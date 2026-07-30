@@ -130,7 +130,9 @@ func testSupportReportDebugStreamOmitsTheDeviceName() {
   let ownerName = "Custom Owner Name"
   let rawDevice = FakeRawDevice(
     name: ownerName,
-    modelIdentifier: "BTHeadphones76,8231"
+    modelIdentifier: "BTHeadphones76,8231",
+    listeningModeError: NSError(domain: ownerName, code: 73),
+    conversationAwarenessError: NSError(domain: ownerName, code: 74)
   )
   var report: SupportReportDocument?
 
@@ -165,8 +167,10 @@ func testSupportReportDebugStreamOmitsTheDeviceName() {
     "selection logs a placeholder in place of the name"
   )
   check(
-    captured.contains("debug: write.listening_mode.accepted=true"),
-    "the debug stream reaches the write-test writes"
+    captured.contains("debug: write.listening_mode.accepted=false")
+      && captured.contains("warning: write.listening_mode.error=73")
+      && captured.contains("warning: write.conversation_awareness.error=74"),
+    "the debug stream reaches both setter-error branches without their domains"
   )
   check(
     !captured.contains(ownerName),

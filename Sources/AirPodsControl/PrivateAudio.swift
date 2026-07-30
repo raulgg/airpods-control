@@ -239,18 +239,20 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     return available
   }
 
+  private func logSetterError(_ error: NSError?, key: String) {
+    guard let error else { return }
+    // Framework-supplied error strings are not part of the pasteable debug
+    // stream. The numeric code is bounded and the log key supplies context.
+    logger.warning(key, error.code)
+  }
+
   private func setRawListeningMode(_ mode: String) -> Bool? {
     guard canSetListeningMode() else { return nil }
     var error: NSError?
     let setter = unsafeBitCast(object, to: ListeningModeSetterShim.self)
     let accepted = setter.setListeningMode(mode, &error)
     logger.debug("write.listening_mode.accepted", accepted)
-    if let error {
-      // Domain and code, not localizedDescription. support-report accepts
-      // --debug, so this stream gets pasted into public issues, and a
-      // system-supplied message is an unbounded string this code never sees.
-      logger.warning("write.listening_mode.error", "\(error.domain):\(error.code)")
-    }
+    logSetterError(error, key: "write.listening_mode.error")
     return accepted
   }
 
@@ -327,9 +329,7 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     let setter = unsafeBitCast(object, to: ConversationAwarenessSetterShim.self)
     let accepted = setter.setConversationAwareness(enabled, &error)
     logger.debug("write.conversation_awareness.accepted", accepted)
-    if let error {
-      logger.warning("write.conversation_awareness.error", "\(error.domain):\(error.code)")
-    }
+    logSetterError(error, key: "write.conversation_awareness.error")
     return accepted
   }
 
