@@ -2,7 +2,9 @@ import Darwin
 import Foundation
 
 func testSupportReportContentsAndPrivacy() {
+  let privateDeviceName = "PRIVATE-DEVICE-NAME-SENTINEL-7D09E9"
   let device = FakeCompatibleAudioDevice(
+    name: privateDeviceName,
     listeningModes: [.off, .transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -68,30 +70,21 @@ func testSupportReportContentsAndPrivacy() {
     !cliOutput.contains("###") && !cliOutput.contains("`"),
     "CLI report uses terminal-native formatting rather than Markdown"
   )
-  // One term per item the privacy promise makes, checked against both
-  // renderers. "bluetooth" alone is deliberately not a term: the GitHub
-  // renderer names the Bluetooth product ID, which the promise allows.
-  let excludedTerms = [
-    "firmware",
-    "serial",
-    "mac address",
-    "bluetooth address",
-    "account",
-    "device name",
-    "raw dump",
-    "system log",
-  ]
+  // Seed private source data and assert on the value, not renderer wording.
+  // Add another sentinel here if a future adapter boundary gains a new private
+  // source; selector/read-count tests remain responsible for proving it is not
+  // read in production.
+  let issueDraft = report?.githubIssueDraft
   let renderedSurfaces = [
     ("terminal", cliOutput),
-    ("GitHub", report?.githubIssueDraft.report ?? ""),
+    ("GitHub title", issueDraft?.title ?? ""),
+    ("GitHub report", issueDraft?.report ?? ""),
   ]
   for (surface, rendered) in renderedSurfaces {
-    for excluded in excludedTerms {
-      check(
-        !rendered.lowercased().contains(excluded),
-        "the \(surface) report omits excluded field \(excluded)"
-      )
-    }
+    check(
+      !rendered.lowercased().contains(privateDeviceName.lowercased()),
+      "the \(surface) output omits the private device-name sentinel"
+    )
   }
   check(device.listeningModeSetCount == 0, "report does not write listening mode")
   check(
