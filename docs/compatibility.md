@@ -19,6 +19,7 @@ So far, we have only tested the CLI on AirPods Pro 3.
 | --- | --- | --- | --- |
 | Device discovery | Verified | Pending | Exploratory |
 | One-earbud discovery and control | Verified | Pending | Exploratory |
+| `status` | Pending | Pending | Exploratory |
 | `listening-mode get` | Verified | Pending | Exploratory |
 | `listening-mode list` | Verified | Pending | Exploratory |
 | `listening-mode set` | Verified | Pending | Exploratory |
@@ -27,8 +28,8 @@ So far, we have only tested the CLI on AirPods Pro 3.
 | `conversation-awareness set` | Verified | Pending | Exploratory |
 | `support-report` metadata | Pending | Pending | Exploratory |
 
-We have tested the existing CLI commands on AirPods Pro 3. We have not yet run
-`support-report` with connected hardware.
+We have tested the individual resource commands on AirPods Pro 3. The aggregate
+`status` command and `support-report` still require connected-hardware checks.
 
 ## Candidates pending verification
 
@@ -102,7 +103,9 @@ or suppress possible plural aliases rather than combining selectors across
 wrappers, and every write goes to the single wrapper whose capabilities were
 checked. Product catalog membership supplies report metadata only and is never
 runtime capability evidence. Some endpoints expose only part of the interface;
-the CLI reports missing data as unavailable and does not infer it.
+the CLI reports missing data as unavailable and does not infer it. Status omits
+a feature only when the device explicitly reports it unsupported; unresolved
+reads retain the individual getter's fallback instead of inventing a state.
 
 ## Contributing a result
 

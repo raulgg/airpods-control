@@ -27,6 +27,8 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var conversationAwarenessSupported: Bool?
   var conversationAwarenessEnabled: Bool?
   var appliesConversationAwarenessWrite: Bool
+  var listeningModeStatusOverride: DeviceStatusField<ListeningMode>?
+  var conversationAwarenessStatusOverride: DeviceStatusField<Bool>?
   var reportMetadata: SupportReportDeviceMetadata
   var exposesListeningModeSetter = true
   var exposesConversationAwarenessSetter = true
@@ -42,6 +44,13 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var listeningModeSetCount = 0
   var settleIntervals: [TimeInterval] = []
   var conversationAwarenessSetCount = 0
+  var supportReportMetadataReadCount = 0
+  var availableListeningModesReadCount = 0
+  var currentListeningModeReadCount = 0
+  var listeningModeStatusReadCount = 0
+  var conversationAwarenessSupportReadCount = 0
+  var conversationAwarenessStateReadCount = 0
+  var conversationAwarenessStatusReadCount = 0
 
   // Defaults to no name, matching a device discovered without reading the
   // name selector. Tests that select or print a name pass one.
@@ -71,15 +80,24 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   }
 
   func supportReportMetadata() -> SupportReportDeviceMetadata {
-    reportMetadata
+    supportReportMetadataReadCount += 1
+    return reportMetadata
   }
 
   func availableListeningModes() -> [ListeningMode] {
-    listeningModes
+    availableListeningModesReadCount += 1
+    return listeningModes
   }
 
   func currentListeningMode() -> ListeningMode? {
-    listeningMode
+    currentListeningModeReadCount += 1
+    return listeningMode
+  }
+
+  func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
+    listeningModeStatusReadCount += 1
+    if let listeningModeStatusOverride { return listeningModeStatusOverride }
+    return currentListeningMode().map(DeviceStatusField.value) ?? .unresolved
   }
 
   func canSetListeningMode() -> Bool {
@@ -109,12 +127,22 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   }
 
   func supportsConversationAwareness() -> Bool? {
-    conversationAwarenessSupported
+    conversationAwarenessSupportReadCount += 1
+    return conversationAwarenessSupported
   }
 
   func conversationAwarenessState() -> Bool? {
+    conversationAwarenessStateReadCount += 1
     conversationAwarenessStateEffect?()
     return conversationAwarenessEnabled
+  }
+
+  func readConversationAwarenessStatus() -> DeviceStatusField<Bool> {
+    conversationAwarenessStatusReadCount += 1
+    if let conversationAwarenessStatusOverride { return conversationAwarenessStatusOverride }
+    guard let supported = supportsConversationAwareness() else { return .unresolved }
+    guard supported else { return .unsupported }
+    return conversationAwarenessState().map(DeviceStatusField.value) ?? .unresolved
   }
 
   func canSetConversationAwareness() -> Bool {

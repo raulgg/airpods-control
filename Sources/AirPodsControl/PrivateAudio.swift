@@ -339,6 +339,24 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     currentRawListeningMode().flatMap { listeningModesByRawValue[$0] }
   }
 
+  func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
+    // Compatibility checks this selector during discovery. If it disappears
+    // or stops returning a string before the one-shot status read, that is a
+    // real read failure rather than an unknown future mode.
+    guard object.responds(to: currentModeSelector),
+          let value = object.perform(currentModeSelector)?.takeUnretainedValue(),
+          let rawMode = value as? String
+    else {
+      logger.warning("status.listening_mode", "read-error")
+      return .readError
+    }
+    logger.debug("device.current_mode", rawMode)
+    guard let mode = listeningModesByRawValue[rawMode] else {
+      return .unresolved
+    }
+    return .value(mode)
+  }
+
   func canSetListeningMode() -> Bool {
     let available = object.responds(to: setModeSelector)
     logger.debug("selector.setCurrentBluetoothListeningMode:error:", available)
@@ -421,6 +439,28 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     let enabled = shim.conversationAwarenessEnabled()
     logger.debug("device.conversation_awareness", enabled ? "on" : "off")
     return enabled
+  }
+
+  func readConversationAwarenessStatus() -> DeviceStatusField<Bool> {
+    // A missing support probe is unresolved, matching the existing get
+    // command's fallback. An explicit false is the only proof that the field
+    // should be omitted from status.
+    guard let supported = supportsConversationAwareness() else {
+      return .unresolved
+    }
+    guard supported else { return .unsupported }
+
+    // Once the device advertises support, losing the state selector is an
+    // actual read failure. The stable output still uses the get command's
+    // fallback while the status errors map records the failure.
+    guard object.responds(to: caEnabledSelector) else {
+      logger.warning("status.conversation_awareness", "read-error")
+      return .readError
+    }
+    let shim = unsafeBitCast(object, to: ConversationAwarenessStateShim.self)
+    let enabled = shim.conversationAwarenessEnabled()
+    logger.debug("device.conversation_awareness", enabled ? "on" : "off")
+    return .value(enabled)
   }
 
   func canSetConversationAwareness() -> Bool {
@@ -590,17 +630,38 @@ final class PrivateAudioController {
   }
 
   func selectDevice(named requestedName: String?) -> PrivateAudioDevice? {
+    selectDevices(named: requestedName, policy: .firstOrExact)?.first
+  }
+
+  func selectDevices(
+    named requestedName: String?,
+    policy: DeviceSelectionPolicy
+  ) -> [PrivateAudioDevice]? {
     guard let requestedName else {
       if !includesDeviceNames, devices.count != 1 {
         logger.warning("device_selection", "unique-name-free-device-required")
         return nil
       }
-      guard let selected = devices.first else {
+      guard !devices.isEmpty else {
         logger.warning("device_selection", "no-compatible-device")
         return nil
       }
-      logger.info("selected_device", selected.name ?? "name-not-read")
-      return selected
+      switch policy {
+      case .firstOrExact:
+        let selected = devices[0]
+        logger.info("selected_device", selected.name ?? "name-not-read")
+        return [selected]
+      case .allOrExact:
+        guard includesDeviceNames else {
+          // Name-free discovery belongs to support-report and must retain its
+          // exactly-one-device privacy contract.
+          let selected = devices[0]
+          logger.info("selected_device", "name-not-read")
+          return [selected]
+        }
+        logger.info("selected_device_count", devices.count)
+        return devices
+      }
     }
 
     guard includesDeviceNames else {
@@ -622,6 +683,6 @@ final class PrivateAudioController {
     }
 
     logger.info("selected_device", selected.name)
-    return selected
+    return [selected]
   }
 }

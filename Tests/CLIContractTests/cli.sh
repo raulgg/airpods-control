@@ -79,6 +79,7 @@ assert_contains "$("$CLI" --help)" '--debug' "global debug help"
 assert_contains "$("$CLI" --help)" '--device NAME' "global device help"
 assert_contains "$("$CLI" --help)" 'Read, set, list, or cycle listening modes.' \
   "global listening-mode command summary"
+assert_contains "$("$CLI" --help)" 'status' "global status command"
 assert_contains "$("$CLI" --help)" 'support-report' "global contributor command"
 
 assert_contains "$("$CLI" lm --help)" 'listening-mode set <mode>' "lm help"
@@ -88,6 +89,14 @@ assert_contains "$("$CLI" lm --help)" 'anc, nc' "listening-mode alias help"
 assert_contains "$("$CLI" ca get --help)" 'conversation-awareness get' "ca help"
 assert_contains "$("$CLI" conversation-awareness set on -h)" \
   'conversation-awareness set <on|off>' "conversation-awareness help"
+assert_contains "$("$CLI" status --help)" \
+  'airpods-control status [--device NAME]' "status help"
+assert_contains "$("$CLI" status -h)" \
+  'every compatible AirPods or Beats device' "short status help"
+assert_contains "$("$CLI" status --help)" \
+  'No compatible AirPods or Beats device is connected.' "status no-device help"
+assert_contains "$("$CLI" --device status lm get --help)" \
+  'listening-mode get' "device value does not select status help"
 assert_contains "$("$CLI" --json lm set adaptive --json --help)" \
   'listening-mode set <mode>' "help precedence"
 assert_contains "$("$CLI" support-report --help)" \
@@ -122,6 +131,11 @@ expect_failure 2 bad-args "$CLI" list
 expect_failure 2 bad-args "$CLI" toggle transparency adaptive
 expect_failure 2 bad-args "$CLI" lm toggle transparency adaptive
 expect_failure 2 bad-args "$CLI" ca toggle
+expect_failure 2 bad-args "$CLI" st
+expect_failure 2 bad-args "$CLI" status extra
+expect_failure 2 bad-args "$CLI" status --modes transparency,adaptive
+expect_failure 2 bad-args "$CLI" status --with-write-tests
+expect_failure 2 bad-args "$CLI" status --no-write-tests
 expect_failure 2 bad-args "$CLI" cycle
 expect_failure 2 bad-args "$CLI" lm cycle extra
 expect_failure 2 bad-args "$CLI" lm cycle --modes
@@ -148,6 +162,7 @@ expect_failure 2 bad-args "$CLI" support-report --with-write-tests --with-write-
 expect_failure 2 bad-args "$CLI" lm get --with-write-tests
 expect_failure 2 bad-args "$CLI" --no-write-tests version
 expect_failure 2 bad-args "$CLI" lm get --device
+expect_failure 2 bad-args "$CLI" lm get --device --modes
 expect_failure 2 bad-args "$CLI" --device One --device Two lm get
 expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" --json
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
@@ -176,6 +191,31 @@ expect_failure 1 \
 
 expect_failure 1 no-device "$CLI" lm --device 'Missing AirPods' get
 expect_failure 1 no-device "$CLI" --device 'Missing AirPods' ca get
+
+for invocation in \
+  'lm get' \
+  'lm set adaptive' \
+  'lm list' \
+  'lm cycle' \
+  'ca get' \
+  'ca set on'
+do
+  # Word splitting is intentional: these fixed invocations contain no quoted
+  # arguments, while the requested device remains one separately quoted arg.
+  # shellcheck disable=SC2086
+  expect_failure 1 no-device "$CLI" $invocation --device 'Missing AirPods'
+done
+
+expect_failure 1 'No compatible AirPods or Beats device is connected.' \
+  "$CLI" status
+expect_failure 1 'No compatible AirPods or Beats device is connected.' \
+  "$CLI" status --device 'Missing AirPods'
+expect_failure 1 \
+  '{"devices":[],"error":"no-device","result":"error"}' \
+  "$CLI" status --json
+expect_failure 1 \
+  '{"devices":[],"error":"no-device","result":"error"}' \
+  "$CLI" --device 'Missing AirPods' --json status
 
 expect_failure 1 \
   '{"device":null,"error":"no-device","listeningMode":null,"result":"error"}' \
