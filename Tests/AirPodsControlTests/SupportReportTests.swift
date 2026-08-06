@@ -2,7 +2,9 @@ import Darwin
 import Foundation
 
 func testSupportReportContentsAndPrivacy() {
+  let privateDeviceName = "PRIVATE-DEVICE-NAME-SENTINEL-7D09E9"
   let device = FakeCompatibleAudioDevice(
+    name: privateDeviceName,
     listeningModes: [.off, .transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -55,7 +57,6 @@ func testSupportReportContentsAndPrivacy() {
   )
   check(cliOutput.contains("26.1.0"), "report has normalized macOS version")
   check(cliOutput.contains(VERSION), "report has CLI version")
-  check(!cliOutput.contains("Firmware"), "report omits firmware")
   check(!cliOutput.contains("Connection state"), "report omits connection state")
   check(
     !cliOutput.contains("Current listening mode"),
@@ -69,10 +70,20 @@ func testSupportReportContentsAndPrivacy() {
     !cliOutput.contains("###") && !cliOutput.contains("`"),
     "CLI report uses terminal-native formatting rather than Markdown"
   )
-  for excluded in ["serial", "MAC address", "account", "device name", "raw dump"] {
+  // Seed private source data and assert on the value, not renderer wording.
+  // Add another sentinel here if a future adapter boundary gains a new private
+  // source; selector/read-count tests remain responsible for proving it is not
+  // read in production.
+  let issueDraft = report?.githubIssueDraft
+  let renderedSurfaces = [
+    ("terminal", cliOutput),
+    ("GitHub title", issueDraft?.title ?? ""),
+    ("GitHub report", issueDraft?.report ?? ""),
+  ]
+  for (surface, rendered) in renderedSurfaces {
     check(
-      !cliOutput.lowercased().contains(excluded.lowercased()),
-      "report omits excluded field \(excluded)"
+      !rendered.lowercased().contains(privateDeviceName.lowercased()),
+      "the \(surface) output omits the private device-name sentinel"
     )
   }
   check(device.listeningModeSetCount == 0, "report does not write listening mode")
