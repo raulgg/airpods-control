@@ -1,34 +1,5 @@
 import Foundation
 
-func testPrivateSelectorDiscovery() {
-  let logger = DebugLogger(enabled: false)
-  let modern = FakeContext(devices: [])
-  let legacy = FakeContext(devices: [])
-
-  let legacyProvider = FakeLegacyContextProvider(context: legacy)
-  let selectedLegacy = PrivateAudioDiscovery.sharedContext(from: legacyProvider, logger: logger)
-  check(selectedLegacy === legacy, "legacy sharedSystemAudio selector is supported")
-
-  let dualProvider = FakeDualContextProvider(modern: modern, legacy: legacy)
-  let selectedModern = PrivateAudioDiscovery.sharedContext(from: dualProvider, logger: logger)
-  check(selectedModern === modern, "modern context selector is preferred")
-
-  let missingProvider = NSObject()
-  check(
-    PrivateAudioDiscovery.sharedContext(from: missingProvider, logger: logger) == nil,
-    "missing context selectors return nil"
-  )
-  check(
-    PrivateAudioDiscovery.outputDevices(from: missingProvider, logger: logger) == nil,
-    "missing outputDevices selector returns nil"
-  )
-
-  let device = FakeRawDevice(name: "My AirPods Pro")
-  let context = FakeContext(devices: [device])
-  let outputDevices = PrivateAudioDiscovery.outputDevices(from: context, logger: logger)
-  check(outputDevices?.count == 1, "outputDevices is discovered safely")
-}
-
 func testPrivateListeningModeTranslation() {
   let rawDevice = FakeRawDevice(
     name: "Translation AirPods",
@@ -459,7 +430,6 @@ func testSupportReportMetadataForUnrecognizedModes() {
 }
 
 func runPrivateAudioTests() {
-  testPrivateSelectorDiscovery()
   testPrivateListeningModeTranslation()
   testSupportReportDiscoveryDoesNotReadDeviceNames()
   testSupportReportMetadataForUnrecognizedModes()

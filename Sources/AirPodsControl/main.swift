@@ -86,20 +86,31 @@ func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
 func bootstrapAndSelectAudioDevice(
   named requestedName: String?,
   logger: DebugLogger,
-  includeDeviceNames: Bool = true
+  accessPolicy: PrivateAudioAccessPolicy
 ) -> (any CompatibleAudioDevice)? {
   ensureBypass(logger: logger)
 
-  guard let rawDevices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
-    return nil
-  }
+  let controller: PrivateAudioController
+  switch accessPolicy {
+  case .operational:
+    guard let endpoints = PrivateAudioDiscovery.systemOperationalEndpoints(
+      logger: logger
+    ) else { return nil }
+    controller = PrivateAudioController(endpoints: endpoints, logger: logger)
 
-  return PrivateAudioController(
-    rawDevices: rawDevices,
-    logger: logger,
-    includeDeviceNames: includeDeviceNames
-  )
-    .selectDevice(named: requestedName)
+  case .supportReport:
+    // Preserve the name-free, plural-only support-report discovery contract.
+    // In particular, do not query outputDevice or private device identifiers.
+    guard let devices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
+      return nil
+    }
+    controller = PrivateAudioController(
+      rawDevices: devices,
+      logger: logger,
+      includeDeviceNames: false
+    )
+  }
+  return controller.selectDevice(named: requestedName)
 }
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
@@ -134,16 +145,16 @@ do {
 let outcome = CommandExecution.execute(
   invocation,
   resolveDevice: { requestedName, logger in
-    let includeDeviceNames: Bool
+    let accessPolicy: PrivateAudioAccessPolicy
     if case .supportReport = invocation.command {
-      includeDeviceNames = false
+      accessPolicy = .supportReport
     } else {
-      includeDeviceNames = true
+      accessPolicy = .operational
     }
     return bootstrapAndSelectAudioDevice(
       named: requestedName,
       logger: logger,
-      includeDeviceNames: includeDeviceNames
+      accessPolicy: accessPolicy
     )
   },
   supportReport: SupportReportCommand(
