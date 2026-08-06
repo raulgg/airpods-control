@@ -121,6 +121,63 @@ func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   )
 }
 
+// support-report is the one command that resolves its device with
+// includeDeviceNames: false, which is what makes --debug safe for it. Pin that
+// across the whole reachable log surface — discovery, selection, the snapshot
+// reads, and the write-test writes — instead of trusting the name sites in
+// compatible(object:index:logger:includeDeviceName:) to stay gated.
+func testSupportReportDebugStreamOmitsTheDeviceName() {
+  let ownerName = "Custom Owner Name"
+  let rawDevice = FakeRawDevice(
+    name: ownerName,
+    modelIdentifier: "BTHeadphones76,8231",
+    listeningModeError: NSError(domain: ownerName, code: 73),
+    conversationAwarenessError: NSError(domain: ownerName, code: 74)
+  )
+  var report: SupportReportDocument?
+
+  let captured = capturingStandardError {
+    guard let device = PrivateAudioController(
+      rawDevices: [rawDevice],
+      logger: DebugLogger(enabled: true),
+      includeDeviceNames: false
+    ).selectDevice(named: nil) else { return }
+    report = passiveSupportReport(device: device)
+    // The write tester holds each mode for two seconds and carries no logger, so
+    // the wait-free overloads reach every write-path log site without the wait.
+    _ = device.setListeningModeAndReadBack(.noiseCancellation, wait: { _ in })
+    _ = device.setConversationAwarenessAndReadBack(true, wait: { _ in })
+  }
+
+  guard let captured else {
+    check(false, "the debug stream on standard error can be captured")
+    return
+  }
+  check(report != nil, "the captured run produced a support report")
+  check(
+    rawDevice.listeningModeSetCount == 1 && rawDevice.conversationAwarenessSetCount == 1,
+    "the captured run reached both setters"
+  )
+  check(
+    captured.contains("debug: device.0.compatible=true"),
+    "the debug stream reaches name-free device discovery"
+  )
+  check(
+    captured.contains("info: selected_device=\"name-not-read\""),
+    "selection logs a placeholder in place of the name"
+  )
+  check(
+    captured.contains("debug: write.listening_mode.accepted=false")
+      && captured.contains("warning: write.listening_mode.error=73")
+      && captured.contains("warning: write.conversation_awareness.error=74"),
+    "the debug stream reaches both setter-error branches without their domains"
+  )
+  check(
+    !captured.contains(ownerName),
+    "no support-report debug line carries the customizable device name"
+  )
+}
+
 func testListeningModeReadbackWaitsForDelayedTarget() {
   let off = rawListeningModeValues[.off]!
   let device = scriptedPrivateAudioDevice(
@@ -398,6 +455,7 @@ func runPrivateAudioTests() {
   testPrivateListeningModeTranslation()
   testSupportReportDiscoveryDoesNotReadDeviceNames()
   testSupportReportMetadataForUnrecognizedModes()
+  testSupportReportDebugStreamOmitsTheDeviceName()
   testListeningModeReadbackWaitsForDelayedTarget()
   testListeningModeReadbackReturnsImmediatelyForObservedTarget()
   testListeningModeReadbackReturnsFinalFallback()

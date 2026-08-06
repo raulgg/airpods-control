@@ -58,6 +58,8 @@ let rawListeningModeValues: [ListeningMode: String] = [
   let appliesListeningModeAsynchronously: Bool
   let appliesConversationAwarenessWrite: Bool
   let modelIdentifier: String
+  let listeningModeError: NSError?
+  let conversationAwarenessError: NSError?
   var listeningModeSetCount = 0
   var conversationAwarenessSetCount = 0
 
@@ -69,7 +71,9 @@ let rawListeningModeValues: [ListeningMode: String] = [
     conversationAwarenessEnabled: Bool = false,
     appliesListeningModeAsynchronously: Bool = false,
     appliesConversationAwarenessWrite: Bool = true,
-    modelIdentifier: String = "AirPodsTest1,1"
+    modelIdentifier: String = "AirPodsTest1,1",
+    listeningModeError: NSError? = nil,
+    conversationAwarenessError: NSError? = nil
   ) {
     outputName = name
     self.modes = modes
@@ -79,6 +83,8 @@ let rawListeningModeValues: [ListeningMode: String] = [
     self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
     self.modelIdentifier = modelIdentifier
+    self.listeningModeError = listeningModeError
+    self.conversationAwarenessError = conversationAwarenessError
   }
 
   @objc(name) func deviceName() -> String {
@@ -100,6 +106,10 @@ let rawListeningModeValues: [ListeningMode: String] = [
   @objc(setCurrentBluetoothListeningMode:error:)
   func setListeningMode(_ newMode: String, _ error: NSErrorPointer) -> Bool {
     listeningModeSetCount += 1
+    if let listeningModeError {
+      error?.pointee = listeningModeError
+      return false
+    }
     if appliesListeningModeAsynchronously {
       DispatchQueue.main.async { self.mode = newMode }
     } else {
@@ -119,6 +129,10 @@ let rawListeningModeValues: [ListeningMode: String] = [
   @objc(setConversationDetectionEnabled:error:)
   func setConversationDetectionEnabled(_ enabled: Bool, _ error: NSErrorPointer) -> Bool {
     conversationAwarenessSetCount += 1
+    if let conversationAwarenessError {
+      error?.pointee = conversationAwarenessError
+      return false
+    }
     if appliesConversationAwarenessWrite {
       conversationAwarenessEnabled = enabled
     }

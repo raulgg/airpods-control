@@ -728,42 +728,22 @@ func testWriteTesterInterruptionNoticeDefaultsToStandardError() {
   var caughtSignal: Int32?
   device.settleEffect = { caughtSignal = SIGINT }
 
-  guard let capture = tmpfile() else {
-    check(false, "a temporary stderr capture file can be created")
-    return
+  var results: SupportReportWriteTestResults?
+  let captured = capturingStandardError {
+    results = SupportReportWriteTester.run(
+      plan: SupportReportWriteTestPlan.make(device: device),
+      device: device,
+      interruptionSignal: { caughtSignal }
+    )
   }
-  fflush(stderr)
-  let originalStderr = dup(STDERR_FILENO)
-  dup2(fileno(capture), STDERR_FILENO)
 
-  let results = SupportReportWriteTester.run(
-    plan: SupportReportWriteTestPlan.make(device: device),
-    device: device,
-    interruptionSignal: { caughtSignal }
-  )
-
-  fflush(stderr)
-  dup2(originalStderr, STDERR_FILENO)
-  close(originalStderr)
-
-  rewind(capture)
-  var captured = [UInt8]()
-  var buffer = [UInt8](repeating: 0, count: 1024)
-  while true {
-    let readCount = fread(&buffer, 1, buffer.count, capture)
-    guard readCount > 0 else { break }
-    captured.append(contentsOf: buffer[0..<readCount])
-  }
-  fclose(capture)
-
-  check(originalStderr >= 0, "the original stderr can be duplicated")
+  check(captured != nil, "standard error can be captured")
   check(
-    results.interruptedBySignal == SIGINT,
+    results?.interruptedBySignal == SIGINT,
     "the default-writer run still retains the interruption"
   )
   check(
-    String(decoding: captured, as: UTF8.self)
-      == SupportReportWriteTester.interruptionNotice,
+    captured == SupportReportWriteTester.interruptionNotice,
     "the default interrupt notice goes to standard error, once"
   )
 }

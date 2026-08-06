@@ -87,9 +87,20 @@ func testCLIParsing() {
     ["--no-write-tests", "version"],
     "version rejects the write-test flags"
   )
+  do {
+    let invocation = try parseInvocation(["support-report", "--debug"])
+    check(invocation.debugEnabled, "support-report accepts --debug")
+    check(!invocation.jsonOutput, "--debug does not turn on JSON output")
+    if case .supportReport(writeTests: .ask) = invocation.command {
+      check(true, "--debug does not answer the write-test consent question")
+    } else {
+      check(false, "--debug does not answer the write-test consent question")
+    }
+  } catch {
+    check(false, "support-report --debug parses successfully")
+  }
   expectParseFailure(["support-report", "extra"], "support-report takes no arguments")
   expectParseFailure(["support-report", "--json"], "support-report rejects JSON output")
-  expectParseFailure(["support-report", "--debug"], "support-report rejects debug output")
   expectParseFailure(
     ["--device", "AirPods", "support-report"],
     "support-report rejects raw-name device selection"

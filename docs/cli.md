@@ -12,7 +12,7 @@ airpods-control [--device NAME] listening-mode list [--json] [--debug]
 airpods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
 airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
-airpods-control support-report [--with-write-tests | --no-write-tests]
+airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
 airpods-control --version | -v | version
 airpods-control --help | -h
 ```
@@ -37,10 +37,10 @@ position. `--device` uses a case-insensitive exact name match among compatible
 output devices. It never falls back to another device. No match or multiple
 exact matches produce `no-device`.
 
-`support-report` is a separate contributor command. It accepts only
+`support-report` is a separate contributor command. It accepts
 `--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
-its write-test consent question in advance. The report has a fixed set of
-fields. The consent prompt and result rows depend on the device.
+its write-test consent question in advance, and `--debug`. The report has a
+fixed set of fields. The consent prompt and result rows depend on the device.
 
 ## Listening modes
 
@@ -377,8 +377,8 @@ canonical state read during the bounded settling window, the Transparency
 fallback, or JSON `null` when neither applies. Version JSON follows the same
 result convention: `{"result":"ok","version":"0.1.0"}`.
 
-`support-report` does not accept `--json`, `--debug`, or `--device`. Its only
-options are `--with-write-tests` and `--no-write-tests`.
+`support-report` does not accept `--json` or `--device`. Its options are
+`--with-write-tests`, `--no-write-tests`, and `--debug`.
 
 `-h` and `--help` can appear anywhere. Help takes precedence, exits `0`, and
 never accesses the device. A recognized resource before the flag selects
@@ -401,6 +401,18 @@ Debug output includes bypass and re-exec status, framework and selector
 discovery, compatible devices, exact-name selection, raw modes, capability
 checks, writes, and read-back attempts. It does not change stdout, JSON, or the
 exit code, so stdout remains safe to pipe or parse.
+
+`support-report` accepts `--debug` too, and it is the fastest way to see why a
+device is not recognized: which context selector answered, how many compatible
+devices were found, and what the device advertised verbatim. Because
+`support-report` resolves its device without reading names, no debug line
+carries the customizable device name; selection logs `name-not-read` instead.
+The diagnostics share stderr with the consent and issue-form prompts, so the
+questions appear among them.
+
+Unlike the report, the debug stream is not filtered through the report's
+character allowlist. It can name the installed dylib path, which includes a
+home directory for a source build. Review it before pasting it into an issue.
 
 ## Write verification
 
