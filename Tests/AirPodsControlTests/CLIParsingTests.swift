@@ -38,6 +38,7 @@ func testCLIParsing() {
 
   expectParseFailure(["--device", "A", "--device", "B", "lm", "get"], "duplicate device")
   expectParseFailure(["lm", "get", "--device"], "missing device name")
+  expectParseFailure(["lm", "get", "--device", "--modes"], "option-like device name")
   expectParseFailure(["--debug", "--debug", "lm", "get"], "duplicate debug")
   expectParseFailure(["--device", "AirPods", "version"], "device is invalid for version")
 
@@ -105,6 +106,30 @@ func testCLIParsing() {
     ["--device", "AirPods", "support-report"],
     "support-report rejects raw-name device selection"
   )
+}
+
+func testStatusParsing() {
+  do {
+    let invocation = try parseInvocation([
+      "--debug", "status", "--device", "Studio Beats", "--json",
+    ])
+    if case .status = invocation.command {
+      check(true, "status parses as its top-level command")
+    } else {
+      check(false, "status parses as its top-level command")
+    }
+    check(invocation.debugEnabled, "status accepts debug")
+    check(invocation.jsonOutput, "status accepts JSON")
+    check(invocation.requestedDeviceName == "Studio Beats", "status preserves device name")
+  } catch {
+    check(false, "status with operational globals parses")
+  }
+
+  expectParseFailure(["st"], "status has no alias")
+  expectParseFailure(["status", "extra"], "status takes no positional arguments")
+  expectParseFailure(["status", "--modes", "transparency,adaptive"], "status rejects modes")
+  expectParseFailure(["status", "--with-write-tests"], "status rejects write-test consent")
+  expectParseFailure(["status", "--no-write-tests"], "status rejects write-test decline")
 }
 
 func testCycleParsing() {
@@ -205,6 +230,7 @@ func testNextCycleMode() {
 
 func runCLIParsingTests() {
   testCLIParsing()
+  testStatusParsing()
   testCycleParsing()
   testNextCycleMode()
 }

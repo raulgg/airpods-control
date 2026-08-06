@@ -22,6 +22,7 @@ enum WriteTestsPreference {
 
 enum CLICommand {
   case version
+  case status
   case supportReport(writeTests: WriteTestsPreference)
   case listeningModeGet
   case listeningModeSet(ListeningMode)
@@ -34,7 +35,7 @@ enum CLICommand {
 
   var resource: CLIResource? {
     switch self {
-    case .version, .supportReport:
+    case .version, .status, .supportReport:
       return nil
     case .listeningModeGet, .listeningModeSet, .listeningModeList, .listeningModeCycle:
       return .listeningMode
@@ -46,6 +47,7 @@ enum CLICommand {
   var debugName: String {
     switch self {
     case .version: return "version"
+    case .status: return "status"
     case .supportReport: return "support-report"
     case .listeningModeGet: return "listening-mode.get"
     case .listeningModeSet: return "listening-mode.set"
@@ -69,6 +71,7 @@ struct CLIParseError: Error {}
 let globalHelp = """
 Usage:
   airpods-control [--device NAME] <resource> <command> [--json] [--debug]
+  airpods-control status [--device NAME] [--json] [--debug]
   airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
   airpods-control --version | -v | version
   airpods-control --help | -h
@@ -76,6 +79,10 @@ Usage:
 Resources:
   listening-mode, lm            Read, set, list, or cycle listening modes.
   conversation-awareness, ca    Read or set Conversation Awareness.
+
+Command:
+  status       Read listening mode and Conversation Awareness for every
+               compatible device, or for one device selected by name.
 
 Contributor command:
   support-report
@@ -91,7 +98,28 @@ Global options:
                Print the version and exit.
   --help, -h   Print this help and exit.
 
-Run 'airpods-control <resource> --help' for resource-specific help.
+Run 'airpods-control status --help' or
+'airpods-control <resource> --help' for command-specific help.
+"""
+
+let statusHelp = """
+Usage:
+  airpods-control status [--device NAME] [--json] [--debug]
+
+Read listening mode and Conversation Awareness without changing either one.
+Without --device, print one record for every compatible AirPods or Beats device
+in the order supplied by macOS. With --device, require one unique exact name
+match (case-insensitive).
+
+If no compatible device is connected, or the requested name is not unique,
+print 'No compatible AirPods or Beats device is connected.' and exit 1.
+
+Options:
+  --device NAME
+               Return only the uniquely named compatible device.
+  --json       Emit a top-level devices array instead of labeled plain text.
+  --debug      Emit diagnostic logs to stderr without changing command output.
+  --help, -h   Print this help and exit without accessing any device.
 """
 
 let listeningModeHelp = """
@@ -199,12 +227,29 @@ func helpText(for rawArgs: [String]) -> String? {
     return nil
   }
 
-  let resource = rawArgs[..<helpIndex].first { argument in
-    ["listening-mode", "lm", "conversation-awareness", "ca", "support-report"]
-      .contains(argument)
+  let contextualCommands = [
+    "status", "listening-mode", "lm", "conversation-awareness", "ca", "support-report",
+  ]
+  let arguments = Array(rawArgs[..<helpIndex])
+  var resource: String?
+  var index = 0
+  while index < arguments.count {
+    if ["--device", "--modes"].contains(arguments[index]) {
+      // These options consume the next token. A device named "status" or
+      // "lm" must not select unrelated contextual help.
+      index += 2
+      continue
+    }
+    if contextualCommands.contains(arguments[index]) {
+      resource = arguments[index]
+      break
+    }
+    index += 1
   }
 
   switch resource {
+  case "status":
+    return statusHelp
   case "listening-mode", "lm":
     return listeningModeHelp
   case "conversation-awareness", "ca":
@@ -267,10 +312,7 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       }
       let name = rawArgs[index + 1]
       guard !name.isEmpty,
-            ![
-              "--json", "--debug", "--device", "--help", "-h",
-              "--with-write-tests", "--no-write-tests",
-            ].contains(name)
+            !name.hasPrefix("-")
       else {
         throw CLIParseError()
       }
@@ -336,6 +378,16 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   }
 
   guard !withWriteTests, !noWriteTests else { throw CLIParseError() }
+
+  if positional == ["status"] {
+    guard requestedCycleModes == nil else { throw CLIParseError() }
+    return CLIInvocation(
+      command: .status,
+      jsonOutput: jsonOutput,
+      debugEnabled: debugEnabled,
+      requestedDeviceName: requestedDeviceName
+    )
+  }
 
   guard positional.count >= 2 else { throw CLIParseError() }
 

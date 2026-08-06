@@ -26,6 +26,54 @@ func testPrivateListeningModeTranslation() {
   check(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
 }
 
+func testPrivateStatusReadClassification() {
+  let known = privateAudioDevice(FakeRawDevice(name: "Known Status AirPods"))
+  if case .value(.transparency) = known.readListeningModeStatus() {
+    check(true, "status maps a known private listening mode")
+  } else {
+    check(false, "status maps a known private listening mode")
+  }
+
+  let future = scriptedPrivateAudioDevice(
+    reads: ["AVOutputDeviceBluetoothListeningModeFuture"]
+  )
+  if case .unresolved = future.readListeningModeStatus() {
+    check(true, "an answered but unknown mode is unresolved")
+  } else {
+    check(false, "an answered but unknown mode is unresolved")
+  }
+
+  let failed = scriptedPrivateAudioDevice(reads: [nil])
+  if case .readError = failed.readListeningModeStatus() {
+    check(true, "a missing required mode response is a status read error")
+  } else {
+    check(false, "a missing required mode response is a status read error")
+  }
+
+  let unsupportedCA = privateAudioDevice(
+    FakeRawDevice(name: "Unsupported CA AirPods", conversationAwarenessSupported: false)
+  )
+  if case .unsupported = unsupportedCA.readConversationAwarenessStatus() {
+    check(true, "explicit false proves Conversation Awareness unsupported")
+  } else {
+    check(false, "explicit false proves Conversation Awareness unsupported")
+  }
+
+  let unresolvedCA = privateAudioDevice(FakeReadOnlyRawDevice(name: "Unresolved CA AirPods"))
+  if case .unresolved = unresolvedCA.readConversationAwarenessStatus() {
+    check(true, "a missing Conversation Awareness support probe is unresolved")
+  } else {
+    check(false, "a missing Conversation Awareness support probe is unresolved")
+  }
+
+  let failedCA = privateAudioDevice(FakeMissingConversationAwarenessStateRawDevice())
+  if case .readError = failedCA.readConversationAwarenessStatus() {
+    check(true, "advertised CA with no state getter is a read error")
+  } else {
+    check(false, "advertised CA with no state getter is a read error")
+  }
+}
+
 func testSupportReportDiscoveryDoesNotReadDeviceNames() {
   let rawDevice = FakeSupportReportRawDevice()
   let controller = PrivateAudioController(
@@ -316,6 +364,16 @@ func testDeviceSelectionAndCapabilities() {
     "default selection uses the first compatible device"
   )
   check(
+    controller.selectDevices(named: nil, policy: .allOrExact)?.compactMap(\.name)
+      == ["My AirPods Pro", "Studio AirPods"],
+    "all-device selection preserves private routing discovery order"
+  )
+  check(
+    controller.selectDevices(named: "STUDIO AIRPODS", policy: .allOrExact)?
+      .compactMap(\.name) == ["Studio AirPods"],
+    "all-or-exact selection returns one uniquely named device"
+  )
+  check(
     controller.selectDevice(named: "MY AIRPODS PRO")?.name == "My AirPods Pro",
     "device matching is case-insensitive and exact"
   )
@@ -334,12 +392,48 @@ func testDeviceSelectionAndCapabilities() {
     ambiguous.selectDevice(named: "My AirPods Pro") == nil,
     "duplicate exact names are rejected"
   )
+  check(
+    ambiguous.selectDevices(named: "My AirPods Pro", policy: .allOrExact) == nil,
+    "status rejects duplicate case-insensitive exact names"
+  )
+  for arguments in [
+    ["--device", "My AirPods Pro", "lm", "set", "adaptive"],
+    ["--device", "My AirPods Pro", "ca", "set", "on"],
+  ] {
+    let invocation = try! parseInvocation(arguments)
+    let outcome = CommandExecution.execute(
+      invocation,
+      resolveDevices: { name, policy, _ in
+        ambiguous.selectDevices(named: name, policy: policy)
+      }
+    )
+    check(outcome.exitCode == 1, "ambiguous named setter fails as no-device")
+  }
+  check(
+    first.listeningModeSetCount == 0 && duplicate.listeningModeSetCount == 0,
+    "ambiguous selection cannot write listening mode"
+  )
+  check(
+    first.conversationAwarenessSetCount == 0
+      && duplicate.conversationAwarenessSetCount == 0,
+    "ambiguous selection cannot write Conversation Awareness"
+  )
 
   let incomplete = FakeIncompleteRawDevice()
   let filtered = PrivateAudioController(rawDevices: [incomplete, second], logger: logger)
   check(
     filtered.selectDevice(named: nil)?.name == "Studio AirPods",
     "devices missing a core selector are ignored"
+  )
+  let beats = FakeRawDevice(name: "Studio Beats", modelIdentifier: "BeatsTest1,1")
+  let ordered = PrivateAudioController(
+    rawDevices: [second, incomplete, beats, first],
+    logger: logger
+  )
+  check(
+    ordered.selectDevices(named: nil, policy: .allOrExact)?.compactMap(\.name)
+      == ["Studio AirPods", "Studio Beats", "My AirPods Pro"],
+    "all-device selection keeps compatible Beats and stable filtered order"
   )
 
   let readOnly = FakeReadOnlyRawDevice(name: "Read-only AirPods")
@@ -431,6 +525,7 @@ func testSupportReportMetadataForUnrecognizedModes() {
 
 func runPrivateAudioTests() {
   testPrivateListeningModeTranslation()
+  testPrivateStatusReadClassification()
   testSupportReportDiscoveryDoesNotReadDeviceNames()
   testSupportReportMetadataForUnrecognizedModes()
   testSupportReportDebugStreamOmitsTheDeviceName()

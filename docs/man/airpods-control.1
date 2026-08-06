@@ -1,8 +1,15 @@
 .\" Manpage for airpods-control.
-.TH AIRPODS-CONTROL 1 "July 29, 2026" "airpods-control 0.1.0" "User Commands"
+.TH AIRPODS-CONTROL 1 "August 6, 2026" "airpods-control 0.1.0" "User Commands"
 .SH NAME
 airpods-control \- control AirPods listening mode and Conversation Awareness
 .SH SYNOPSIS
+.B airpods-control
+.B status
+.RB [ --device
+.IR name ]
+.RB [ --json ]
+.RB [ --debug ]
+.br
 .B airpods-control
 .RB [ --device
 .IR name ]
@@ -71,6 +78,83 @@ process via a small interpose library inserted with
 .BR DYLD_INSERT_LIBRARIES .
 See the project README and SECURITY document for the full trust model.
 .SH COMMANDS
+.SS STATUS
+.TP
+.B status
+Read the current listening mode and Conversation Awareness state. There is no
+alias. It excludes battery information, device metadata beyond the name
+required to identify each record, and other settings.
+Compatibility metadata and consented write tests remain in the separate
+.B support-report
+command.
+.IP
+Without
+.BR --device ,
+print one record for every connected output device accepted by the existing
+capability-based compatibility check, including compatible Beats; selection is
+not restricted to the AirPods product family. Records preserve the order
+supplied by the private macOS system audio-routing context. This is the closest
+implementable proxy for the macOS UI order, but the private API provides no
+exact or stable UI ordering guarantee. With
+.BR --device ,
+print only the unique case-insensitive whole-name match; no match or an
+ambiguous match produces
+.BR no-device .
+.IP
+Plain output always places each record beneath its device-name heading, even
+when only one device is selected. Ordinary printable Unicode is retained;
+backslashes, controls, and Unicode line and paragraph separators are escaped so
+they cannot change the record layout. JSON retains the original name and uses
+normal JSON string escaping. Fields are indented in Listening mode,
+Conversation Awareness, Read errors order, omitting inapplicable lines, and
+records are separated by one blank line. For example:
+.nf
+.RS
+My AirPods Pro:
+  Listening mode: transparency
+  Conversation Awareness: on
+
+Studio Beats:
+  Listening mode: adaptive
+.RE
+.fi
+.IP
+A field is omitted only when the feature is known to be unsupported. An
+unresolved listening-mode read is displayed as
+.BR unknown ;
+an unresolved Conversation Awareness read is displayed as
+.BR unsupported .
+Both are JSON
+.BR null ,
+with the canonical field key still present. A genuine read failure retains that
+fallback state and adds a
+.B Read errors:
+line whose errored labels appear in fixed Listening mode, Conversation
+Awareness order. In JSON, the record instead gains an
+.B errors
+object mapping each affected canonical key to
+.BR read-error .
+.IP
+A mixed result succeeds if any selected device produces a usable, unresolved,
+or unsupported status result. Only when every selected device produces genuine
+read errors and no usable, unresolved, or proven-unsupported field does the
+command return
+.BR read-error
+(exit 5). One field failure does not hide another field or stop later device
+reads.
+.IP
+If no compatible device is connected, or
+.B --device
+does not identify one unique compatible device, plain output is exactly
+.BR "No compatible AirPods or Beats device is connected."
+and exit status is 1. JSON is exactly
+.BR {\(dqdevices\(dq:[],\(dqerror\(dq:\(dqno-device\(dq,\(dqresult\(dq:\(dqerror\(dq} .
+.IP
+The command's state sampling is read-only and reads each field once per device.
+State reads do not poll, retry, wait for settling, or inspect earbud count or
+wear state.
+One-earbud operation uses the same getter and per-feature availability behavior
+as the individual commands.
 .SS LISTENING MODE
 .TP
 .BR "listening-mode get" ", " "lm get"
@@ -257,12 +341,21 @@ The option is accepted anywhere in an operational command and may be supplied
 once. It never falls back to another device. No match or multiple exact matches
 produce
 .BR no-device .
+.IP
+The supplied name must not begin with a hyphen, so an option token cannot be
+consumed as a missing value.
+.IP
+Without this option, listening-mode and Conversation Awareness commands retain
+their existing behavior of using the first compatible system output device.
+.B status
+instead reports every compatible device in preserved system audio-routing
+discovery order.
 .TP
 .B --json
 Emit structured JSON instead of plain script-friendly output. Accepted anywhere
 in an operational command or global version command. Every JSON response has a
 .B result
-field. Device operations also contain
+field. Individual resource operations also contain
 .B device
 and the command's resulting
 .B listeningMode
@@ -272,6 +365,32 @@ state; unavailable values are JSON
 .BR null .
 The listening-mode list command additionally returns
 .BR supportedListeningModes .
+.IP
+.B status
+always returns a top-level
+.B devices
+array, including for a selected singleton. Every record contains
+.B device
+and only the applicable canonical resource keys
+.B listeningMode
+and
+.BR conversationAwareness ;
+resource aliases never become JSON keys. A proven-unsupported field is omitted.
+An unresolved field is present as
+.BR null .
+A genuine read failure adds an
+.B errors
+object mapping the affected canonical field key to
+.BR read-error ;
+the object is absent if no genuine read error occurred. If all queryable fields
+on all selected devices fail, the top-level response also contains
+.B error
+set to
+.B read-error
+and
+.B result
+set to
+.BR error .
 .TP
 .B --debug
 Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code.
@@ -286,6 +405,11 @@ resolves its device without reading names, no diagnostic line carries the
 customizable device name; selection logs
 .B name-not-read
 instead. Its diagnostics share stderr with the consent and issue-form prompts.
+.IP
+For
+.BR status ,
+diagnostics follow each one-pass per-device field read. They do not introduce
+retries, reorder devices, or change field presence or error classification.
 Unlike the report, the diagnostics are not filtered through the report's
 character allowlist, and they can name the installed dylib path, so review them
 before pasting them into an issue.
@@ -307,6 +431,9 @@ support-report write tests could not restore the initial settings (no-op).
 .TP
 .B 4
 The mode or feature is not available on this device (unsupported).
+.TP
+.B 5
+Every selected status record contains only genuine read errors (read-error).
 .TP
 .B 129
 An externally delivered SIGHUP was caught during the write tests and

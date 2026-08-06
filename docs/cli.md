@@ -6,6 +6,7 @@ This is the complete `airpods-control` command-line reference. See the
 ## Synopsis
 
 ```text
+airpods-control status [--device NAME] [--json] [--debug]
 airpods-control [--device NAME] listening-mode get [--json] [--debug]
 airpods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
 airpods-control [--device NAME] listening-mode list [--json] [--debug]
@@ -20,7 +21,8 @@ airpods-control --help | -h
 `listening-mode` can be shortened to `lm`, and `conversation-awareness` to
 `ca`. These aliases replace only the resource name, so
 `airpods-control lm get` and `airpods-control ca set off` are complete
-commands. Reads are always explicit. A bare resource name is an error.
+commands. `status` has no alias. Reads of an individual resource are always
+explicit. A bare resource name is an error.
 
 `<mode>` is one of `off`, `transparency`, `adaptive`, or
 `noise-cancellation`. For interactive use, `trans` aliases `transparency`;
@@ -28,14 +30,17 @@ commands. Reads are always explicit. A bare resource name is an error.
 `noise-cancellation`. Output always uses the canonical names. There is
 intentionally no alias for `off`.
 
-An unknown mode or state token produces `bad-args` (exit `2`). A valid feature
-that the connected hardware does not provide produces `unsupported` (exit
-`4`).
+An unknown mode or state token produces `bad-args` (exit `2`). For an
+individual resource command, a valid feature that the connected hardware does
+not provide produces `unsupported` (exit `4`). Aggregate status instead omits a
+proven-unsupported field.
 
 Operational commands accept `--device NAME`, `--json`, and `--debug` in any
-position. `--device` uses a case-insensitive exact name match among compatible
+position. `--device` uses a case-insensitive, whole-name match among compatible
 output devices. It never falls back to another device. No match or multiple
-exact matches produce `no-device`.
+exact matches produce `no-device`. Without `--device`, the individual resource
+commands use the first compatible device; `status` reports all compatible
+devices.
 
 `support-report` is a separate contributor command. It accepts
 `--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
@@ -126,6 +131,90 @@ ok
 
 On hardware without Conversation Awareness, the command prints `unsupported`
 and exits `4`.
+
+## Status
+
+`status` reads the current listening mode and Conversation Awareness state in
+one command. It does not report battery levels, device metadata beyond the name
+required to identify each record, or other settings.
+Compatibility metadata and consented write tests remain the separate
+responsibility of `support-report`.
+
+Without `--device`, it emits one record for every connected output device that
+passes the CLI's existing capability-based compatibility check. This includes
+compatible Beats as well as AirPods; `status` does not add a product-family
+filter. Records preserve the order supplied by the private macOS system audio
+routing context. That is the closest implementable proxy for the order shown by
+macOS, but the API is undocumented and Apple does not guarantee an exact or
+stable UI ordering.
+
+With `--device`, the command emits one record for the unique case-insensitive
+whole-name match. A missing or ambiguous name fails with `no-device`; it never
+selects one of several matches. Every plain-text record has a heading, including
+a selected singleton:
+
+```console
+$ airpods-control status
+My AirPods Pro:
+  Listening mode: transparency
+  Conversation Awareness: on
+
+Studio Beats:
+  Listening mode: adaptive
+```
+
+Device headings retain ordinary printable Unicode but render backslash, newline,
+carriage return, and tab as `\\`, `\n`, `\r`, and `\t`. Other control
+characters and the Unicode line and paragraph separators use `\u{XXXX}` form,
+so one device name cannot create extra terminal lines or alter the record
+layout. Escaping applies only to the plain heading; JSON retains the original
+name and uses normal JSON string escaping. Fields are indented beneath the
+heading in Listening mode, Conversation Awareness, Read errors order, omitting
+inapplicable lines, and records are separated by one blank line.
+
+A field is omitted only when the device is known not to support that feature.
+An unresolved read follows the corresponding individual getter: listening mode
+appears as `unknown`, while Conversation Awareness appears as `unsupported`.
+Either state is JSON `null`, with its canonical key still present. A genuine
+read failure keeps that same fallback state and also adds a plain summary such
+as `  Read errors: Listening mode, Conversation Awareness` (errored labels only,
+in that fixed order) or an `errors` object in that device's JSON record. One
+failed field does not hide a successfully read field or stop the remaining
+devices from being sampled.
+
+For example, when both reads genuinely fail, the record retains both getters'
+fallback states and names both errors:
+
+```text
+My AirPods Pro:
+  Listening mode: unknown
+  Conversation Awareness: unsupported
+  Read errors: Listening mode, Conversation Awareness
+```
+
+A record whose two fields are both proven unsupported still appears, but has
+only its device heading in plain output and only `device` in JSON.
+
+The command succeeds when at least one selected device produces any usable,
+unresolved, or unsupported status result. It exits `5` with the distinct
+`read-error` result only when every selected device produces only genuine read
+errors—there is no usable, unresolved, or proven-unsupported field. Argument
+and device-selection failures retain their own results and exit codes.
+
+If no compatible device is connected, plain output is exactly:
+
+```text
+No compatible AirPods or Beats device is connected.
+```
+
+The corresponding JSON is exactly
+`{"devices":[],"error":"no-device","result":"error"}`. This contract also
+applies when `--device` has no unique match.
+
+`status` state sampling is read-only. It reads each field once per device,
+without polling, retrying, waiting for settings to settle, or inspecting how
+many earbuds are worn. One-earbud operation therefore uses the same per-feature
+availability and getter behavior as the individual commands.
 
 ## Contributor compatibility report
 
@@ -318,8 +407,10 @@ length cap above applies, that URL carries the generated report field.
 
 ## Target a device
 
-Without `--device`, the first compatible system output device is used. To
-select one explicitly:
+Without `--device`, the individual listening-mode and Conversation Awareness
+commands use the first compatible system output device. `status` is the
+exception: it reports every compatible device in system audio-routing discovery
+order. To select one explicitly:
 
 ```console
 $ airpods-control --device "My AirPods Pro" listening-mode get
@@ -330,11 +421,16 @@ Unlike operational commands, `support-report` does not read device names or
 accept `--device`. It requires exactly one compatible output device.
 
 Names are matched exactly but case-insensitively. Substrings are not accepted,
-so `--device "My"` will not silently select `"My AirPods Pro"`.
+so `--device "My"` will not silently select `"My AirPods Pro"`. If two devices
+have the same name ignoring case, the match is ambiguous and every operational
+command fails with `no-device` before reading or changing either one. A device
+name passed on the command line must not begin with `-`; this prevents an option
+token from being consumed as a missing `--device` value.
 
 ## JSON output
 
-Add `--json` to any command for structured output:
+Add `--json` to an operational command or the version command for structured
+output:
 
 ```console
 $ airpods-control listening-mode get --json
@@ -348,6 +444,9 @@ $ airpods-control listening-mode list --json
 
 $ airpods-control conversation-awareness get --json
 {"conversationAwareness":"on","device":"My AirPods Pro","result":"ok"}
+
+$ airpods-control status --device "My AirPods Pro" --json
+{"devices":[{"conversationAwareness":"on","device":"My AirPods Pro","listeningMode":"transparency"}],"result":"ok"}
 ```
 
 Every JSON response contains `result`, with a value of `ok`, `no-op`, or
@@ -368,6 +467,29 @@ write uses `"result":"no-op"` and exits `3`. The response contains the final
 canonical state read during the bounded settling window, the Transparency
 fallback, or JSON `null` when neither applies. Version JSON follows the same
 result convention: `{"result":"ok","version":"0.1.0"}`.
+
+`status` always returns a top-level `devices` array, including when `--device`
+selects a single device. Each record has `device` and only the canonical
+resource keys `listeningMode` and `conversationAwareness`; aliases such as `lm`
+and `ca` never appear in JSON. A key is omitted for a proven-unsupported
+feature and present with JSON `null` for an unresolved read. A genuine read
+failure additionally adds an `errors` map whose canonical field key maps to
+`"read-error"`; the map is absent when no genuine read error occurred. For
+example, this mixed scan still succeeds:
+
+```json
+{"devices":[{"conversationAwareness":null,"device":"My AirPods Pro","errors":{"conversationAwareness":"read-error"},"listeningMode":"transparency"},{"device":"Studio Beats","listeningMode":"adaptive"}],"result":"ok"}
+```
+
+If every selected device produces only genuine read errors, the same records
+are returned with `"error":"read-error"`, `"result":"error"`, and exit `5`:
+
+```json
+{"devices":[{"conversationAwareness":null,"device":"My AirPods Pro","errors":{"conversationAwareness":"read-error","listeningMode":"read-error"},"listeningMode":null}],"error":"read-error","result":"error"}
+```
+
+With no compatible device, status JSON is exactly
+`{"devices":[],"error":"no-device","result":"error"}` and exits `1`.
 
 `support-report` does not accept `--json` or `--device`. Its options are
 `--with-write-tests`, `--no-write-tests`, and `--debug`.
@@ -393,6 +515,10 @@ Debug output includes bypass and re-exec status, framework and selector
 discovery, compatible devices, exact-name selection, raw modes, capability
 checks, writes, and read-back attempts. It does not change stdout, JSON, or the
 exit code, so stdout remains safe to pipe or parse.
+
+For `status`, diagnostics follow each one-pass per-device field read. Debugging
+does not add retries, change device ordering, or change whether a field is
+omitted, null, or reported in the record's `errors` map.
 
 `support-report` accepts `--debug` too, and it is the fastest way to see why a
 device is not recognized: which context selector answered, how many compatible
@@ -430,11 +556,12 @@ contains the final observed canonical mode or `null`.
 | `2`  | bad-args    | Arguments are missing or malformed.                        |
 | `3`  | no-op       | A write was not verified in the bounded window, or write tests could not restore the initial state. |
 | `4`  | unsupported | The mode or feature is not available on the selected device. |
+| `5`  | read-error  | Every selected status record contains only genuine read errors. |
 | `129` | hangup | An externally delivered SIGHUP was caught during the tests and restoration was attempted. |
 | `130` | interrupted | An externally delivered SIGINT was caught during the tests and restoration was attempted. |
 | `143` | terminated | An externally delivered SIGTERM was caught during the tests and restoration was attempted. |
 
-Operational plain stdout uses a single token such as `ok`, `no-op`,
-`no-device`, `unsupported`, or a mode name. `support-report` instead emits its
-terminal-native compatibility report or local guidance. Scripts can branch on
-the exit code.
+Individual-resource plain stdout uses a single token such as `ok`, `no-op`,
+`no-device`, `unsupported`, or a mode name. `status` emits headed device
+records, and `support-report` emits its terminal-native compatibility report or
+local guidance. Scripts can branch on the exit code.

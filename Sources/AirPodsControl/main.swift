@@ -83,11 +83,12 @@ func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
   )
 }
 
-func bootstrapAndSelectAudioDevice(
+func bootstrapAndResolveAudioDevices(
   named requestedName: String?,
+  policy: DeviceSelectionPolicy,
   logger: DebugLogger,
   accessPolicy: PrivateAudioAccessPolicy
-) -> (any CompatibleAudioDevice)? {
+) -> [any CompatibleAudioDevice]? {
   ensureBypass(logger: logger)
 
   let controller: PrivateAudioController
@@ -110,7 +111,7 @@ func bootstrapAndSelectAudioDevice(
       includeDeviceNames: false
     )
   }
-  return controller.selectDevice(named: requestedName)
+  return controller.selectDevices(named: requestedName, policy: policy)
 }
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
@@ -144,15 +145,16 @@ do {
 
 let outcome = CommandExecution.execute(
   invocation,
-  resolveDevice: { requestedName, logger in
+  resolveDevices: { requestedName, policy, logger in
     let accessPolicy: PrivateAudioAccessPolicy
     if case .supportReport = invocation.command {
       accessPolicy = .supportReport
     } else {
       accessPolicy = .operational
     }
-    return bootstrapAndSelectAudioDevice(
+    return bootstrapAndResolveAudioDevices(
       named: requestedName,
+      policy: policy,
       logger: logger,
       accessPolicy: accessPolicy
     )

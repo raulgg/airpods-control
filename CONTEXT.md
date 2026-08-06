@@ -3,14 +3,24 @@
 ## Glossary
 
 **Command execution**
-: Evaluates a parsed CLI invocation, requests a compatible audio device from
-  the runtime adapter only when the command needs one, and produces a command
-  outcome. It does not parse arguments, render output, or terminate the
-  process.
+: Evaluates a parsed CLI invocation, requests compatible audio devices from the
+  runtime adapter only when the command needs them, and produces a command
+  outcome. Individual resource commands retain first-or-exact selection;
+  aggregate status uses all-or-exact selection. Execution does not parse
+  arguments, render output, or terminate the process.
 
 **Command outcome**
 : Everything produced by command execution: plain output, exit code, and the
   structured JSON payload.
+
+**Status snapshot**
+: One read-only, one-pass observation of listening mode and Conversation
+  Awareness for a compatible audio device. Each field is typed as a value,
+  proven unsupported, unresolved, or a genuine read error. Unsupported fields
+  are absent, unresolved and errored fields retain the corresponding individual
+  getter's fallback state, and genuine read failures also carry a field-keyed
+  error. A status command outcome contains snapshots in system audio-routing
+  discovery order.
 
 **Listening mode**
 : A canonical user-facing AirPods state: `off`, `transparency`, `adaptive`, or
@@ -20,9 +30,10 @@
 
 **Compatible audio device**
 : The device interface that command execution uses. It provides the device
-  name (absent when the adapter was asked not to read it), supported features,
-  current canonical states, and observed write results without exposing
-  Objective-C selectors or private AVFoundation values.
+  name (absent when the adapter was asked not to read it), typed status-field
+  observations, supported features, current canonical states, and observed
+  write results without exposing Objective-C selectors or private AVFoundation
+  values.
 
 **Private Audio adapter**
 : The production adapter for a compatible audio device. It discovers

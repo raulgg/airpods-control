@@ -201,6 +201,16 @@ func testOperationalSelectionIsDebugInvariant() {
       "debug preserves the resolved wrapper for \(name)"
     )
   }
+  let normalAll = normalController.selectDevices(named: nil, policy: .allOrExact) ?? []
+  var debugAll: [PrivateAudioDevice] = []
+  _ = capturingStandardError {
+    debugAll = debugController?.selectDevices(named: nil, policy: .allOrExact) ?? []
+  }
+  check(
+    normalAll.count == debugAll.count
+      && zip(normalAll, debugAll).allSatisfy { $0.object === $1.object },
+    "debug preserves the complete aggregate resolver order"
+  )
 }
 
 func testSupportReportContextDiscoveryIsPluralOnlyAndPrivate() {
@@ -298,14 +308,17 @@ func testCompatibleUnidentifiedPluralIsSuppressedBySingularAuthority() {
   let firstPlural = FakeRawDevice(name: "First stale AirPods", deviceIdentifier: "")
   let secondPlural = FakeRawDevice(name: "Second stale AirPods", deviceIdentifier: "")
   let singular = FakeRawDevice(name: "Current AirPods", deviceIdentifier: "")
-  let selected = PrivateAudioController(
+  let controller = PrivateAudioController(
     endpoints: PrivateAudioContextEndpoints(
       plural: [firstPlural, secondPlural],
       singular: singular
     ),
     logger: DebugLogger(enabled: false)
-  ).selectDevice(named: nil)
+  )
+  let resolved = controller.selectDevices(named: nil, policy: .allOrExact)
+  let selected = resolved?.first
 
+  check(resolved?.count == 1, "unresolved plural aliases produce one current status record")
   check(selected?.name == "Current AirPods", "the singular endpoint wins unresolved alias risk")
   let observation = selected?.setListeningModeAndReadBack(.adaptive, wait: { _ in })
   check(observation?.observed == .adaptive, "the authoritative singular endpoint is writable")
@@ -348,6 +361,62 @@ func testKnownDistinctEndpointsRetainPluralFirstSelection() {
   check(selected?.name == "First AirPods", "known-distinct endpoints keep plural-first priority")
 }
 
+func testStatusPreservesRoutingOrderAndUsesSingularCurrentWrapper() {
+  let first = FakeRawDevice(
+    name: "First AirPods",
+    deviceIdentifier: "status-first-endpoint"
+  )
+  let pluralCurrent = FakeRawDevice(
+    name: "Stale Current AirPods",
+    mode: rawListeningModeValues[.noiseCancellation]!,
+    deviceIdentifier: "status-current-endpoint"
+  )
+  let last = FakeRawDevice(
+    name: "Last Beats",
+    modelIdentifier: "BeatsTest1,1",
+    deviceIdentifier: "status-last-endpoint"
+  )
+  let singular = FakeRawDevice(
+    name: "Current AirPods",
+    modes: [rawListeningModeValues[.transparency]!],
+    mode: rawListeningModeValues[.transparency]!,
+    deviceIdentifier: "status-current-endpoint"
+  )
+  let controller = PrivateAudioController(
+    endpoints: PrivateAudioContextEndpoints(
+      plural: [first, pluralCurrent, last],
+      singular: singular
+    ),
+    logger: DebugLogger(enabled: false)
+  )
+  guard let devices = controller.selectDevices(named: nil, policy: .allOrExact) else {
+    check(false, "status resolves the combined routing endpoints")
+    return
+  }
+
+  check(
+    devices.map(\.name) == ["First AirPods", "Current AirPods", "Last Beats"],
+    "status keeps routing order while replacing the current plural alias"
+  )
+  check(
+    devices.count == 3
+      && devices[0].object === first
+      && devices[1].object === singular
+      && devices[2].object === last,
+    "status reads the singular wrapper once at the plural alias position"
+  )
+  let outcome = StatusCommand.outcome(devices: devices)
+  let records = outcome.payload["devices"] as? [[String: Any]]
+  check(
+    records?[1]["listeningMode"] as? String == "transparency",
+    "status reports the singular current capability snapshot"
+  )
+  check(
+    pluralCurrent.listeningModeSetCount == 0 && singular.listeningModeSetCount == 0,
+    "aggregate status never invokes either wrapper's setter"
+  )
+}
+
 func testSingularOnlyEndpointRemainsDirectlyControllable() {
   let singular = FakeRawDevice(name: "Singular AirPods")
   guard let selected = PrivateAudioController(
@@ -365,6 +434,32 @@ func testSingularOnlyEndpointRemainsDirectlyControllable() {
   check(
     singular.listeningModeSetCount == 1 && singular.conversationAwarenessSetCount == 1,
     "both settings are written through the singular endpoint"
+  )
+}
+
+func testStatusReadsCAOnlySingularEndpointWithoutWrites() {
+  let singular = FakeCAOnlyCurrentRawDevice()
+  let controller = PrivateAudioController(
+    endpoints: PrivateAudioContextEndpoints(plural: [], singular: singular),
+    logger: DebugLogger(enabled: false)
+  )
+  guard let devices = controller.selectDevices(named: nil, policy: .allOrExact) else {
+    check(false, "status discovers the CA-only singular current endpoint")
+    return
+  }
+
+  let outcome = StatusCommand.outcome(devices: devices)
+  let record = (outcome.payload["devices"] as? [[String: Any]])?.first
+  check(outcome.exitCode == 0, "a usable CA field keeps singular status successful")
+  check(record?["conversationAwareness"] as? String == "off", "status reads singular CA")
+  check(record?["listeningMode"] is NSNull, "the missing singular mode read remains null")
+  check(
+    (record?["errors"] as? [String: String]) == ["listeningMode": "read-error"],
+    "status records the singular listening-mode read error"
+  )
+  check(
+    singular.conversationAwarenessSetCount == 0,
+    "status never writes the CA-only singular endpoint"
   )
 }
 
@@ -469,7 +564,9 @@ func runPrivateAudioDiscoveryTests() {
   testCompatibleUnidentifiedPluralIsSuppressedBySingularAuthority()
   testUnidentifiedPluralIsNotUsedWhenSingularIsIncompatible()
   testKnownDistinctEndpointsRetainPluralFirstSelection()
+  testStatusPreservesRoutingOrderAndUsesSingularCurrentWrapper()
   testSingularOnlyEndpointRemainsDirectlyControllable()
+  testStatusReadsCAOnlySingularEndpointWithoutWrites()
   testSingularEmptyModesRetainCurrentModeAndConversationAwarenessControl()
   testSingularEmptyModesAcceptConversationAwarenessOnlySignal()
   testCatalogedPluralOnlyEmptyModesIsRejected()

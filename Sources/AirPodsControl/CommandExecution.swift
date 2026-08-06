@@ -22,10 +22,11 @@ struct CommandOutcome {
 enum CommandExecution {
   static func execute(
     _ invocation: CLIInvocation,
-    resolveDevice: (
+    resolveDevices: (
       _ requestedName: String?,
+      _ policy: DeviceSelectionPolicy,
       _ logger: DebugLogger
-    ) -> (any CompatibleAudioDevice)?,
+    ) -> [any CompatibleAudioDevice]?,
     supportReport: SupportReportCommand = SupportReportCommand()
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
@@ -40,13 +41,34 @@ enum CommandExecution {
       )
     }
 
-    guard let device = resolveDevice(invocation.requestedDeviceName, logger) else {
+    let selectionPolicy: DeviceSelectionPolicy
+    if case .status = invocation.command {
+      selectionPolicy = .allOrExact
+    } else {
+      selectionPolicy = .firstOrExact
+    }
+
+    guard let devices = resolveDevices(
+      invocation.requestedDeviceName,
+      selectionPolicy,
+      logger
+    ), !devices.isEmpty
+    else {
       return noDeviceOutcome(for: invocation.command)
     }
+
+    if case .status = invocation.command {
+      return StatusCommand.outcome(devices: devices)
+    }
+
+    let device = devices[0]
 
     switch invocation.command {
     case .version:
       preconditionFailure("version handled before device resolution")
+
+    case .status:
+      preconditionFailure("status handled after device resolution")
 
     case let .supportReport(writeTestsPreference):
       return supportReport.outcome(writeTests: writeTestsPreference, device: device)
@@ -254,6 +276,9 @@ enum CommandExecution {
   }
 
   private static func noDeviceOutcome(for command: CLICommand) -> CommandOutcome {
+    if case .status = command {
+      return StatusCommand.noDeviceOutcome()
+    }
     if case .supportReport = command {
       return SupportReportCommand.noDeviceOutcome()
     }

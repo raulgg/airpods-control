@@ -234,6 +234,24 @@ let rawListeningModeValues: [ListeningMode: String] = [
   }
 }
 
+@objc final class FakeMissingConversationAwarenessStateRawDevice: NSObject {
+  @objc(name) func deviceName() -> String {
+    "Missing CA State AirPods"
+  }
+
+  @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
+    [rawListeningModeValues[.transparency]!]
+  }
+
+  @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {
+    rawListeningModeValues[.transparency]!
+  }
+
+  @objc(supportsConversationDetection) func supportsConversationDetection() -> Bool {
+    true
+  }
+}
+
 @objc final class FakeSupportReportRawDevice: NSObject {
   private(set) var nameReadCount = 0
 

@@ -5,6 +5,26 @@ struct DeviceWriteObservation<State> {
   let observed: State?
 }
 
+// Status needs to distinguish a feature the device definitely lacks from a
+// state that could not be resolved, and both of those from an actual read
+// failure. The individual get commands intentionally keep their established
+// optional-value behavior; this richer result is only for aggregate status.
+enum DeviceStatusField<State> {
+  case value(State)
+  case unsupported
+  case unresolved
+  case readError
+}
+
+enum DeviceSelectionPolicy {
+  // Existing operational commands use the first compatible device when no
+  // name is supplied. A supplied name must always resolve uniquely.
+  case firstOrExact
+  // Status lists every compatible device when unnamed. A supplied name still
+  // uses the same unique exact-match rule as every other operational command.
+  case allOrExact
+}
+
 protocol CompatibleAudioDevice {
   // Absent when the adapter was told not to read the customizable name, which
   // is what the support-report path asks for. Absence is not a blank name:
@@ -15,6 +35,7 @@ protocol CompatibleAudioDevice {
 
   func availableListeningModes() -> [ListeningMode]
   func currentListeningMode() -> ListeningMode?
+  func readListeningModeStatus() -> DeviceStatusField<ListeningMode>
   func canSetListeningMode() -> Bool
   func setListeningModeAndReadBack(
     _ target: ListeningMode
@@ -22,6 +43,7 @@ protocol CompatibleAudioDevice {
 
   func supportsConversationAwareness() -> Bool?
   func conversationAwarenessState() -> Bool?
+  func readConversationAwarenessStatus() -> DeviceStatusField<Bool>
   func canSetConversationAwareness() -> Bool
   func setConversationAwarenessAndReadBack(
     _ target: Bool

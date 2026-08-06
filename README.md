@@ -20,10 +20,12 @@ Control AirPods listening modes and Conversation Awareness from the command
 line without Control Center, a menu bar app, or Accessibility permission.
 
 ```console
+$ airpods-control status
+My AirPods Pro:
+  Listening mode: transparency
+  Conversation Awareness: off
 $ airpods-control listening-mode set noise-cancellation
 ok
-$ airpods-control conversation-awareness get
-off
 ```
 
 `airpods-control` talks directly to the macOS system audio daemon through the
@@ -36,6 +38,8 @@ operation and exits. It does not poll in the background or automate the UI.
 - Read, set, list, or cycle the `off`, `transparency`, `adaptive`, and
   `noise-cancellation` listening modes.
 - Read or set Conversation Awareness.
+- Report listening mode and Conversation Awareness for every connected
+  compatible AirPods or Beats device with one `status` command.
 - Select a compatible output device by exact name.
 - Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`. Stdout
   is stable, exit codes are documented, JSON is available, and stderr
@@ -44,7 +48,7 @@ operation and exits. It does not poll in the background or automate the UI.
 ## Requirements
 
 - macOS (developed and tested on Tahoe 26).
-- A compatible pair of AirPods connected as an output device. See
+- A compatible AirPods or Beats device connected as an output device. See
   [device compatibility](docs/compatibility.md).
 - Command Line Tools (`clang` and `swiftc`) to build from source. Install them
   with `xcode-select --install`; full Xcode is not required.
@@ -96,13 +100,19 @@ airpods-control listening-mode cycle
 airpods-control conversation-awareness get
 airpods-control conversation-awareness set off
 
+# Read status for every compatible connected device
+airpods-control status
+
 # Target a device or request structured output
 airpods-control --device "My AirPods Pro" listening-mode get
-airpods-control listening-mode get --json
+airpods-control status --device "My AirPods Pro" --json
 ```
 
 `listening-mode` can be shortened to `lm`, and `conversation-awareness` to
-`ca`. Run `airpods-control --help` for built-in help. The
+`ca`; `status` has no alias. Without `--device`, `status` reports every
+compatible connected AirPods or Beats device, while the individual resource
+commands continue to use the first compatible device. Run
+`airpods-control --help` for built-in help. The
 [complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics,
 write verification, and exit codes. After installation, you can also run
 `man airpods-control`.
