@@ -20,9 +20,9 @@
 
 **Compatible audio device**
 : The device interface that command execution uses. It provides the device
-  name, supported features, current canonical states, and observed write
-  results without exposing Objective-C selectors or private AVFoundation
-  values.
+  name (absent when the adapter was asked not to read it), supported features,
+  current canonical states, and observed write results without exposing
+  Objective-C selectors or private AVFoundation values.
 
 **Private Audio adapter**
 : The production adapter for a compatible audio device. It discovers

@@ -6,7 +6,10 @@ struct DeviceWriteObservation<State> {
 }
 
 protocol CompatibleAudioDevice {
-  var name: String { get }
+  // Absent when the adapter was told not to read the customizable name, which
+  // is what the support-report path asks for. Absence is not a blank name:
+  // there is nothing here to print.
+  var name: String? { get }
 
   func supportReportMetadata() -> SupportReportDeviceMetadata
 

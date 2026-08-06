@@ -3,7 +3,6 @@ import Foundation
 
 func testSupportReportContentsAndPrivacy() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -129,7 +128,6 @@ func testSupportReportContentsAndPrivacy() {
 
 func testSupportReportDocumentFeedsPureOutputAdapters() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -217,7 +215,6 @@ func testSupportReportDocumentFeedsPureOutputAdapters() {
 
 func testSupportReportUnavailableValuesAndIdentification() {
   let unavailable = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [],
     listeningMode: nil,
     conversationAwarenessSupported: nil,
@@ -274,7 +271,6 @@ func testSupportReportUnavailableValuesAndIdentification() {
   )
 
   let unidentified = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(
       family: nil,
       modelIdentifier: nil,
@@ -306,7 +302,6 @@ func testSupportReportUnavailableValuesAndIdentification() {
 
 func testSupportReportEscapesDeviceControlledTextPerAdapter() {
   let hostile = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(
       modelIdentifier: "airpods www.evil.example/x",
       unrecognizedListeningModes: ["www.evil.example/mode"]
@@ -333,7 +328,6 @@ func testSupportReportEscapesDeviceControlledTextPerAdapter() {
   )
 
   let unnormalized = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(
       modelIdentifier: "airpods` [CLICK](http://evil.example) `x"
     )
@@ -344,7 +338,6 @@ func testSupportReportEscapesDeviceControlledTextPerAdapter() {
   )
 
   let hostileModes = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(
       unrecognizedListeningModes: ["mode` [CLICK](http://evil.example) `x"]
     )
@@ -364,7 +357,6 @@ func testSupportReportEscapesDeviceControlledTextPerAdapter() {
 
 func testSupportReportUnrecognizedListeningModes() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.off, .transparency],
     listeningMode: nil,
     reportMetadata: .fixture(
@@ -391,7 +383,6 @@ func testSupportReportUnrecognizedListeningModes() {
   )
 
   let noisy = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(unrecognizedListeningModes: (1...8).map { "Mode\($0)" })
   )
   let noisyOutput = passiveSupportReport(device: noisy)?.terminalOutput ?? ""
@@ -405,7 +396,6 @@ func testSupportReportUnrecognizedListeningModes() {
   )
 
   let exact = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(unrecognizedListeningModes: (1...6).map { "Mode\($0)" })
   )
   let exactOutput = passiveSupportReport(device: exact)?.terminalOutput ?? ""
@@ -421,7 +411,6 @@ func testSupportReportUnrecognizedListeningModes() {
 
 func testSupportReportUnknownAppleProduct() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     reportMetadata: .fixture(
       family: .unknownApple,
       modelIdentifier: "BTHeadphones76,60000"
@@ -572,7 +561,6 @@ func testSupportReportIssueURLEncodesPlusSigns() {
 
 func testSupportReportRequiresConfirmationBeforeOpening() {
   let device = FakeCompatibleAudioDevice(
-    name: "",
     listeningModes: [.transparency, .noiseCancellation],
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: true,
@@ -680,7 +668,7 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
 
 func testSupportReportPrintsPasteReadyFormFallback() {
   let baseDocument = passiveSupportReport(
-    device: FakeCompatibleAudioDevice(name: "", reportMetadata: .fixture())
+    device: FakeCompatibleAudioDevice(reportMetadata: .fixture())
   )!
   let oversizedDocument = SupportReportDocument(
     device: SupportReportDocument.Device(
