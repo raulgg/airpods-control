@@ -18,6 +18,7 @@ So far, we have only tested the CLI on AirPods Pro 3.
 | Capability | AirPods Pro 3 | Other AirPods candidates | Beats candidates |
 | --- | --- | --- | --- |
 | Device discovery | Verified | Pending | Exploratory |
+| One-earbud discovery and control | Verified | Pending | Exploratory |
 | `listening-mode get` | Verified | Pending | Exploratory |
 | `listening-mode list` | Verified | Pending | Exploratory |
 | `listening-mode set` | Verified | Pending | Exploratory |
@@ -92,10 +93,16 @@ through 3, AirPods 4 without ANC, Beats Solo 4, Beats Solo Buds, and Powerbeats
 Pro 1. A report is still useful if macOS exposes compatible controls for one of
 them.
 
-The CLI currently selects only devices for which macOS reports available
-listening modes and a current mode. It checks Conversation Awareness after
-discovery but does not require it. Some candidates may expose only part of the
-interface. The CLI reports missing data as unavailable and does not infer it.
+The CLI normally selects endpoints for which macOS exposes the listening-mode
+query selectors and reports at least one available mode. The only empty-mode
+exception is the singular current AVRouting endpoint, and only while that
+endpoint still answers a concrete control-plane query. The singular endpoint's
+current capability snapshot remains authoritative. Operational commands replace
+or suppress possible plural aliases rather than combining selectors across
+wrappers, and every write goes to the single wrapper whose capabilities were
+checked. Product catalog membership supplies report metadata only and is never
+runtime capability evidence. Some endpoints expose only part of the interface;
+the CLI reports missing data as unavailable and does not infer it.
 
 ## Contributing a result
 

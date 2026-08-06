@@ -30,6 +30,22 @@ private let supportsCASelector = NSSelectorFromString("supportsConversationDetec
 private let caEnabledSelector = NSSelectorFromString("isConversationDetectionEnabled")
 private let setCASelector = NSSelectorFromString("setConversationDetectionEnabled:error:")
 private let modelIDSelector = NSSelectorFromString("modelID")
+private let deviceIDSelector = NSSelectorFromString("deviceID")
+
+enum PrivateAudioDiscoverySource: String, Hashable {
+  case contextPlural = "context-plural"
+  case contextSingular = "context-singular"
+}
+
+enum PrivateAudioAccessPolicy {
+  case operational
+  case supportReport
+}
+
+struct PrivateAudioContextEndpoints {
+  let plural: [AnyObject]
+  let singular: AnyObject?
+}
 
 @objc private protocol ListeningModeSetterShim {
   @objc(setCurrentBluetoothListeningMode:error:)
@@ -51,6 +67,20 @@ private let modelIDSelector = NSSelectorFromString("modelID")
 
 enum PrivateAudioDiscovery {
   static let contextSelectors = ["sharedSystemAudioContext", "sharedSystemAudio"]
+
+  fileprivate static func deviceIdentifier(for object: AnyObject) -> String? {
+    guard object.responds(to: deviceIDSelector),
+          let value = object.perform(deviceIDSelector)?.takeUnretainedValue()
+    else { return nil }
+
+    if let string = value as? String, !string.isEmpty {
+      return string
+    }
+    if let uuid = value as? UUID {
+      return uuid.uuidString
+    }
+    return nil
+  }
 
   static func sharedContext(from provider: AnyObject, logger: DebugLogger) -> AnyObject? {
     for selectorName in contextSelectors {
@@ -85,7 +115,33 @@ enum PrivateAudioDiscovery {
     return devices
   }
 
-  static func systemOutputDevices(logger: DebugLogger) -> [AnyObject]? {
+  static func outputDevice(from context: AnyObject, logger: DebugLogger) -> AnyObject? {
+    let selector = NSSelectorFromString("outputDevice")
+    guard context.responds(to: selector) else {
+      logger.debug("selector.outputDevice", "unavailable")
+      return nil
+    }
+    guard let device = context.perform(selector)?.takeUnretainedValue() else {
+      logger.info("discovery.context_singular_present", false)
+      return nil
+    }
+    logger.info("discovery.context_singular_present", true)
+    return device as AnyObject
+  }
+
+  static func contextEndpoints(
+    from context: AnyObject,
+    logger: DebugLogger
+  ) -> PrivateAudioContextEndpoints {
+    let plural = outputDevices(from: context, logger: logger) ?? []
+    logger.info("discovery.context_plural_count", plural.count)
+    return PrivateAudioContextEndpoints(
+      plural: plural,
+      singular: outputDevice(from: context, logger: logger)
+    )
+  }
+
+  private static func systemContext(logger: DebugLogger) -> AnyObject? {
     let frameworks = [
       "/System/Library/Frameworks/AVFoundation.framework/AVFoundation",
       "/System/Library/Frameworks/AVRouting.framework/AVRouting",
@@ -110,17 +166,36 @@ enum PrivateAudioDiscovery {
     guard let context = sharedContext(from: cls as AnyObject, logger: logger) else {
       return nil
     }
+    return context
+  }
+
+  static func systemOutputDevices(logger: DebugLogger) -> [AnyObject]? {
+    guard let context = systemContext(logger: logger) else { return nil }
     return outputDevices(from: context, logger: logger)
+  }
+
+  static func systemOperationalEndpoints(
+    logger: DebugLogger
+  ) -> PrivateAudioContextEndpoints? {
+    guard let context = systemContext(logger: logger) else { return nil }
+    return contextEndpoints(from: context, logger: logger)
   }
 }
 
 final class PrivateAudioDevice: CompatibleAudioDevice {
-  private let object: AnyObject
+  let object: AnyObject
+  fileprivate(set) var sources: Set<PrivateAudioDiscoverySource>
   let name: String?
   private let logger: DebugLogger
 
-  private init(object: AnyObject, name: String?, logger: DebugLogger) {
+  private init(
+    object: AnyObject,
+    sources: Set<PrivateAudioDiscoverySource>,
+    name: String?,
+    logger: DebugLogger
+  ) {
     self.object = object
+    self.sources = sources
     self.name = name
     self.logger = logger
   }
@@ -158,6 +233,7 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
 
   static func compatible(
     object: AnyObject,
+    sources: Set<PrivateAudioDiscoverySource>,
     index: Int,
     logger: DebugLogger,
     includeDeviceName: Bool = true
@@ -184,16 +260,51 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     }
 
     guard let modesValue = object.perform(availableModesSelector)?.takeUnretainedValue(),
-          let modes = modesValue as? [String],
-          !modes.isEmpty
+          let modes = modesValue as? [String]
     else {
       logger.debug("device.\(index).compatible", false)
       return nil
     }
 
+    if modes.isEmpty {
+      guard sources.contains(.contextSingular),
+            singularEndpointHasControlSignal(object)
+      else {
+        logger.debug("device.\(index).compatible", false)
+        return nil
+      }
+      // Only the singular current endpoint may survive an empty capability
+      // list, and only while it still answers a control-plane query. Product
+      // metadata is never runtime capability evidence.
+      logger.debug("device.\(index).transient_empty_modes", true)
+    }
+
     logger.debug("device.\(index).compatible", true)
     logger.debug("device.\(index).available_modes", modes.joined(separator: ","))
-    return PrivateAudioDevice(object: object, name: name, logger: logger)
+    return PrivateAudioDevice(
+      object: object,
+      sources: sources,
+      name: name,
+      logger: logger
+    )
+  }
+
+  private static func singularEndpointHasControlSignal(_ object: AnyObject) -> Bool {
+    if object.responds(to: currentModeSelector),
+       let rawMode = object.perform(currentModeSelector)?.takeUnretainedValue() as? String,
+       !rawMode.isEmpty
+    {
+      return true
+    }
+
+    guard object.responds(to: supportsCASelector),
+          object.responds(to: caEnabledSelector)
+    else { return false }
+    let support = unsafeBitCast(object, to: ConversationAwarenessSupportShim.self)
+    guard support.supportsConversationAwareness() else { return false }
+    let state = unsafeBitCast(object, to: ConversationAwarenessStateShim.self)
+    _ = state.conversationAwarenessEnabled()
+    return true
   }
 
   private func availableRawListeningModes() -> [String] {
@@ -363,22 +474,120 @@ final class PrivateAudioController {
   private let logger: DebugLogger
   private let includesDeviceNames: Bool
 
-  init(
+  private init(
+    devices: [PrivateAudioDevice],
+    logger: DebugLogger,
+    includeDeviceNames: Bool
+  ) {
+    self.logger = logger
+    includesDeviceNames = includeDeviceNames
+    self.devices = devices
+    logger.info("compatible_device_count", devices.count)
+    logger.info("discovery.candidate_count", devices.count)
+    for (index, device) in devices.enumerated() {
+      let sources = device.sources.map(\.rawValue).sorted().joined(separator: ",")
+      logger.debug("discovery.candidate_\(index)_sources", sources)
+    }
+  }
+
+  convenience init(
     rawDevices: [AnyObject],
     logger: DebugLogger,
     includeDeviceNames: Bool = true
   ) {
-    self.logger = logger
-    includesDeviceNames = includeDeviceNames
-    devices = rawDevices.enumerated().compactMap { index, object in
+    let devices = rawDevices.enumerated().compactMap { index, object in
       PrivateAudioDevice.compatible(
         object: object,
+        sources: [.contextPlural],
         index: index,
         logger: logger,
         includeDeviceName: includeDeviceNames
       )
     }
-    logger.info("compatible_device_count", devices.count)
+    self.init(
+      devices: devices,
+      logger: logger,
+      includeDeviceNames: includeDeviceNames
+    )
+  }
+
+  convenience init(
+    endpoints: PrivateAudioContextEndpoints,
+    logger: DebugLogger
+  ) {
+    let pluralDevices = endpoints.plural.enumerated().compactMap { index, object in
+      PrivateAudioDevice.compatible(
+        object: object,
+        sources: [.contextPlural],
+        index: index,
+        logger: logger
+      )
+    }
+    let singularDevice = endpoints.singular.flatMap { object in
+      PrivateAudioDevice.compatible(
+        object: object,
+        sources: [.contextSingular],
+        index: endpoints.plural.count,
+        logger: logger
+      )
+    }
+    self.init(
+      devices: Self.resolveOperationalDevices(
+        plural: pluralDevices,
+        singularObject: endpoints.singular,
+        singularDevice: singularDevice
+      ),
+      logger: logger,
+      includeDeviceNames: true
+    )
+  }
+
+  private static func resolveOperationalDevices(
+    plural: [PrivateAudioDevice],
+    singularObject: AnyObject?,
+    singularDevice: PrivateAudioDevice?
+  ) -> [PrivateAudioDevice] {
+    guard let singularObject else { return plural }
+
+    let needsIdentifiers = plural.contains { $0.object !== singularObject }
+    let singularIdentifier = needsIdentifiers
+      ? PrivateAudioDiscovery.deviceIdentifier(for: singularObject)
+      : nil
+    var resolved: [PrivateAudioDevice] = []
+    var insertedSingular = false
+
+    for pluralDevice in plural {
+      let isAlias: Bool?
+      if pluralDevice.object === singularObject {
+        isAlias = true
+      } else if let singularIdentifier,
+                let pluralIdentifier = PrivateAudioDiscovery.deviceIdentifier(
+                  for: pluralDevice.object
+                )
+      {
+        isAlias = pluralIdentifier == singularIdentifier
+      } else {
+        isAlias = nil
+      }
+
+      if isAlias == false {
+        resolved.append(pluralDevice)
+        continue
+      }
+
+      if isAlias == true {
+        singularDevice?.sources.insert(.contextPlural)
+      }
+      if !insertedSingular, let singularDevice {
+        resolved.append(singularDevice)
+        insertedSingular = true
+      }
+    }
+
+    if !insertedSingular, let singularDevice {
+      resolved.append(singularDevice)
+    }
+    return resolved
   }
 
   func selectDevice(named requestedName: String?) -> PrivateAudioDevice? {

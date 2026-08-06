@@ -9,13 +9,21 @@ let rawListeningModeValues: [ListeningMode: String] = [
 
 @objc final class FakeContext: NSObject {
   let devices: [AnyObject]
+  let currentDevice: AnyObject?
+  private(set) var outputDeviceReadCount = 0
 
-  init(devices: [AnyObject]) {
+  init(devices: [AnyObject], currentDevice: AnyObject? = nil) {
     self.devices = devices
+    self.currentDevice = currentDevice
   }
 
   @objc(outputDevices) func outputDeviceValues() -> [AnyObject] {
     devices
+  }
+
+  @objc(outputDevice) func currentOutputDevice() -> AnyObject? {
+    outputDeviceReadCount += 1
+    return currentDevice
   }
 }
 
@@ -60,6 +68,9 @@ let rawListeningModeValues: [ListeningMode: String] = [
   let modelIdentifier: String
   let listeningModeError: NSError?
   let conversationAwarenessError: NSError?
+  let deviceIdentifier: String
+  private(set) var nameReadCount = 0
+  private(set) var deviceIDReadCount = 0
   var listeningModeSetCount = 0
   var conversationAwarenessSetCount = 0
 
@@ -72,6 +83,7 @@ let rawListeningModeValues: [ListeningMode: String] = [
     appliesListeningModeAsynchronously: Bool = false,
     appliesConversationAwarenessWrite: Bool = true,
     modelIdentifier: String = "AirPodsTest1,1",
+    deviceIdentifier: String = UUID().uuidString,
     listeningModeError: NSError? = nil,
     conversationAwarenessError: NSError? = nil
   ) {
@@ -83,16 +95,23 @@ let rawListeningModeValues: [ListeningMode: String] = [
     self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
     self.modelIdentifier = modelIdentifier
+    self.deviceIdentifier = deviceIdentifier
     self.listeningModeError = listeningModeError
     self.conversationAwarenessError = conversationAwarenessError
   }
 
   @objc(name) func deviceName() -> String {
-    outputName
+    nameReadCount += 1
+    return outputName
   }
 
   @objc(modelID) func modelID() -> String {
     modelIdentifier
+  }
+
+  @objc(deviceID) func deviceID() -> String {
+    deviceIDReadCount += 1
+    return deviceIdentifier
   }
 
   @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
@@ -142,25 +161,76 @@ let rawListeningModeValues: [ListeningMode: String] = [
 
 @objc final class FakeReadOnlyRawDevice: NSObject {
   let outputName: String
+  let modes: [String]
+  let modelIdentifier: String
+  let deviceIdentifier: String
+  private(set) var nameReadCount = 0
+  private(set) var deviceIDReadCount = 0
 
-  init(name: String) {
+  init(
+    name: String,
+    modes: [String] = Array(rawListeningModeValues.values),
+    modelIdentifier: String = "AirPodsReadOnly1,1",
+    deviceIdentifier: String = UUID().uuidString
+  ) {
     outputName = name
+    self.modes = modes
+    self.modelIdentifier = modelIdentifier
+    self.deviceIdentifier = deviceIdentifier
   }
 
   @objc(name) func deviceName() -> String {
-    outputName
+    nameReadCount += 1
+    return outputName
   }
 
   @objc(modelID) func modelID() -> String {
-    "AirPodsReadOnly1,1"
+    modelIdentifier
+  }
+
+  @objc(deviceID) func deviceID() -> String {
+    deviceIDReadCount += 1
+    return deviceIdentifier
   }
 
   @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
-    Array(rawListeningModeValues.values)
+    modes
   }
 
   @objc(currentBluetoothListeningMode) func currentListeningMode() -> String {
     rawListeningModeValues[.transparency]!
+  }
+}
+
+@objc final class FakeCAOnlyCurrentRawDevice: NSObject {
+  private(set) var conversationAwarenessEnabled = false
+  private(set) var conversationAwarenessSetCount = 0
+
+  @objc(name) func deviceName() -> String {
+    "CA-only AirPods"
+  }
+
+  @objc(availableBluetoothListeningModes) func availableListeningModes() -> [String] {
+    []
+  }
+
+  @objc(currentBluetoothListeningMode) func currentListeningMode() -> String? {
+    nil
+  }
+
+  @objc(supportsConversationDetection) func supportsConversationDetection() -> Bool {
+    true
+  }
+
+  @objc(isConversationDetectionEnabled) func isConversationDetectionEnabled() -> Bool {
+    conversationAwarenessEnabled
+  }
+
+  @objc(setConversationDetectionEnabled:error:)
+  func setConversationDetectionEnabled(_ enabled: Bool, _ error: NSErrorPointer) -> Bool {
+    conversationAwarenessSetCount += 1
+    conversationAwarenessEnabled = enabled
+    return true
   }
 }
 
