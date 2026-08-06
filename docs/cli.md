@@ -201,8 +201,18 @@ The read-only report says whether queries answer and setters exist, but it does
 not include the setting values returned by those queries and never invokes a
 setter. A consented run reads setting values locally only to plan, verify, and
 restore its writes. If restoration cannot be verified, the report names the
-final state so it can be restored manually. The prefilled Compatibility report
-field includes the same per-mode verdicts but omits the restoration outcome.
+final state so it can be restored manually.
+
+The command never reads the customizable device name, firmware version, serial
+numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It
+never uses the clipboard, sends telemetry, or submits anything. A read-only
+report does not change device settings or intentionally interrupt audio;
+consented write tests temporarily change the settings in the captured plan.
+
+`support-report` does not read customizable names or accept `--device`, so it
+requires exactly one compatible output device. With zero or multiple compatible
+devices it prints local instructions and exits `1` before a report, prompt, or
+write.
 
 ### Consented write tests
 
@@ -236,10 +246,11 @@ is reported as a `no-op` and does not stop the remaining tests. A setter
 rejection is reported as `setter error` and stops the remaining tests for that
 setting. Each write gets its own result row, so a restoration failure is
 attributed to the restoring write rather than folded into the write it was
-restoring. A write whose target already equals the state read immediately
-before it (for example after an Off write fell back to Transparency) cannot
-demonstrate a transition; if its readback still matches, both output adapters
-report it as `inconclusive (already in this state; no transition
+restoring, and a Conversation Awareness toggle that verified stays visible even
+when its restore then fails. A write whose target already equals the state read
+immediately before it (for example after an Off write fell back to Transparency)
+cannot demonstrate a transition; if its readback still matches, both output
+adapters report it as `inconclusive (already in this state; no transition
 demonstrated)` rather than `verified`.
 
 The terminal always states the restoration outcome: `RESTORED`, `NOT NEEDED`,
@@ -273,30 +284,17 @@ Write tests
 Review complete. Nothing has been submitted to GitHub.
 ```
 
-Each write gets its own row, so a Conversation Awareness toggle that verified
-stays visible even when its restore then fails. The GitHub report uses the same
-Device, Capabilities, and Write tests sections. It includes every per-mode
-verdict but omits the restoration status and the terminal review footer; the
-issue form supplies the Compatibility report heading. The listening-mode row
-that restored the initial mode carries no restore label, and if the state never
-left the captured initial mode, the untested `listening-mode set` row does not
-name that mode.
+The GitHub report uses the same Device, Capabilities, and Write tests sections.
+It includes every per-mode verdict but omits the restoration status and the
+terminal review footer; the issue form supplies the Compatibility report
+heading. The listening-mode row that restored the initial mode carries no
+restore label, and if the state never left the captured initial mode, the
+untested `listening-mode set` row does not name that mode.
 
 `--with-write-tests` answers the consent question with yes and is the only
 way to run the tests when standard input is not interactive, for example
 under a script. `--no-write-tests` answers it with no. Without a flag, a
 noninteractive run skips the tests and notes the flag on stderr.
-
-It never reads the customizable device name, firmware version, serial numbers,
-Bluetooth/MAC addresses, account data, or raw system dumps and logs. A
-read-only report does not change device settings or intentionally interrupt
-audio. Consented write tests temporarily change the settings in the captured
-plan. The command never uses the clipboard, sends telemetry, or submits
-anything.
-
-`support-report` does not read customizable names or accept `--device`, so it
-requires exactly one compatible output device. With zero or multiple compatible
-devices it exits `1` before a report, prompt, or write.
 
 After the write-test prompt and any tests finish, the report appears in the
 terminal before the issue-opening question. The GitHub issue form keeps the
@@ -316,13 +314,7 @@ For a completed run under a script, pipeline, or CI, the command prints the
 report and writes the issue form URL to stderr without prompting
 or opening a browser, then returns the report outcome: normally `0`, or `3`
 when consented write tests cannot restore the initial settings. Unless the
-length cap above applies, the URL carries the generated report field with
-write-test verdicts but without restoration status.
-
-If the command cannot select one unique identifiable AirPods or Beats device,
-it prints local instructions, exits `1`, and stops. Reports from other AirPods
-and Beats owners are welcome, but a report does not make a Beats device
-supported.
+length cap above applies, that URL carries the generated report field.
 
 ## Target a device
 

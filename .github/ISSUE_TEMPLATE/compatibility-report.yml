@@ -10,8 +10,8 @@ body:
     attributes:
       value: |
         Connect exactly one compatible AirPods or Beats device and run `airpods-control support-report`.
-        Review the report locally before pasting or submitting it. Do not add a custom device name,
-        serial number, Bluetooth/MAC address, account information, or raw system logs or dumps.
+        Review the report locally before pasting or submitting it, and do not add private details of
+        your own. The privacy confirmation below lists what must not appear in a report.
 
   - type: textarea
     id: report
@@ -54,5 +54,5 @@ body:
     attributes:
       label: Privacy confirmation
       options:
-        - label: I reviewed this report and confirmed it contains no custom device name, serial number, Bluetooth/MAC address, account information, or raw system logs or dumps.
+        - label: I reviewed this report and confirmed it contains no custom device name, firmware version, serial number, Bluetooth/MAC address, account data, or raw system dumps and logs.
           required: true
