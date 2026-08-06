@@ -19,6 +19,15 @@ enum ListeningMode: String, CaseIterable {
     self = mode
   }
 
+  var displayName: String {
+    switch self {
+    case .off: return "Off"
+    case .transparency: return "Transparency"
+    case .adaptive: return "Adaptive"
+    case .noiseCancellation: return "Noise cancellation"
+    }
+  }
+
   static func next(current: ListeningMode?, within cycle: [ListeningMode]) -> ListeningMode {
     guard let current, let start = allCases.firstIndex(of: current) else {
       return cycle[0]

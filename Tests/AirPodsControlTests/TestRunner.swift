@@ -13,6 +13,7 @@ struct TestRunner {
     runSupportReportTests()
     runSupportReportWriteFlowTests()
     runSupportReportWriteTesterTests()
+    runSupportReportProgressTests()
 
     if failureCount > 0 {
       fputs("Swift tests failed: \(failureCount)\n", stderr)

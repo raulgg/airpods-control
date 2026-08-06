@@ -162,6 +162,17 @@ let outcome = CommandExecution.execute(
   supportReport: SupportReportCommand(
     requestWriteTestConsent: { plan in
       SupportReportInteraction.requestWriteTestConsent(plan: plan)
+    },
+    runWriteTests: { plan, device in
+      let progress = SupportReportProgressDisplay(
+        plan: plan,
+        debugEnabled: invocation.debugEnabled
+      )
+      return SupportReportWriteTester.runInterruptibly(
+        plan: plan,
+        device: device,
+        progress: { progress?.receive($0) }
+      )
     }
   )
 )
