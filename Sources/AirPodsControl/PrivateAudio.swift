@@ -483,7 +483,6 @@ final class PrivateAudioController {
     includesDeviceNames = includeDeviceNames
     self.devices = devices
     logger.info("compatible_device_count", devices.count)
-    logger.info("discovery.candidate_count", devices.count)
     for (index, device) in devices.enumerated() {
       let sources = device.sources.map(\.rawValue).sorted().joined(separator: ",")
       logger.debug("discovery.candidate_\(index)_sources", sources)
