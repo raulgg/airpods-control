@@ -22,23 +22,6 @@ struct CommandOutcome {
 enum CommandExecution {
   static func execute(
     _ invocation: CLIInvocation,
-    resolveDevice: (
-      _ requestedName: String?,
-      _ logger: DebugLogger
-    ) -> (any CompatibleAudioDevice)?,
-    supportReport: SupportReportCommand = SupportReportCommand()
-  ) -> CommandOutcome {
-    execute(
-      invocation,
-      resolveDevices: { requestedName, _, logger in
-        resolveDevice(requestedName, logger).map { [$0] }
-      },
-      supportReport: supportReport
-    )
-  }
-
-  static func execute(
-    _ invocation: CLIInvocation,
     resolveDevices: (
       _ requestedName: String?,
       _ policy: DeviceSelectionPolicy,

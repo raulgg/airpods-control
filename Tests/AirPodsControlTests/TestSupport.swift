@@ -58,6 +58,25 @@ func commandOutcome(
   return CommandExecution.execute(invocation) { _, _ in device }
 }
 
+extension CommandExecution {
+  static func execute(
+    _ invocation: CLIInvocation,
+    resolveDevice: (
+      _ requestedName: String?,
+      _ logger: DebugLogger
+    ) -> (any CompatibleAudioDevice)?,
+    supportReport: SupportReportCommand = SupportReportCommand()
+  ) -> CommandOutcome {
+    execute(
+      invocation,
+      resolveDevices: { requestedName, _, logger in
+        resolveDevice(requestedName, logger).map { [$0] }
+      },
+      supportReport: supportReport
+    )
+  }
+}
+
 // Builds a read-only document for tests. Tests with writes should capture the
 // snapshot first, run the writes, and then build the document.
 func passiveSupportReport(

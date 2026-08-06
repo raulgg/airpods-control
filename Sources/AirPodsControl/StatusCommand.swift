@@ -132,13 +132,10 @@ enum StatusCommand {
   static let noDevicePlain = "No compatible AirPods or Beats device is connected."
 
   static func outcome(devices: [any CompatibleAudioDevice]) -> CommandOutcome {
-    // Normal operational discovery admits only devices whose nonempty names
-    // were captured up front. Refuse an invalid resolver result as a whole
-    // instead of silently dropping one record from an all-device scan.
-    guard !devices.isEmpty, devices.allSatisfy({ $0.name != nil }) else {
+    let snapshots = devices.compactMap(DeviceStatusSnapshot.capture)
+    guard !snapshots.isEmpty, snapshots.count == devices.count else {
       return noDeviceOutcome()
     }
-    let snapshots = devices.map { DeviceStatusSnapshot.capture($0)! }
 
     let hasNonErrorResult = snapshots.contains(where: \.hasNonErrorResult)
     var payload: [String: Any] = [

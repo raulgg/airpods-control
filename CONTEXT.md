@@ -20,7 +20,7 @@
   are absent, unresolved and errored fields retain the corresponding individual
   getter's fallback state, and genuine read failures also carry a field-keyed
   error. A status command outcome contains snapshots in system audio-routing
-  discovery order; the field list is the seam for future aggregate additions.
+  discovery order.
 
 **Listening mode**
 : A canonical user-facing AirPods state: `off`, `transparency`, `adaptive`, or

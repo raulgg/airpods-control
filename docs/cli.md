@@ -135,8 +135,8 @@ and exits `4`.
 ## Status
 
 `status` reads the current listening mode and Conversation Awareness state in
-one command. Version 1 intentionally does not report battery levels, device
-metadata beyond the name required to identify each record, or other settings.
+one command. It does not report battery levels, device metadata beyond the name
+required to identify each record, or other settings.
 Compatibility metadata and consented write tests remain the separate
 responsibility of `support-report`.
 

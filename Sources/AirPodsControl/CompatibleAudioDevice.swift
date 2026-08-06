@@ -54,17 +54,3 @@ protocol CompatibleAudioDevice {
   // wait is the caller's policy, not the device's.
   func settle(for interval: TimeInterval)
 }
-
-extension CompatibleAudioDevice {
-  func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
-    currentListeningMode().map(DeviceStatusField.value) ?? .unresolved
-  }
-
-  func readConversationAwarenessStatus() -> DeviceStatusField<Bool> {
-    guard let supported = supportsConversationAwareness() else {
-      return .unresolved
-    }
-    guard supported else { return .unsupported }
-    return conversationAwarenessState().map(DeviceStatusField.value) ?? .unresolved
-  }
-}
