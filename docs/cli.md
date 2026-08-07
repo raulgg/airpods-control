@@ -242,7 +242,7 @@ Device
   Identifier               BTHeadphones76,8231 · product 0x2027
   Family                   AirPods
   macOS                    26.5.2
-  airpods-control          0.1.0
+  airpods-control          0.2.0
 
 Capabilities
   Listening modes          Off, Transparency, Adaptive, Noise cancellation
@@ -432,7 +432,7 @@ $ airpods-control --device "Missing AirPods" listening-mode get --json
 write uses `"result":"no-op"` and exits `3`. The response contains the final
 canonical state read during the bounded settling window, the Transparency
 fallback, or JSON `null` when neither applies. Version JSON follows the same
-result convention: `{"result":"ok","version":"0.1.0"}`.
+result convention: `{"result":"ok","version":"0.2.0"}`.
 
 `status` always returns a top-level `devices` array, including when `--device`
 selects a single device. Each record has `device` and only the canonical
