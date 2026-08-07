@@ -1,0 +1,10 @@
+exclude: ^\.github/PULL_REQUEST_TEMPLATE\.md$
+
+repos:
+  - repo: https://github.com/rvben/rumdl-pre-commit
+    rev: v0.2.52
+    hooks:
+      - id: rumdl
+        args: [--deny-config-warnings]
+      - id: rumdl-fmt
+        args: [--deny-config-warnings]

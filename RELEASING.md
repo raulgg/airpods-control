@@ -1,10 +1,15 @@
 # Releasing
 
-`airpods-control` publishes signed source releases from this repository. Its Homebrew formula lives in [`raulgg/homebrew-tap`](https://github.com/raulgg/homebrew-tap) and builds each release from source. Do not add a second formula to this repository.
+`airpods-control` publishes signed source releases from this repository. Its
+Homebrew formula lives in
+[`raulgg/homebrew-tap`](https://github.com/raulgg/homebrew-tap) and builds each
+release from source. Do not add a second formula to this repository.
 
 ## Prepare the release
 
-1. Update the version in the CLI, contract tests, CI install assertion, and documentation examples. Search for the previous version to catch every reference.
+1. Update the version in the CLI, contract tests, CI install assertion, and
+   documentation examples. Search for the previous version to catch every
+   reference.
 2. Run all local checks:
 
    ```sh
@@ -16,8 +21,11 @@
    codesign --verify --verbose=2 build/avbypass.dylib
    ```
 
-3. Run `make install` and `make uninstall` with `DESTDIR` set to a temporary staging directory. Confirm the executable, interpose dylib, relative bin symlink, and manpage.
-4. Merge the version change through a pull request. Confirm `main` is clean, matches `origin/main`, and has a successful CI run.
+3. Run `make install` and `make uninstall` with `DESTDIR` set to a temporary
+   staging directory. Confirm the executable, interpose dylib, relative bin
+   symlink, and manpage.
+4. Merge the version change through a pull request. Confirm `main` is clean,
+   matches `origin/main`, and has a successful CI run.
 
 ## Publish the source release
 
@@ -33,9 +41,11 @@ gh release create "vVERSION" \
   --generate-notes
 ```
 
-Never move, delete, or recreate a published tag. If a release contains the wrong source, publish the fix in the next patch version.
+Never move, delete, or recreate a published tag. If a release contains the wrong
+source, publish the fix in the next patch version.
 
-Download the tag archive twice and compare the files byte for byte before calculating the formula checksum:
+Download the tag archive twice and compare the files byte for byte before
+calculating the formula checksum:
 
 ```sh
 release_archive_dir=$(mktemp -d /tmp/airpods-control-release.XXXXXX)
@@ -52,7 +62,9 @@ shasum -a 256 "$release_archive_dir/first.tar.gz"
 ## Update the Homebrew tap
 
 1. Create `feat/airpods-control-VERSION` from the tap's current `main`.
-2. Update `Formula/airpods-control.rb` with the tag archive URL and verified SHA-256. Keep the source build, Apple toolchain overrides, exact read-only version test, and absence of a `bottle` block.
+2. Update `Formula/airpods-control.rb` with the tag archive URL and verified
+   SHA-256. Keep the source build, Apple toolchain overrides, exact read-only
+   version test, and absence of a `bottle` block.
 3. Run:
 
    ```sh
@@ -64,8 +76,11 @@ shasum -a 256 "$release_archive_dir/first.tar.gz"
    brew uninstall airpods-control
    ```
 
-4. Open a tap pull request and merge it with squash only after every required `brew test-bot` check passes. Do not use `brew pr-pull`; this tap does not publish bottles.
-5. Untap the local checkout. From a fresh clone, run the documented public installation:
+4. Open a tap pull request and merge it with squash only after every required
+   `brew test-bot` check passes. Do not use `brew pr-pull`; this tap does not
+   publish bottles.
+5. Untap the local checkout. From a fresh clone, run the documented public
+   installation:
 
    ```sh
    brew install raulgg/tap/airpods-control
@@ -74,4 +89,6 @@ shasum -a 256 "$release_archive_dir/first.tar.gz"
    brew uninstall airpods-control
    ```
 
-Packaging tests must remain read-only and must never change AirPods settings. If a broken formula reaches `main`, correct or revert it through another pull request after its checks pass. Do not rewrite the tap history.
+Packaging tests must remain read-only and must never change AirPods settings. If
+a broken formula reaches `main`, correct or revert it through another pull
+request after its checks pass. Do not rewrite the tap history.
