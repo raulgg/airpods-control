@@ -16,8 +16,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e5aff?style=flat-square"></a>
 </p>
 
-Control AirPods listening modes and Conversation Awareness from the command
-line without Control Center, a menu bar app, or Accessibility permission.
+Control AirPods listening modes and Conversation Awareness from the command line without Control Center, a menu bar app, or Accessibility permission.
 
 ```console
 $ airpods-control status
@@ -28,30 +27,21 @@ $ airpods-control listening-mode set noise-cancellation
 ok
 ```
 
-`airpods-control` talks directly to the macOS system audio daemon through the
-private AVFoundation API used by AirPods. Changes take effect immediately and
-display the same on-screen banner as a stem press. The command performs one
-operation and exits. It does not poll in the background or automate the UI.
+`airpods-control` talks directly to the macOS system audio daemon through the private AVFoundation API used by AirPods. Changes take effect immediately and display the same on-screen banner as a stem press. The command performs one operation and exits. It does not poll in the background or automate the UI.
 
 ## Features
 
-- Read, set, list, or cycle the `off`, `transparency`, `adaptive`, and
-  `noise-cancellation` listening modes.
+- Read, set, list, or cycle the `off`, `transparency`, `adaptive`, and `noise-cancellation` listening modes.
 - Read or set Conversation Awareness.
-- Report listening mode and Conversation Awareness for every connected
-  compatible AirPods or Beats device with one `status` command.
+- Report listening mode and Conversation Awareness for every connected compatible AirPods or Beats device with one `status` command.
 - Select a compatible output device by exact name.
-- Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`. Stdout
-  is stable, exit codes are documented, JSON is available, and stderr
-  diagnostics are opt-in.
+- Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`. Stdout is stable, exit codes are documented, JSON is available, and stderr diagnostics are opt-in.
 
 ## Requirements
 
 - macOS (developed and tested on Tahoe 26).
-- A compatible AirPods or Beats device connected as an output device. See
-  [device compatibility](docs/compatibility.md).
-- Command Line Tools (`clang` and `swiftc`) to build from source. Install them
-  with `xcode-select --install`; full Xcode is not required.
+- A compatible AirPods or Beats device connected as an output device. See [device compatibility](docs/compatibility.md).
+- Command Line Tools (`clang` and `swiftc`) to build from source. Install them with `xcode-select --install`; full Xcode is not required.
 
 ## Install
 
@@ -61,8 +51,7 @@ operation and exits. It does not poll in the background or automate the UI.
 brew install raulgg/tap/airpods-control
 ```
 
-The formula downloads the source and compiles it locally. There are no prebuilt
-binaries.
+The formula downloads the source and compiles it locally. There are no prebuilt binaries.
 
 ### From source
 
@@ -73,17 +62,13 @@ make
 sudo make install
 ```
 
-By default, `make install` uses `/usr/local`. It honors `PREFIX` and `DESTDIR`,
-so a user-local installation needs no `sudo`:
+By default, `make install` uses `/usr/local`. It honors `PREFIX` and `DESTDIR`, so a user-local installation needs no `sudo`:
 
 ```sh
 make install PREFIX="$HOME/.local"
 ```
 
-The build produces a universal (arm64 + x86_64), ad-hoc-signed executable and
-its companion `avbypass.dylib`. Run `sudo make uninstall` to uninstall,
-`make clean` to remove build artifacts, or `make test` to run the
-device-independent test suite.
+The build produces a universal (arm64 + x86_64), ad-hoc-signed executable and its companion `avbypass.dylib`. Run `sudo make uninstall` to uninstall, `make clean` to remove build artifacts, or `make test` to run the device-independent test suite.
 
 ## Quick start
 
@@ -108,14 +93,7 @@ airpods-control --device "My AirPods Pro" listening-mode get
 airpods-control status --device "My AirPods Pro" --json
 ```
 
-`listening-mode` can be shortened to `lm`, and `conversation-awareness` to
-`ca`; `status` has no alias. Without `--device`, `status` reports every
-compatible connected AirPods or Beats device, while the individual resource
-commands continue to use the first compatible device. Run
-`airpods-control --help` for built-in help. The
-[complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics,
-write verification, and exit codes. After installation, you can also run
-`man airpods-control`.
+`listening-mode` can be shortened to `lm`, and `conversation-awareness` to `ca`; `status` has no alias. Without `--device`, `status` reports every compatible connected AirPods or Beats device, while the individual resource commands continue to use the first compatible device. Run `airpods-control --help` for built-in help. The [complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics, write verification, and exit codes. After installation, you can also run `man airpods-control`.
 
 ## Documentation
 
@@ -126,79 +104,39 @@ write verification, and exit codes. After installation, you can also run
 
 ## How it works
 
-macOS exposes these controls through the private, undocumented
-`AVOutputDevice` API in `AVRouting.framework`. The shared system audio context
-requires the private `com.apple.avfoundation.allow-system-wide-context`
-entitlement.
+macOS exposes these controls through the private, undocumented `AVOutputDevice` API in `AVRouting.framework`. The shared system audio context requires the private `com.apple.avfoundation.allow-system-wide-context` entitlement.
 
-The small interpose library in
-[`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c) satisfies that one
-entitlement check inside the short-lived `airpods-control` process. It passes
-all other entitlement queries through unchanged. The library does not elevate
-privileges or affect other processes. It leaves system protections in place,
-does not access user data, and makes no network connections.
+The small interpose library in [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c) satisfies that one entitlement check inside the short-lived `airpods-control` process. It passes all other entitlement queries through unchanged. The library does not elevate privileges or affect other processes. It leaves system protections in place, does not access user data, and makes no network connections.
 
-The interpose requires an ad-hoc-signed binary. A notarized binary with the
-hardened runtime enforces library validation, which blocks the inserted
-library. For that reason, the project is distributed as source. Review the
-[security documentation](SECURITY.md) and the source before building.
+The interpose requires an ad-hoc-signed binary. A notarized binary with the hardened runtime enforces library validation, which blocks the inserted library. For that reason, the project is distributed as source. Review the [security documentation](SECURITY.md) and the source before building.
 
 ## Compatibility
 
-Apple can change or remove this private API in any macOS update. The tool
-probes known selector variants and checks each required selector before use. If
-a capability is unavailable, it reports `no-device` or `unsupported` instead
-of sending an unrecognized selector.
+Apple can change or remove this private API in any macOS update. The tool probes known selector variants and checks each required selector before use. If a capability is unavailable, it reports `no-device` or `unsupported` instead of sending an unrecognized selector.
 
-Use `--debug` to distinguish a missing private selector from an unavailable
-device or hardware feature.
+Use `--debug` to distinguish a missing private selector from an unavailable device or hardware feature.
 
-The CLI has only been verified with AirPods Pro 3. Other AirPods may work when
-macOS exposes the same private audio capabilities. We have not verified Beats,
-but reports are welcome; a report does not by itself make a device supported.
-See the [device and capability matrix](docs/compatibility.md).
+The CLI has only been verified with AirPods Pro 3. Other AirPods may work when macOS exposes the same private audio capabilities. We have not verified Beats, but reports are welcome; a report does not by itself make a device supported. See the [device and capability matrix](docs/compatibility.md).
 
 To share compatibility details:
 
-1. Connect exactly one compatible AirPods or Beats device as a macOS output
-   device.
+1. Connect exactly one compatible AirPods or Beats device as a macOS output device.
 2. Run `airpods-control support-report`.
 3. Choose whether to run the consented write tests when asked.
-4. Read the report. You can then open a GitHub issue form with the generated
-   compatibility field and title prefilled.
-5. Add any optional notes, confirm that you reviewed the report for private
-   information, and submit it.
+4. Read the report. You can then open a GitHub issue form with the generated compatibility field and title prefilled.
+5. Add any optional notes, confirm that you reviewed the report for private information, and submit it.
 
-The report is built locally and shown to you before anything else happens. The
-terminal groups the data under Device, Capabilities, and Write tests, and the
-GitHub issue field uses the same data formatted as Markdown. The report contains
-only a fixed set of compatibility metadata. The command never reads the
-customizable device name, firmware version, serial numbers, Bluetooth/MAC
-addresses, account data, or raw system dumps and logs. It never uses the
-clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub
-form is always your explicit choice, and GitHub does not submit it for you.
+The report is built locally and shown to you before anything else happens. The terminal groups the data under Device, Capabilities, and Write tests, and the GitHub issue field uses the same data formatted as Markdown. The report contains only a fixed set of compatibility metadata. The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It never uses the clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub form is always your explicit choice, and GitHub does not submit it for you.
 
-The optional write tests run only with your consent (the interactive question or
-`--with-write-tests`). They temporarily switch through the advertised listening
-modes recognized by this CLI, toggle Conversation Awareness, and then try to
-restore the captured initial settings. The tests may be disruptive: mode
-switches are audible and noise control changes while the device is worn. Do not
-run them during a call. Consent only if you accept this. Without consent,
-`support-report` does not change device settings or intentionally interrupt
-audio.
+The optional write tests run only with your consent (the interactive question or `--with-write-tests`). They temporarily switch through the advertised listening modes recognized by this CLI, toggle Conversation Awareness, and then try to restore the captured initial settings. The tests may be disruptive: mode switches are audible and noise control changes while the device is worn. Do not run them during a call. Consent only if you accept this. Without consent, `support-report` does not change device settings or intentionally interrupt audio.
 
-The [CLI reference](docs/cli.md#contributor-compatibility-report) documents the
-exact report contents and privacy rules, and its
-[write-test section](docs/cli.md#consented-write-tests) covers the plan, skip
-rules, verdict vocabulary, restoration behavior, and exit codes.
+The [CLI reference](docs/cli.md#contributor-compatibility-report) documents the exact report contents and privacy rules, and its [write-test section](docs/cli.md#consented-write-tests) covers the plan, skip rules, verdict vocabulary, restoration behavior, and exit codes.
 
 ## Credits
 
-[NoiseBuddy](https://github.com/insidegui/NoiseBuddy) by Guilherme Rambo
-documented the AVFoundation technique used by this project.
+[NoiseBuddy](https://github.com/insidegui/NoiseBuddy) by Guilherme Rambo documented the AVFoundation technique used by this project.
 
-`airpods-control` is an independent tool and is not endorsed by Apple. AirPods
-and AirPods Pro are trademarks of Apple Inc.
+`airpods-control` is an independent tool and is not endorsed by Apple. AirPods and AirPods Pro are trademarks of Apple Inc.
 
 ## License
 
