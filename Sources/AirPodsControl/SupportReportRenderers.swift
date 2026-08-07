@@ -158,7 +158,7 @@ enum SupportReportTerminalRenderer {
   private static func terminalListeningModes(_ modes: [ListeningMode]) -> String {
     modes.isEmpty
       ? "Unavailable / not reported"
-      : modes.map(terminalModeName).joined(separator: ", ")
+      : modes.map(\.displayName).joined(separator: ", ")
   }
 
   private static func terminalListeningModeQuery(
@@ -204,21 +204,12 @@ enum SupportReportTerminalRenderer {
     _ operation: SupportReportDocument.WriteTestResult.Operation
   ) -> String {
     switch operation {
-    case let .listeningMode(mode): return terminalModeName(mode)
+    case let .listeningMode(mode): return mode.displayName
     case .listeningModes: return "Listening modes"
     case .capturedInitialListeningMode: return "Captured initial mode"
     case .remainingListeningModes: return "Remaining mode tests"
     case .conversationAwareness: return "Conversation Awareness"
     case .conversationAwarenessRestoration: return "CA restoration"
-    }
-  }
-
-  private static func terminalModeName(_ mode: ListeningMode) -> String {
-    switch mode {
-    case .off: return "Off"
-    case .transparency: return "Transparency"
-    case .adaptive: return "Adaptive"
-    case .noiseCancellation: return "Noise cancellation"
     }
   }
 
@@ -280,7 +271,7 @@ enum SupportReportTerminalRenderer {
   ) -> String {
     switch problem {
     case let .listeningMode(mode):
-      return "listening mode is now \(mode.map(terminalModeName) ?? "unknown")"
+      return "listening mode is now \(mode?.displayName ?? "unknown")"
     case let .conversationAwareness(enabled):
       let state = enabled.map { $0 ? "on" : "off" } ?? "unknown"
       return "Conversation Awareness is now \(state)"

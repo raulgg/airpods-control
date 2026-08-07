@@ -209,15 +209,41 @@ enum SupportReportWriteTester {
   // prompt and the docs promise.
   static let listeningModeHold: TimeInterval = 2
 
-  static func run(device: any CompatibleAudioDevice) -> SupportReportWriteTestResults {
-    run(plan: SupportReportWriteTestPlan.make(device: device), device: device)
+  static func run(
+    device: any CompatibleAudioDevice,
+    progress: @escaping (SupportReportWriteTestProgressEvent) -> Void = { _ in }
+  ) -> SupportReportWriteTestResults {
+    run(
+      plan: SupportReportWriteTestPlan.make(device: device),
+      device: device,
+      progress: progress
+    )
   }
 
   static func run(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
     interruptionSignal: () -> Int32? = { nil },
-    writeError: (String) -> Void = { fputs($0, stderr) }
+    writeError: (String) -> Void = { fputs($0, stderr) },
+    progress: @escaping (SupportReportWriteTestProgressEvent) -> Void = { _ in }
+  ) -> SupportReportWriteTestResults {
+    reportingProgress(for: plan, to: progress) { reporter in
+      execute(
+        plan: plan,
+        device: device,
+        interruptionSignal: interruptionSignal,
+        writeError: writeError,
+        progress: reporter
+      )
+    }
+  }
+
+  private static func execute(
+    plan: SupportReportWriteTestPlan,
+    device: any CompatibleAudioDevice,
+    interruptionSignal: () -> Int32?,
+    writeError: (String) -> Void,
+    progress: SupportReportWriteTestProgressReporter
   ) -> SupportReportWriteTestResults {
     var interruptedBySignal: Int32?
     // The nil guard makes the nil-to-signal transition unique, so the notice
@@ -225,7 +251,8 @@ enum SupportReportWriteTester {
     func observeInterruption() -> Int32? {
       if interruptedBySignal == nil {
         interruptedBySignal = interruptionSignal()
-        if interruptedBySignal != nil {
+        if let interruptedBySignal {
+          progress.interrupted(by: interruptedBySignal)
           writeError(interruptionNotice)
         }
       }
@@ -233,10 +260,16 @@ enum SupportReportWriteTester {
     }
 
     let listeningModes = testListeningModes(
-      plan: plan, device: device, observeInterruption: observeInterruption
+      plan: plan,
+      device: device,
+      observeInterruption: observeInterruption,
+      progress: progress
     )
     let conversationAwareness = testConversationAwareness(
-      plan: plan, device: device, observeInterruption: observeInterruption
+      plan: plan,
+      device: device,
+      observeInterruption: observeInterruption,
+      progress: progress
     )
     // A signal arriving during the last writes is still latched and
     // announced even though no test remains to observe it.
@@ -251,57 +284,83 @@ enum SupportReportWriteTester {
   static func runInterruptibly(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
-    writeError: (String) -> Void = { fputs($0, stderr) }
+    writeError: (String) -> Void = { fputs($0, stderr) },
+    progress: @escaping (SupportReportWriteTestProgressEvent) -> Void = { _ in }
   ) -> SupportReportWriteTestResults {
-    guard let monitor = SupportReportTerminationMonitor() else {
-      return run(
-        plan: plan.skippingAll(
-          reason: "termination-signal monitor unavailable, nothing written"
-        ),
-        device: device
+    reportingProgress(for: plan, to: progress) { reporter in
+      guard let monitor = SupportReportTerminationMonitor() else {
+        return execute(
+          plan: plan.skippingAll(
+            reason: "termination-signal monitor unavailable, nothing written"
+          ),
+          device: device,
+          interruptionSignal: { nil },
+          writeError: writeError,
+          progress: reporter
+        )
+      }
+      let results = execute(
+        plan: plan,
+        device: device,
+        interruptionSignal: { monitor.caughtSignal },
+        writeError: writeError,
+        progress: reporter
       )
+      // A signal first surfaced by disarm arrived after the final checkpoint,
+      // when every write and restoration attempt had already finished, so no
+      // restoration notice is written for it.
+      return results.recordingLateSignal(monitor.disarm())
     }
-    let results = run(
-      plan: plan,
-      device: device,
-      interruptionSignal: { monitor.caughtSignal },
-      writeError: writeError
-    )
-    // A signal first surfaced by disarm arrived after the final checkpoint,
-    // when every write and restoration attempt had already finished, so no
-    // restoration notice is written for it.
-    return results.recordingLateSignal(monitor.disarm())
+  }
+
+  private static func reportingProgress(
+    for plan: SupportReportWriteTestPlan,
+    to report: @escaping (SupportReportWriteTestProgressEvent) -> Void,
+    _ run: (SupportReportWriteTestProgressReporter) -> SupportReportWriteTestResults
+  ) -> SupportReportWriteTestResults {
+    let reporter = SupportReportWriteTestProgressReporter(plan: plan, report: report)
+    reporter.preparing()
+    defer { reporter.finished() }
+    let results = run(reporter)
+    if !results.fullyRestored {
+      reporter.restorationFailed()
+    }
+    return results
   }
 
   // Revalidates the consented plan against the live device before writing.
   private static func testListeningModes(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
-    observeInterruption: () -> Int32?
+    observeInterruption: () -> Int32?,
+    progress: SupportReportWriteTestProgressReporter
   ) -> CapabilityWriteTestOutcome<SupportReportWriteTestResults.ListeningModeTestRun> {
-    if let reason = plan.modeTestsSkippedReason {
+    func skipped(_ reason: String) -> CapabilityWriteTestOutcome<
+      SupportReportWriteTestResults.ListeningModeTestRun
+    > {
+      progress.skippedListeningModes()
       return .skipped(reason: reason)
     }
+
+    if let reason = plan.modeTestsSkippedReason {
+      return skipped(reason)
+    }
     if observeInterruption() != nil {
-      return .skipped(reason: "interrupted before test")
+      return skipped("interrupted before test")
     }
     guard device.canSetListeningMode() else {
-      return .skipped(reason: "setter no longer exposed, nothing written")
+      return skipped("setter no longer exposed, nothing written")
     }
     guard Set(plan.listeningModes).isSubset(of: Set(device.availableListeningModes()))
     else {
-      return .skipped(
-        reason: "planned listening modes are no longer advertised, nothing written"
-      )
+      return skipped("planned listening modes are no longer advertised, nothing written")
     }
     guard device.currentListeningMode() == plan.initialListeningMode else {
-      return .skipped(
-        reason: "initial state changed after planning, nothing written"
-      )
+      return skipped("initial state changed after planning, nothing written")
     }
     guard let initialMode = plan.initialListeningMode else {
       // make() never plans mode tests without a readable initial mode.
-      return .skipped(reason: "initial state unreadable, nothing written")
+      return skipped("initial state unreadable, nothing written")
     }
 
     let transparencySupported = plan.listeningModes.contains(.transparency)
@@ -309,25 +368,31 @@ enum SupportReportWriteTester {
     var stoppedAfterSetterError = false
     for target in plan.listeningModeTargets {
       if observeInterruption() != nil { break }
+      progress.started(.listeningMode(target))
       let test = testListeningMode(
         target, device: device, transparencySupported: transparencySupported
       )
       tests.append(test)
       if !test.write.setterAccepted {
         stoppedAfterSetterError = true
+        _ = observeInterruption()
         break
       }
       if observeInterruption() != nil { break }
     }
+    let untestedTargets = plan.listeningModeTargets.dropFirst(tests.count)
+    progress.skipped(untestedTargets.map { .listeningMode($0) })
 
     let restoration: RestorationOutcome<SupportReportWriteTestResults.ListeningModeTest>
     if device.currentListeningMode() != initialMode {
+      progress.started(.listeningModeRestoration)
       restoration = .attempted(
         testListeningMode(
           initialMode, device: device, transparencySupported: transparencySupported
         )
       )
     } else {
+      progress.skipped(.listeningModeRestoration)
       restoration = .stateNeverChanged
     }
     let finalMode = device.currentListeningMode()
@@ -346,41 +411,47 @@ enum SupportReportWriteTester {
   private static func testConversationAwareness(
     plan: SupportReportWriteTestPlan,
     device: any CompatibleAudioDevice,
-    observeInterruption: () -> Int32?
+    observeInterruption: () -> Int32?,
+    progress: SupportReportWriteTestProgressReporter
   ) -> CapabilityWriteTestOutcome<
     SupportReportWriteTestResults.ConversationAwarenessTestRun
   > {
-    if let reason = plan.conversationAwarenessSkippedReason {
+    func skipped(_ reason: String) -> CapabilityWriteTestOutcome<
+      SupportReportWriteTestResults.ConversationAwarenessTestRun
+    > {
+      progress.skippedConversationAwareness()
       return .skipped(reason: reason)
     }
+
+    if let reason = plan.conversationAwarenessSkippedReason {
+      return skipped(reason)
+    }
     if observeInterruption() != nil {
-      return .skipped(reason: "interrupted before test")
+      return skipped("interrupted before test")
     }
     guard device.supportsConversationAwareness() == true,
           device.canSetConversationAwareness()
     else {
-      return .skipped(
-        reason: "capability or setter no longer exposed, nothing written"
-      )
+      return skipped("capability or setter no longer exposed, nothing written")
     }
     let currentState = device.conversationAwarenessState()
     if observeInterruption() != nil {
-      return .skipped(reason: "interrupted before test")
+      return skipped("interrupted before test")
     }
     guard currentState == plan.initialConversationAwareness else {
-      return .skipped(
-        reason: "initial state changed after planning, nothing written"
-      )
+      return skipped("initial state changed after planning, nothing written")
     }
     guard let initialState = plan.initialConversationAwareness else {
       // make() never plans this test without a readable initial state.
-      return .skipped(reason: "initial state unreadable, nothing written")
+      return skipped("initial state unreadable, nothing written")
     }
 
+    progress.started(.conversationAwareness)
     let toggled = device.setConversationAwarenessAndReadBack(!initialState)
     _ = observeInterruption()
     let restoration: RestorationOutcome<WriteAttempt<Bool>>
     if toggled.observed != initialState {
+      progress.started(.conversationAwarenessRestoration)
       restoration = .attempted(
         WriteAttempt(
           requested: initialState,
@@ -388,6 +459,7 @@ enum SupportReportWriteTester {
         )
       )
     } else {
+      progress.skipped(.conversationAwarenessRestoration)
       restoration = .stateNeverChanged
     }
     let finalState = device.conversationAwarenessState()
