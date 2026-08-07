@@ -32,5 +32,3 @@ body:
       options:
         - label: I searched existing issues for this request.
           required: true
-        - label: I understand this project is limited by an undocumented macOS API.
-          required: true

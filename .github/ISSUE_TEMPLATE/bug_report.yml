@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. Do not disclose vulnerabilities here; use the private security-reporting link instead.
+        Do not report vulnerabilities here. Use the Security vulnerability link on the issue chooser.
 
   - type: input
     id: version
@@ -29,15 +29,15 @@ body:
   - type: input
     id: hardware
     attributes:
-      label: AirPods model
-      placeholder: AirPods Pro (2nd generation)
+      label: Device model
+      placeholder: AirPods Pro (2nd generation) or Beats Studio Pro
     validations:
       required: true
 
   - type: textarea
     id: command
     attributes:
-      label: Command and output
+      label: Command and terminal output
       description: Include the command, stdout, stderr, and exit code. Redact device names and other personal information.
       render: console
     validations:

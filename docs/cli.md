@@ -96,7 +96,7 @@ On hardware without Conversation Awareness, the command prints `unsupported` and
 
 `status` reads the current listening mode and Conversation Awareness state in one command. It does not report battery levels, device metadata beyond the name required to identify each record, or other settings. Compatibility metadata and consented write tests remain the separate responsibility of `support-report`.
 
-Without `--device`, it emits one record for every connected output device that passes the CLI's existing capability-based compatibility check. This includes compatible Beats as well as AirPods; `status` does not add a product-family filter. Records preserve the order supplied by the private macOS system audio routing context. That is the closest implementable proxy for the order shown by macOS, but the API is undocumented and Apple does not guarantee an exact or stable UI ordering.
+Without `--device`, it emits one record for every compatible connected output device, including Beats. Records follow the system audio routing discovery order, which the private API does not guarantee to be stable.
 
 With `--device`, the command emits one record for the unique case-insensitive whole-name match. A missing or ambiguous name fails with `no-device`; it never selects one of several matches. Every plain-text record has a heading, including a selected singleton:
 
@@ -110,7 +110,7 @@ Studio Beats:
   Listening mode: adaptive
 ```
 
-Device headings retain ordinary printable Unicode but render backslash, newline, carriage return, and tab as `\\`, `\n`, `\r`, and `\t`. Other control characters and the Unicode line and paragraph separators use `\u{XXXX}` form, so one device name cannot create extra terminal lines or alter the record layout. Escaping applies only to the plain heading; JSON retains the original name and uses normal JSON string escaping. Fields are indented beneath the heading in Listening mode, Conversation Awareness, Read errors order, omitting inapplicable lines, and records are separated by one blank line.
+Device headings retain ordinary printable Unicode but render backslash, newline, carriage return, and tab as `\\`, `\n`, `\r`, and `\t`. Other control characters and the Unicode line and paragraph separators use `\u{XXXX}` form, so a device name cannot alter the record layout. This applies only to the plain heading. JSON retains the original name and uses normal JSON string escaping. Fields appear beneath the heading in Listening mode, Conversation Awareness, and Read errors order. Inapplicable lines are omitted, and records are separated by one blank line.
 
 A field is omitted only when the device is known not to support that feature. An unresolved read follows the corresponding individual getter: listening mode appears as `unknown`, while Conversation Awareness appears as `unsupported`. Either state is JSON `null`, with its canonical key still present. A genuine read failure keeps that same fallback state and also adds a plain summary such as `  Read errors: Listening mode, Conversation Awareness` (errored labels only, in that fixed order) or an `errors` object in that device's JSON record. One failed field does not hide a successfully read field or stop the remaining devices from being sampled.
 
@@ -125,7 +125,7 @@ My AirPods Pro:
 
 A record whose two fields are both proven unsupported still appears, but has only its device heading in plain output and only `device` in JSON.
 
-The command succeeds when at least one selected device produces any usable, unresolved, or unsupported status result. It exits `5` with the distinct `read-error` result only when every selected device produces only genuine read errors—there is no usable, unresolved, or proven-unsupported field. Argument and device-selection failures retain their own results and exit codes.
+The command succeeds when at least one selected device produces any usable, unresolved, or unsupported status result. It exits `5` with `read-error` only when every selected device produces genuine read errors and no usable, unresolved, or proven-unsupported field. Argument and device-selection failures retain their own results and exit codes.
 
 If no compatible device is connected, plain output is exactly:
 
@@ -135,7 +135,7 @@ No compatible AirPods or Beats device is connected.
 
 The corresponding JSON is exactly `{"devices":[],"error":"no-device","result":"error"}`. This contract also applies when `--device` has no unique match.
 
-`status` state sampling is read-only. It reads each field once per device, without polling, retrying, waiting for settings to settle, or inspecting how many earbuds are worn. One-earbud operation therefore uses the same per-feature availability and getter behavior as the individual commands.
+`status` takes a read-only snapshot. One-earbud operation uses the same feature availability and getter behavior as the individual commands.
 
 ## Contributor compatibility report
 
@@ -185,11 +185,9 @@ Review complete. Nothing has been submitted to GitHub.
 Open the prefilled GitHub issue form in your browser? [y/N]
 ```
 
-The terminal report uses plain text with separate Device, Capabilities, and Write tests sections. Labels align in an 88-column layout and long values wrap. When stdout is a terminal, color distinguishes headings and statuses. Redirected output is plain text; `NO_COLOR` or `TERM=dumb` also disables color.
-
 The read-only compatibility document includes only the normalized model identifier, the advertised listening modes, the advertised Conversation Awareness capability, whether the listening-mode and Conversation Awareness queries answer, whether macOS exposes their setters, the macOS version, and the CLI version. The model name is resolved locally: the model identifier embeds the Bluetooth product ID, and the CLI maps known product IDs to model names (see the [device compatibility matrix](compatibility.md)).
 
-Unknown advertised listening modes appear verbatim under `Other modes`. The report lists at most six and drops names outside its character allowlist. Missing values appear as `Unavailable / not reported`. The command does not guess them.
+Unknown advertised listening modes that can be represented safely appear under `Other modes`. Missing values appear as `Unavailable / not reported`; the command does not guess them.
 
 The read-only report says whether queries answer and setters exist, but it does not include the setting values returned by those queries and never invokes a setter. A consented run reads setting values locally only to plan, verify, and restore its writes. If restoration cannot be verified, the report names the final state so it can be restored manually.
 
@@ -201,15 +199,15 @@ The command never reads the customizable device name, firmware version, serial n
 
 When at least one write test can be planned safely, an interactive `support-report` captures the initial settings and advertised capabilities, displays that plan, and asks for consent. The default answer is no. Declining produces the read-only report, marked `Write tests: not run`. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped rather than replaced with a different write.
 
-The listening-mode plan contains the advertised modes recognized by this CLI. It attempts each noninitial mode and, if the state changed, restores the captured initial mode last. All listening-mode writes are skipped if the setter is missing, the initial mode is unreadable or not advertised, or there is no alternate recognized advertised mode to test. Each completed listening-mode write is held for about two seconds before the next write or before the report is printed.
+The listening-mode plan contains the advertised modes recognized by this CLI. It attempts each noninitial mode and, if the state changed, restores the captured initial mode last. All listening-mode writes are skipped if the setter is missing, the initial mode is unreadable or not advertised, or there is no alternate recognized advertised mode to test.
 
 Conversation Awareness is toggled away from the captured initial state and back. It is skipped if its setter or initial state is unavailable. Both features use the same bounded readback verification as their operational commands.
 
 The tests may be disruptive: mode switches are audible, noise control changes while the device is worn, and Conversation Awareness toggles briefly. Do not run them during a call. Consent only if you accept this.
 
-After normal completion or a setter error, the command makes one restoration attempt if needed. An accepted write whose readback does not verify is reported as a `no-op` and does not stop the remaining tests. A setter rejection is reported as `setter error` and stops the remaining tests for that setting. Each write gets its own result row, so a restoration failure is attributed to the restoring write rather than folded into the write it was restoring, and a Conversation Awareness toggle that verified stays visible even when its restore then fails. A write whose target already equals the state read immediately before it (for example after an Off write fell back to Transparency) cannot demonstrate a transition; if its readback still matches, both output adapters report it as `inconclusive (already in this state; no transition demonstrated)` rather than `verified`.
+After normal completion or a setter error, the command makes one restoration attempt if needed. An accepted write that cannot be verified is a `no-op` and does not stop the remaining tests. A `setter error` stops the remaining tests for that setting. A write whose target already matches the state read immediately before it cannot demonstrate a transition and is `inconclusive (already in this state; no transition demonstrated)`, not `verified`.
 
-The terminal always states the restoration outcome: `RESTORED`, `NOT NEEDED`, or `NOT RESTORED`. A failed restoration names the final state, gives a manual-fix hint, and exits `3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the tests stops further writes, prints `Interrupt caught; restoring initial settings...` on stderr, attempts restoration first, prints any restoration warning, and then exits `129`, `130`, or `143`, respectively. SIGKILL, a process crash, or power loss cannot guarantee restoration. The CLI does not generate thread-directed signals; those are outside this process-signal guarantee. An interrupted run does not offer or print an issue-form URL. A consented report shows each result and a compact summary:
+The terminal always states the restoration outcome: `RESTORED`, `NOT NEEDED`, or `NOT RESTORED`. A failed restoration names the final state, gives a manual-fix hint, and exits `3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the tests stops further writes, prints `Interrupt caught; restoring initial settings...` on stderr, attempts restoration first, prints any restoration warning, and then exits `129`, `130`, or `143`, respectively. SIGKILL, a process crash, or power loss cannot guarantee restoration. An interrupted run does not offer or print an issue-form URL. A consented report shows each result and a compact summary:
 
 ```console
 $ airpods-control support-report --with-write-tests
@@ -231,15 +229,13 @@ Write tests
 Review complete. Nothing has been submitted to GitHub.
 ```
 
-The GitHub report uses the same Device, Capabilities, and Write tests sections. It includes every per-mode verdict but omits the restoration status and the terminal review footer; the issue form supplies the Compatibility report heading. The listening-mode row that restored the initial mode carries no restore label, and if the state never left the captured initial mode, the untested `listening-mode set` row does not name that mode.
-
 `--with-write-tests` answers the consent question with yes and is the only way to run the tests when standard input is not interactive, for example under a script. `--no-write-tests` answers it with no. Without a flag, a noninteractive run skips the tests and notes the flag on stderr.
 
-After the write-test prompt and any tests finish, the report appears in the terminal before the issue-opening question. The GitHub issue form keeps the generated Compatibility report separate from optional contributor notes and requires an unchecked privacy-review confirmation. It adds the `compatibility` label and assigns the issue to `raulgg`; you still review and submit the issue.
+After the write-test prompt and any tests, the report appears before the issue-opening question. Review it before submitting the issue and complete the required privacy confirmation. If the report cannot be prefilled, the CLI prints a Markdown `GitHub report` block; paste that block into the Compatibility report field.
 
-The CLI selects `compatibility-report.yml`, prefills the dynamic title through GitHub's `title` query parameter, and prefills the generated report through the form field ID `report`. If the encoded URL is too long, the command leaves the report in the terminal and opens the same form with the title but without the report field. Copy the reviewed terminal report into the required Compatibility report field.
+The GitHub report includes the individual write-test verdicts but not the terminal's `RESTORED` or `NOT RESTORED` summary. Check that summary locally and describe any restoration failure in Additional notes.
 
-The issue-opening question is asked only when standard input is interactive. For a completed run under a script, pipeline, or CI, the command prints the report and writes the issue form URL to stderr without prompting or opening a browser, then returns the report outcome: normally `0`, or `3` when consented write tests cannot restore the initial settings. Unless the length cap above applies, that URL carries the generated report field.
+The issue-opening question is asked only when standard input is interactive. Under a script, pipeline, or CI, the command prints the report and writes the issue form URL to stderr without prompting or opening a browser. On normal completion it returns `0`, or `3` if consented write tests could not restore the initial settings. The signal exit codes described above still apply to an interrupted run.
 
 ## Target a device
 
@@ -314,19 +310,15 @@ info: selected_device="My AirPods Pro"
 transparency
 ```
 
-Debug output includes bypass and re-exec status, framework and selector discovery, compatible devices, exact-name selection, raw modes, capability checks, writes, and read-back attempts. It does not change stdout, JSON, or the exit code, so stdout remains safe to pipe or parse.
+Debug output covers the entitlement bypass, private API discovery, compatible devices, selection, capabilities, reads, and writes. It does not change stdout, JSON, or the exit code, so stdout remains safe to pipe or parse.
 
-For `status`, diagnostics follow each one-pass per-device field read. Debugging does not add retries, change device ordering, or change whether a field is omitted, null, or reported in the record's `errors` map.
-
-`support-report` accepts `--debug` too, and it is the fastest way to see why a device is not recognized: which context selector answered, how many compatible devices were found, and what the device advertised verbatim. Because `support-report` resolves its device without reading names, no debug line carries the customizable device name; selection logs `name-not-read` instead. The diagnostics share stderr with the consent and issue-form prompts, so the questions appear among them.
-
-Unlike the report, the debug stream is not filtered through the report's character allowlist. It can name the installed dylib path, which includes a home directory for a source build. Review it before pasting it into an issue.
+`support-report` also accepts `--debug`. Its diagnostics explain device discovery and advertised capabilities without reading the customizable device name, but they can include the installed dylib path and therefore a home directory in a source build. Debug output from operational commands can also contain selected device names. Review diagnostics before pasting them into an issue.
 
 ## Write verification
 
-Listening-mode writes are checked every 50 ms while the device settles. Non-`off` writes return when the target is observed, within about 800 ms. Changed `off` writes use a 1.5-second window because their fallback can bounce between modes.
+Listening-mode writes use a bounded readback window while the device settles.
 
-When the setter accepts `off` but the change cannot be verified and the device advertises Transparency, `set off` and explicit cycles into `off` report `no-op` with `listeningMode: "transparency"`. This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. With `--debug`, `verify.listening_mode.inferred_off_fallback=true` marks this inference. For rejected writes or devices without Transparency, the response contains the final observed canonical mode or `null`.
+When the setter accepts `off` but the change cannot be verified and the device advertises Transparency, `set off` and explicit cycles into `off` report `no-op` with `listeningMode: "transparency"`. This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. For rejected writes or devices without Transparency, the response contains the final observed canonical mode or `null`.
 
 ## Exit codes
 

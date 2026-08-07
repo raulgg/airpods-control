@@ -4,7 +4,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/airpods-control-banner-dark.png">
     <source media="(prefers-color-scheme: light)" srcset=".github/assets/airpods-control-banner-light.png">
-    <img alt="airpods-control — AirPods controls, straight from your terminal." src=".github/assets/airpods-control-banner-light.png" width="100%">
+    <img alt="airpods-control: AirPods controls, straight from your terminal." src=".github/assets/airpods-control-banner-light.png" width="100%">
   </picture>
 </p>
 
@@ -27,7 +27,7 @@ $ airpods-control listening-mode set noise-cancellation
 ok
 ```
 
-`airpods-control` talks directly to the macOS system audio daemon through the private AVFoundation API used by AirPods. Changes take effect immediately and display the same on-screen banner as a stem press. The command performs one operation and exits. It does not poll in the background or automate the UI.
+`airpods-control` talks directly to the macOS system audio daemon through the private AVFoundation API used by AirPods. Successful changes take effect immediately and display the same on-screen banner as a stem press. Each operational command performs one operation and exits without polling in the background or automating the UI.
 
 ## Features
 
@@ -35,7 +35,7 @@ ok
 - Read or set Conversation Awareness.
 - Report listening mode and Conversation Awareness for every connected compatible AirPods or Beats device with one `status` command.
 - Select a compatible output device by exact name.
-- Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`. Stdout is stable, exit codes are documented, JSON is available, and stderr diagnostics are opt-in.
+- Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`. Operational commands have stable stdout, documented exit codes, JSON output, and opt-in debug diagnostics.
 
 ## Requirements
 
@@ -68,7 +68,7 @@ By default, `make install` uses `/usr/local`. It honors `PREFIX` and `DESTDIR`, 
 make install PREFIX="$HOME/.local"
 ```
 
-The build produces a universal (arm64 + x86_64), ad-hoc-signed executable and its companion `avbypass.dylib`. Run `sudo make uninstall` to uninstall, `make clean` to remove build artifacts, or `make test` to run the device-independent test suite.
+The build produces a universal (arm64 + x86_64), ad-hoc-signed executable and its companion `avbypass.dylib`. Run `sudo make uninstall` to remove them.
 
 ## Quick start
 
@@ -104,29 +104,22 @@ airpods-control status --device "My AirPods Pro" --json
 
 ## How it works
 
-macOS exposes these controls through the private, undocumented `AVOutputDevice` API in `AVRouting.framework`. The shared system audio context requires the private `com.apple.avfoundation.allow-system-wide-context` entitlement.
+macOS exposes these controls through the private, undocumented `AVOutputDevice` API in `AVRouting.framework`. To reach the shared system audio context, the `airpods-control` process loads the small interpose library in [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c). The library satisfies one private entitlement check inside that process and passes every other entitlement query through unchanged. It does not elevate privileges or affect other processes.
 
-The small interpose library in [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c) satisfies that one entitlement check inside the short-lived `airpods-control` process. It passes all other entitlement queries through unchanged. The library does not elevate privileges or affect other processes. It leaves system protections in place, does not access user data, and makes no network connections.
-
-The interpose requires an ad-hoc-signed binary. A notarized binary with the hardened runtime enforces library validation, which blocks the inserted library. For that reason, the project is distributed as source. Review the [security documentation](SECURITY.md) and the source before building.
+The interpose requires an ad-hoc-signed binary because the hardened runtime's library validation blocks it. The project therefore distributes source instead of prebuilt binaries. Review the source and the [security documentation](SECURITY.md) before building.
 
 ## Compatibility
 
-Apple can change or remove this private API in any macOS update. The tool probes known selector variants and checks each required selector before use. If a capability is unavailable, it reports `no-device` or `unsupported` instead of sending an unrecognized selector.
-
-Use `--debug` to distinguish a missing private selector from an unavailable device or hardware feature.
-
-The CLI has only been verified with AirPods Pro 3. Other AirPods may work when macOS exposes the same private audio capabilities. We have not verified Beats, but reports are welcome; a report does not by itself make a device supported. See the [device and capability matrix](docs/compatibility.md).
+Apple can change or remove this private API in any macOS update. The CLI has only been verified with AirPods Pro 3. Other AirPods may work when macOS exposes the same capabilities, and Beats reports are welcome, but a report does not by itself establish support. See the [device and capability matrix](docs/compatibility.md).
 
 To share compatibility details:
 
 1. Connect exactly one compatible AirPods or Beats device as a macOS output device.
 2. Run `airpods-control support-report`.
 3. Choose whether to run the consented write tests when asked.
-4. Read the report. You can then open a GitHub issue form with the generated compatibility field and title prefilled.
-5. Add any optional notes, confirm that you reviewed the report for private information, and submit it.
+4. Review the report, add any safe optional notes, complete the privacy confirmation, and submit the GitHub issue if you choose to open it.
 
-The report is built locally and shown to you before anything else happens. The terminal groups the data under Device, Capabilities, and Write tests, and the GitHub issue field uses the same data formatted as Markdown. The report contains only a fixed set of compatibility metadata. The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It never uses the clipboard, sends telemetry, or submits a report. Opening the prefilled GitHub form is always your explicit choice, and GitHub does not submit it for you.
+`support-report` builds the report locally and prints it before offering to open GitHub. It never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It does not use the clipboard, send telemetry, or submit a report. Opening the prefilled form is your choice, and GitHub still requires you to review and submit the issue.
 
 The optional write tests run only with your consent (the interactive question or `--with-write-tests`). They temporarily switch through the advertised listening modes recognized by this CLI, toggle Conversation Awareness, and then try to restore the captured initial settings. The tests may be disruptive: mode switches are audible and noise control changes while the device is worn. Do not run them during a call. Consent only if you accept this. Without consent, `support-report` does not change device settings or intentionally interrupt audio.
 
