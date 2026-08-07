@@ -1,4 +1,3 @@
-.\" Manpage for airpods-control.
 .TH AIRPODS-CONTROL 1 "August 6, 2026" "airpods-control 0.1.0" "User Commands"
 .SH NAME
 airpods-control \- control AirPods listening mode and Conversation Awareness
@@ -66,31 +65,31 @@ reads and sets the AirPods listening mode and Conversation Awareness by talking 
 .RB ( AVOutputDevice
 in
 .BR AVRouting.framework ).
-A change takes effect immediately and shows the same on-screen banner as a stem press. No Control Center, menu bar, or Accessibility permission is involved.
+A successful change takes effect immediately and shows the same on-screen banner as a stem press. No Control Center, menu bar, or Accessibility permission is involved.
 .PP
-Reaching the API requires forging one private audio entitlement
+Reaching the API requires one private audio entitlement
 .RB ( com.apple.avfoundation.allow-system-wide-context )
-inside the
+to appear present inside the
 .B airpods-control
-process via a small interpose library inserted with
-.BR DYLD_INSERT_LIBRARIES .
-See the project README and SECURITY document for the full trust model.
+process. A small interpose library loaded into that process with
+.B DYLD_INSERT_LIBRARIES
+provides that result. See the project README and SECURITY document for the full trust model.
 .SH COMMANDS
 .SS STATUS
 .TP
 .B status
-Read the current listening mode and Conversation Awareness state. There is no alias. It excludes battery information, device metadata beyond the name required to identify each record, and other settings.  Compatibility metadata and consented write tests remain in the separate
+Read the current listening mode and Conversation Awareness state. There is no alias. The output excludes battery information and device metadata other than the name used to identify each record. Compatibility metadata and consented write tests are handled by the separate
 .B support-report
 command.
 .IP
 Without
 .BR --device ,
-print one record for every connected output device accepted by the existing capability-based compatibility check, including compatible Beats; selection is not restricted to the AirPods product family. Records preserve the order supplied by the private macOS system audio-routing context. This is the closest implementable proxy for the macOS UI order, but the private API provides no exact or stable UI ordering guarantee. With
+print one record for every compatible connected output device, including Beats, in system audio-routing discovery order. The private API does not guarantee a stable order. With
 .BR --device ,
 print only the unique case-insensitive whole-name match; no match or an ambiguous match produces
 .BR no-device .
 .IP
-Plain output always places each record beneath its device-name heading, even when only one device is selected. Ordinary printable Unicode is retained; backslashes, controls, and Unicode line and paragraph separators are escaped so they cannot change the record layout. JSON retains the original name and uses normal JSON string escaping. Fields are indented in Listening mode, Conversation Awareness, Read errors order, omitting inapplicable lines, and records are separated by one blank line. For example:
+Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in Listening mode, Conversation Awareness, and Read errors order. Inapplicable lines are omitted, and records are separated by one blank line. For example:
 .nf
 .RS
 My AirPods Pro:
@@ -123,10 +122,10 @@ If no compatible device is connected, or
 .B --device
 does not identify one unique compatible device, plain output is exactly
 .BR "No compatible AirPods or Beats device is connected."
-and exit status is 1. JSON is exactly
+The exit status is 1. JSON is exactly
 .BR {\(dqdevices\(dq:[],\(dqerror\(dq:\(dqno-device\(dq,\(dqresult\(dq:\(dqerror\(dq} .
 .IP
-The command's state sampling is read-only and reads each field once per device.  State reads do not poll, retry, wait for settling, or inspect earbud count or wear state.  One-earbud operation uses the same getter and per-feature availability behavior as the individual commands.
+The command takes a read-only snapshot. One-earbud operation uses the same feature availability and getter behavior as the individual commands.
 .SS LISTENING MODE
 .TP
 .BR "listening-mode get" ", " "lm get"
@@ -175,38 +174,38 @@ contract as listening mode.
 .SS GLOBAL
 .TP
 .B support-report
-Build a local compatibility report from existing device and macOS metadata.  Exactly one compatible output device must be available: the command does not read device names, does not accept
-.BR --device ,
+Build a local compatibility report from existing device and macOS metadata. Exactly one compatible output device must be available: the command does not read device names and accepts neither
+.B --device
+nor
+.BR --json ,
 and does not choose arbitrarily among devices. With zero or multiple compatible devices it prints local instructions and exits 1 before a report, prompt, or write.
 .IP
-The read-only report includes only the normalized model identifier, the advertised listening modes, the advertised Conversation Awareness capability, whether the listening-mode and Conversation Awareness queries answer, whether macOS exposes their setters, the macOS version, and the CLI version. The model name is resolved locally from the Bluetooth product ID embedded in the model identifier. Advertised modes this CLI version does not recognize are listed verbatim, capped at six, and filtered through the report's character allowlist.  Missing data is marked unavailable or not reported; the command does not guess it. The read-only report does not include the setting values returned by the queries and never invokes a setter. A consented run reads setting values locally only to plan, verify, and restore its writes.
+The read-only report includes only the normalized model identifier, advertised listening modes, Conversation Awareness capability, whether each query answers, whether macOS exposes each setter, the macOS version, and the CLI version. The model name is resolved locally from the Bluetooth product ID in the model identifier. Unknown advertised modes are included when they can be represented safely. Missing data is marked unavailable or not reported; the command does not guess it. The report omits the setting values returned by queries and never invokes a setter without consent.
 .IP
 The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It never uses the clipboard, sends telemetry, or submits anything. A read-only report does not change device settings or intentionally interrupt audio; consented write tests temporarily change the settings in the captured plan.
 .IP
-Terminal output uses Device, Capabilities, and Write tests sections. Color distinguishes headings and statuses only when output goes to a terminal; redirected output is plain, and NO_COLOR or TERM=dumb also disables color. The GitHub issue field uses the same report data, formatted as Markdown.
+When at least one write test can be planned safely, an interactive run captures the initial settings and advertised capabilities, displays that plan, and asks for consent, defaulting to no. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped. The tests switch through recognized advertised listening modes and toggle Conversation Awareness away from the captured state and back. Mode switches are audible, and noise control changes while the device is worn. Do not run the tests during a call.
 .IP
-When at least one write test can be planned safely, an interactive run captures the initial settings and advertised capabilities, displays that plan, and asks for consent, defaulting to no. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped rather than replaced with a different write. The tests switch through the advertised listening modes this CLI recognizes and toggle Conversation Awareness away from the captured initial state and back. They are disruptive: mode switches are audible and noise control changes while the device is worn.  Do not run them during a call.
-.IP
-Each attempted write gets its own result row. Accepted but unverified writes are reported as
+An accepted but unverified write is reported as
 .BR no-op ;
-setter rejections are reported as
+a rejected setter is reported as
 .B setter error
-and stop the remaining tests for that setting; a write whose target already equals the state read immediately before it cannot demonstrate a transition and is reported as
+and stops the remaining tests for that setting. A target that already matches the state read before the write is
 .B inconclusive
 rather than
 .BR verified .
-After normal completion or a setter error, the command makes one restoration attempt if needed. An unverified restoration names the final state, gives a manual-fix hint, and exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the tests stops further writes, attempts restoration first, and then exits 129, 130, or 143, respectively; an interrupted run does not offer or print an issue-form URL. SIGKILL, a process crash, or power loss cannot guarantee restoration.
+After normal completion or a setter error, the command makes one restoration attempt if needed. An unverified restoration names the final state, gives a manual-fix hint, and exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM stops further writes, attempts restoration first, and exits 129, 130, or 143, respectively. An interrupted run does not offer an issue-form URL. SIGKILL, a process crash, or power loss cannot guarantee restoration.
 .IP
 .B --with-write-tests
 answers the consent question with yes and is the only way to run the tests noninteractively;
 .B --no-write-tests
 answers it with no.
 .IP
-The report is always printed for review before the command asks whether to open a prefilled GitHub issue form, and that question is asked only when standard input is interactive. Under a script, pipeline, or CI the command prints the report and writes the issue form URL to standard error without prompting or opening a browser, then returns the report outcome: normally 0, or 3 if consented write tests could not restore the initial settings. The prefilled Compatibility report field carries the per-mode verdicts but omits the restoration outcome. If the encoded URL is too long, the command opens the form without the report field and the contributor pastes the reviewed report in. The contributor always reviews and submits the issue.
+The report is printed for review before the command asks whether to open a prefilled GitHub issue form. If the report cannot be prefilled, copy it from the terminal. Under a script, pipeline, or CI, the command writes the issue form URL to standard error without prompting or opening a browser. On normal completion it returns 0, or 3 if write tests could not restore the initial settings; interrupted runs use the signal exit codes above. The contributor always reviews and submits the issue.
 .IP
-The CLI has only been verified with AirPods Pro 3.  Other AirPods may work when macOS exposes the same private audio capabilities.  Beats reports are welcome, but Beats support has not been verified. The CLI reference listed under
+The CLI has only been verified with AirPods Pro 3. Other AirPods may work when macOS exposes the same private audio capabilities. Beats reports are welcome, but Beats support has not been verified. The CLI reference listed under
 .B SEE ALSO
-documents the report format, the verdict vocabulary, and the issue-form URL handling in full.
+documents the report and verdicts in full.
 .TP
 .BR --version ", " -v ", " version
 Print the version and exit.
@@ -249,12 +248,12 @@ at least two distinct entries. Mode aliases are accepted. Duplicates are ignored
 (exit 2).
 .TP
 .BI "--device " name
-Target a compatible output device using a case-insensitive exact name match.  The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. No match or multiple exact matches produce
+Target a compatible output device using a case-insensitive exact name match. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. No match or multiple exact matches produce
 .BR no-device .
 .IP
 The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
 .IP
-Without this option, listening-mode and Conversation Awareness commands retain their existing behavior of using the first compatible system output device.
+Without this option, listening-mode and Conversation Awareness commands use the first compatible system output device.
 .B status
 instead reports every compatible device in preserved system audio-routing discovery order.
 .TP
@@ -281,7 +280,7 @@ and only the applicable canonical resource keys
 .B listeningMode
 and
 .BR conversationAwareness ;
-resource aliases never become JSON keys. A proven-unsupported field is omitted.  An unresolved field is present as
+resource aliases never become JSON keys. A proven-unsupported field is omitted. An unresolved field is present as
 .BR null .
 A genuine read failure adds an
 .B errors
@@ -297,17 +296,13 @@ set to
 .BR error .
 .TP
 .B --debug
-Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code.  Diagnostics cover the entitlement bypass, framework and selector discovery, device selection, raw state, capability checks, writes, and read-back attempts.  Accepted anywhere in an operational command, a global version command, or
+Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code. Diagnostics cover the entitlement bypass, private API discovery, device selection, capabilities, reads, and writes. Accepted anywhere in an operational command, a global version command, or
 .BR support-report ,
-where the diagnostics are the quickest way to see why a device is not recognized. Because
+where the diagnostics can explain why a device is not recognized.
 .B support-report
-resolves its device without reading names, no diagnostic line carries the customizable device name; selection logs
-.B name-not-read
-instead. Its diagnostics share stderr with the consent and issue-form prompts.
+does not read the customizable device name, but its diagnostics can contain the installed dylib path and therefore a home directory in a source build.
 .IP
-For
-.BR status ,
-diagnostics follow each one-pass per-device field read. They do not introduce retries, reorder devices, or change field presence or error classification.  Unlike the report, the diagnostics are not filtered through the report's character allowlist, and they can name the installed dylib path, so review them before pasting them into an issue.
+Debug output from operational commands can also contain selected device names. Review diagnostics before pasting them into an issue.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -337,11 +332,7 @@ An externally delivered SIGINT was caught during the write tests and restoration
 .B 143
 An externally delivered SIGTERM was caught during the write tests and restoration was attempted.
 .SH NOTES
-Listening-mode writes are checked every 50 milliseconds while the device settles. Modes other than
-.B off
-return when the target is observed, within about 800 milliseconds. Changed
-.B off
-writes use a 1.5-second window because their fallback can bounce between modes.  If
+Listening-mode writes use a bounded readback window while the device settles. If
 .B off
 is not verified, the setter accepted the request, and the device advertises Transparency, direct writes and explicit cycles into
 .B off
@@ -351,30 +342,14 @@ report
 .B listeningMode
 set to
 .BR transparency .
-This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. With
-.BR --debug ,
-.B verify.listening_mode.inferred_off_fallback=true
-identifies the inference. Rejected writes and devices without Transparency report the final observed canonical mode, or
+This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. Rejected writes and devices without Transparency report the final observed canonical mode, or
 .B null
 when the final readback is missing or unknown.
 .PP
-This relies on a private API and targets macOS Tahoe (26); Apple may change it in any update. The tool probes known shared-system-audio context selector variants and checks every required selector before invocation. It fails safe (reporting
+This relies on a private API and targets macOS Tahoe (26); Apple may change it in any update. Missing capabilities are reported as
 .B unsupported
 or
-.BR no-device )
-rather than crashing when selectors are missing.
-.PP
-.B support-report
-accepts no
-.B --device
-or
-.B --json
-option. Its options are
-.BR --with-write-tests ,
-.BR --no-write-tests ,
-and
-.BR --debug .
-The write-test consent prompt is device-specific; report result rows depend on the captured plan and its outcomes.
+.BR no-device .
 .SH SEE ALSO
 Project documentation: https://github.com/raulgg/airpods-control
 .PP
@@ -382,4 +357,4 @@ CLI reference: https://github.com/raulgg/airpods-control/blob/main/docs/cli.md
 .PP
 Device compatibility: https://github.com/raulgg/airpods-control/blob/main/docs/compatibility.md
 .SH AUTHOR
-Raul.  Not affiliated with Apple. AirPods is a trademark of Apple Inc.
+Raul. Not affiliated with Apple. AirPods is a trademark of Apple Inc.
