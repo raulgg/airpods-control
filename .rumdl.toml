@@ -1,0 +1,8 @@
+[global]
+exclude = [".github/PULL_REQUEST_TEMPLATE.md"]
+
+[MD013]
+reflow = true
+
+[per-file-ignores]
+"README.md" = ["MD033"]
