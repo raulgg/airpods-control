@@ -108,18 +108,18 @@ assert_contains "$("$CLI" support-report --help)" \
 assert_contains "$("$CLI" support-report --help)" \
   '--debug' "support-report debug flag help"
 
-assert_equal '0.1.0' "$("$CLI" --version)" "--version"
-assert_equal '0.1.0' "$("$CLI" -v)" "-v"
-assert_equal '0.1.0' "$("$CLI" version)" "version command"
-assert_equal '{"result":"ok","version":"0.1.0"}' \
+assert_equal '0.2.0' "$("$CLI" --version)" "--version"
+assert_equal '0.2.0' "$("$CLI" -v)" "-v"
+assert_equal '0.2.0' "$("$CLI" version)" "version command"
+assert_equal '{"result":"ok","version":"0.2.0"}' \
   "$("$CLI" --json version)" "JSON version"
 
 "$CLI" --version >"$PROBE_DIR/plain.stdout" 2>"$PROBE_DIR/plain.stderr"
-assert_equal '0.1.0' "$(cat "$PROBE_DIR/plain.stdout")" "plain stdout"
+assert_equal '0.2.0' "$(cat "$PROBE_DIR/plain.stdout")" "plain stdout"
 assert_equal '' "$(cat "$PROBE_DIR/plain.stderr")" "normal command has no diagnostics"
 
 "$CLI" --debug --version >"$PROBE_DIR/debug.stdout" 2>"$PROBE_DIR/debug.stderr"
-assert_equal '0.1.0' "$(cat "$PROBE_DIR/debug.stdout")" "debug preserves stdout"
+assert_equal '0.2.0' "$(cat "$PROBE_DIR/debug.stdout")" "debug preserves stdout"
 assert_contains "$(cat "$PROBE_DIR/debug.stderr")" \
   'debug: cli.command="version"' "debug uses stderr"
 

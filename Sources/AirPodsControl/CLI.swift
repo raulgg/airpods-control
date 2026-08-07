@@ -1,6 +1,6 @@
 import Foundation
 
-let VERSION = "0.1.0"
+let VERSION = "0.2.0"
 
 enum CLIResource {
   case listeningMode
