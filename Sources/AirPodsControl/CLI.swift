@@ -82,7 +82,7 @@ Resources:
 
 Command:
   status       Read modes and macOS audio output/input selection for every
-               compatible device, or for one device selected by name.
+               compatible AirPods or Beats device, or one selected by name.
 
 Contributor command:
   support-report
@@ -106,8 +106,9 @@ let statusHelp = """
 Usage:
   airpods-control status [--device NAME] [--json] [--debug]
 
-Read listening mode, Conversation Awareness, and whether each compatible device
-is selected as the macOS audio output or input, without changing anything.
+Read the status of every compatible AirPods or Beats device without changing
+anything: listening mode, Conversation Awareness, and whether it is selected as
+the macOS audio output or input.
 "Selected" means that the device matches the ordinary default route. It does
 not mean that audio is playing or recording. App routes, the alert route, and
 membership in a composite route do not count.
