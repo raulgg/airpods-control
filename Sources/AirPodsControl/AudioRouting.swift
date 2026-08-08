@@ -498,8 +498,8 @@ final class AudioRoutingObserver {
       logger.warning("routing.default_\(direction.logLabel).error", status)
       return .readError
     case .unavailable:
-      logger.warning("routing.default_\(direction.logLabel)", "unavailable")
-      return .readError
+      logger.debug("routing.default_\(direction.logLabel)", "unavailable")
+      return .unresolved
     case .value(nil):
       return .noDefault
     case let .value(.some(value)):
@@ -594,8 +594,8 @@ final class AudioRoutingObserver {
       logger.warning("routing.default_\(direction.logLabel)_reread.error", status)
       return .readError
     case .unavailable:
-      logger.warning("routing.default_\(direction.logLabel)_reread", "unavailable")
-      return .readError
+      logger.debug("routing.default_\(direction.logLabel)_reread", "unavailable")
+      return .unresolved
     case let .value(value):
       afterID = value
     }

@@ -602,11 +602,13 @@ func testBluetoothRequiredRouteAndClassReadStates() {
   }
   let scenarios: [Scenario] = [
     Scenario(label: "default unavailable", defaults: [.unavailable, .unavailable],
-             aggregate: .value(false), expected: .readError, mappingCalls: 0),
+             aggregate: .value(false), expected: .unresolved, mappingCalls: 0),
     Scenario(label: "default failure", defaults: [.failure(-60), .value(80)],
              aggregate: .value(false), expected: .readError, mappingCalls: 0),
     Scenario(label: "no default", defaults: [.value(nil), .value(nil)],
              aggregate: .value(false), expected: .notSelected, mappingCalls: 0),
+    Scenario(label: "default reread unavailable", defaults: [.value(80), .unavailable],
+             aggregate: .value(false), expected: .unresolved, mappingCalls: 1),
     Scenario(label: "default reread failure", defaults: [.value(80), .failure(-61)],
              aggregate: .value(false), expected: .readError, mappingCalls: 1),
     Scenario(label: "aggregate class failure", defaults: [.value(80), .value(80)],
