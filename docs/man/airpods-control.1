@@ -1,4 +1,4 @@
-.TH AIRPODS-CONTROL 1 "August 7, 2026" "airpods-control 0.2.0" "User Commands"
+.TH AIRPODS-CONTROL 1 "August 8, 2026" "airpods-control 0.2.0" "User Commands"
 .SH NAME
 airpods-control \- control AirPods listening mode and Conversation Awareness
 .SH SYNOPSIS
@@ -61,7 +61,7 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .RB [ --help | -h ]
 .SH DESCRIPTION
 .B airpods-control
-reads and sets the AirPods listening mode and Conversation Awareness by talking directly to the macOS system audio daemon through a private AVFoundation API
+reads and sets the AirPods listening mode and Conversation Awareness through private macOS audio interfaces, including the private AVFoundation API
 .RB ( AVOutputDevice
 in
 .BR AVRouting.framework ).
@@ -78,41 +78,90 @@ provides that result. See the project README and SECURITY document for the full 
 .SS STATUS
 .TP
 .B status
-Read the current listening mode and Conversation Awareness state. There is no alias. The output excludes battery information and device metadata other than the name used to identify each record. Compatibility metadata and consented write tests are handled by the separate
+Read the listening mode, Conversation Awareness state, and whether each compatible device is selected as the macOS audio output or input. There is no alias. The output excludes battery information and device metadata other than the name used to identify each record. Compatibility metadata and consented write tests are handled by the separate
 .B support-report
 command.
 .IP
+Status builds records from the public
+.B kAudioHardwarePropertyDevices
+list of currently available Core Audio devices. An eligible endpoint must be ordinary and nonaggregate, use classic Bluetooth, be alive and ready, have an audio stream, and map to an IOBluetoothDevice. A runtime-gated HAL property is the primary Apple audio compatibility signal. An allowlisted Apple or Beats manufacturer is used only when that property is unavailable. Input and output endpoints form one record when their mapped objects compare equal in both directions, with the output endpoint preferred. The Core Audio name is used only for display and exact
+.B --device
+targeting, never identity or correlation.
+.IP
+Selected means that the record's mapped Bluetooth object matches macOS's ordinary default output or input after the endpoint passes through the same mapper. Input and output are checked separately. Playing audio, recording, application routes, the system-alert route, and membership in an aggregate or multi-output route do not count. Selection does not use names, model identifiers, Bluetooth/MAC addresses, Core Audio UIDs, private route identifiers, or discovery order. Bluetooth LE, USB, unknown transports, missing selectors or properties, and unavailable or nil mappings are
+.B unknown
+in plain output and JSON
+.BR null .
+.IP
 Without
 .BR --device ,
-print one record for every compatible connected output device, including Beats, in system audio-routing discovery order. The private API does not guarantee a stable order. With
+print one record for every eligible canonical device derived from the Core Audio inventory, including Beats candidates. This inventory is independent of the selected defaults, so an eligible device selected only for input, or for neither direction, still appears. Core Audio does not guarantee a stable inventory order. With
 .BR --device ,
 print only the unique case-insensitive whole-name match; no match or an ambiguous match produces
 .BR no-device .
 .IP
-Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in Listening mode, Conversation Awareness, and Read errors order. Inapplicable lines are omitted, and records are separated by one blank line. For example:
+Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in Listening mode, Conversation Awareness, Selected as audio output, Selected as audio input, and Read errors order. Inapplicable feature lines are omitted, and records are separated by one blank line. For example:
 .nf
 .RS
 My AirPods Pro:
   Listening mode: transparency
   Conversation Awareness: on
+  Selected as audio output: yes
+  Selected as audio input: no
 
 Studio Beats:
   Listening mode: adaptive
+  Conversation Awareness: unknown
+  Selected as audio output: no
+  Selected as audio input: no
 .RE
 .fi
 .IP
-A field is omitted only when the feature is known to be unsupported. An unresolved listening-mode read is displayed as
-.BR unknown ;
-an unresolved Conversation Awareness read is displayed as
+Runtime-gated HAL properties can report listening mode for inactive endpoints. The active AV value has priority, followed by one consistent HAL value from the mapped endpoints.
+.IP
+An unknown active AV value stops the lookup. A future or unknown nonzero HAL value, or conflicting HAL values, does the same. The mapped Bluetooth object is tried only when HAL is unavailable or neutral, or when a HAL read fails. That failure is retained. If the fallback cannot resolve the mode, Listening mode is
+.B unknown
+and is included under Read errors.
+.IP
+Conversation Awareness requires the active endpoint to remain stable, bind to the default Core Audio output, and map to the record's Bluetooth object. Without this join, Conversation Awareness is
+.BR unknown .
+.IP
+A feature field is omitted only when the feature is known to be unsupported. An unresolved or failed listening-mode or Conversation Awareness read is displayed as
+.BR unknown .
+This differs from an individual Conversation Awareness command, whose unsupported fallback remains
 .BR unsupported .
-Both are JSON
+Unresolved and failed status fields are JSON
 .BR null ,
 with the canonical field key still present. A genuine read failure retains that fallback state and adds a
 .B Read errors:
-line whose errored labels appear in fixed Listening mode, Conversation Awareness order. In JSON, the record instead gains an
+line whose errored labels appear in fixed Listening mode, Conversation Awareness, Audio output selection, Audio input selection order. In JSON, the record instead gains an
 .B errors
 object mapping each affected canonical key to
 .BR read-error .
+.IP
+The selection lines are always present and use
+.BR yes ,
+.BR no ,
+or
+.BR unknown .
+Their JSON keys are always
+.B isSelectedAudioOutput
+and
+.BR isSelectedAudioInput ,
+with Boolean or
+.B null
+values. A
+.B no
+requires positive evidence that the device is not selected. For each direction, status reads the ordinary default Core Audio endpoint, rejects aggregate and multi-output endpoints, and classifies its transport. A composite default does not select any member, and a known unrelated transport is
+.BR no .
+Only a classic Bluetooth endpoint is passed to the system Bluetooth-device mapper. An exact system-object match is
+.BR yes ;
+a mapping to a different classic Bluetooth device is
+.BR no .
+Bluetooth LE, USB, unknown or unsupported transports, unavailable selectors or properties, an unavailable mapper, and a mapper that returns no device are
+.BR unknown .
+An actual failure while reading the default route, device class, or transport, or while performing an available mapper operation, is a genuine read error with the same unknown fallback.
+Input and output failures are isolated from each other.
 .IP
 A mixed result succeeds if any selected device produces a usable, unresolved, or unsupported status result. Only when every selected device produces genuine read errors and no usable, unresolved, or proven-unsupported field does the command return
 .BR read-error
@@ -125,7 +174,11 @@ does not identify one unique compatible device, plain output is exactly
 The exit status is 1. JSON is exactly
 .BR {\(dqdevices\(dq:[],\(dqerror\(dq:\(dqno-device\(dq,\(dqresult\(dq:\(dqerror\(dq} .
 .IP
-The command takes a read-only snapshot. One-earbud operation uses the same feature availability and getter behavior as the individual commands.
+Each invocation reads the available Core Audio inventory once and shares the same default-route observations across its records. Input and output are read independently, so the pair is not an atomic system-wide snapshot. The selected defaults do not affect inventory or deduplication. Core Audio names are used only for display and targeting.
+.IP
+An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to Core Audio and the system mapper. Its numeric value is never parsed, logged, printed, or compared as identity. Inventory and selection do not read raw Core Audio UIDs, Bluetooth/MAC addresses, serial numbers, or private route identifiers. Raw HAL values are not logged or printed.
+.IP
+The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
 .SS LISTENING MODE
 .TP
 .BR "listening-mode get" ", " "lm get"
@@ -182,7 +235,7 @@ and does not choose arbitrarily among devices. With zero or multiple compatible 
 .IP
 The read-only report includes only the normalized model identifier, advertised listening modes, Conversation Awareness capability, whether each query answers, whether macOS exposes each setter, the macOS version, and the CLI version. The model name is resolved locally from the Bluetooth product ID in the model identifier. Unknown advertised modes are included when they can be represented safely. Missing data is marked unavailable or not reported; the command does not guess it. The report omits the setting values returned by queries and never invokes a setter without consent.
 .IP
-The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It never uses the clipboard, sends telemetry, or submits anything. A read-only report does not change device settings or intentionally interrupt audio; consented write tests temporarily change the settings in the captured plan.
+The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It does not enumerate the Core Audio status inventory, query the selected input or output route, call the selection mapper, run active-output enrichment, or read or report routing identifiers. It never uses the clipboard, sends telemetry, or submits anything. A read-only report does not change device settings or intentionally interrupt audio; consented write tests temporarily change the settings in the captured plan.
 .IP
 When at least one write test can be planned safely, an interactive run captures the initial settings and advertised capabilities, displays that plan, and asks for consent, defaulting to no. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped. The tests switch through recognized advertised listening modes and toggle Conversation Awareness away from the captured state and back. Mode switches are audible, and noise control changes while the device is worn. Do not run the tests during a call.
 .IP
@@ -248,14 +301,14 @@ at least two distinct entries. Mode aliases are accepted. Duplicates are ignored
 (exit 2).
 .TP
 .BI "--device " name
-Target a compatible output device using a case-insensitive exact name match. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. No match or multiple exact matches produce
+Target a compatible device using a case-insensitive exact name match. Individual resource commands match their compatible AV output devices; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. No match or multiple exact matches produce
 .BR no-device .
 .IP
 The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
 .IP
 Without this option, listening-mode and Conversation Awareness commands use the first compatible system output device.
 .B status
-instead reports every compatible device in preserved system audio-routing discovery order.
+instead reports every eligible canonical device derived from the currently available Core Audio endpoint list, regardless of which device is the selected output.
 .TP
 .B --json
 Emit structured JSON instead of plain script-friendly output. Accepted anywhere in an operational command or global version command. Every JSON response has a
@@ -276,7 +329,13 @@ always returns a top-level
 .B devices
 array, including for a selected singleton. Every record contains
 .B device
-and only the applicable canonical resource keys
+and the always-present selection keys
+.B isSelectedAudioOutput
+and
+.BR isSelectedAudioInput ,
+whose values are Boolean or
+.BR null .
+Records also contain the applicable canonical resource keys
 .B listeningMode
 and
 .BR conversationAwareness ;
@@ -284,9 +343,9 @@ resource aliases never become JSON keys. A proven-unsupported field is omitted. 
 .BR null .
 A genuine read failure adds an
 .B errors
-object mapping the affected canonical field key to
+object mapping the affected canonical field key, including a selection key, to
 .BR read-error ;
-the object is absent if no genuine read error occurred. If all queryable fields on all selected devices fail, the top-level response also contains
+the object is absent if no genuine read error occurred. JSON keys are serialized alphabetically. If all queryable fields on all selected devices fail, the top-level response also contains
 .B error
 set to
 .B read-error
@@ -296,11 +355,11 @@ set to
 .BR error .
 .TP
 .B --debug
-Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code. Diagnostics cover the entitlement bypass, private API discovery, device selection, capabilities, reads, and writes. Accepted anywhere in an operational command, a global version command, or
+Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code. Diagnostics cover the entitlement bypass, private API discovery, device selection, capabilities, reads, and writes. Status-inventory diagnostics report bounded eligibility, filter, mapping, and deduplication outcomes without logging opaque Core Audio handles or raw HAL values. Audio-selection diagnostics report only bounded outcomes such as mapped, unrelated transport, composite, or unresolved. Display names can appear but are never identity or correlation evidence. Raw addresses, UIDs, and private routing identifiers are not read for inventory or selection. The optional feature-enrichment probe never logs its associatedAudioDeviceID, translated device handle, or private endpoint deviceID. Accepted anywhere in an operational command, a global version command, or
 .BR support-report ,
 where the diagnostics can explain why a device is not recognized.
 .B support-report
-does not read the customizable device name, but its diagnostics can contain the installed dylib path and therefore a home directory in a source build.
+does not read the customizable device name, enumerate the Core Audio status inventory, query audio selection, or run enrichment, but its diagnostics can contain the installed dylib path and therefore a home directory in a source build.
 .IP
 Debug output from operational commands can also contain selected device names. Review diagnostics before pasting them into an issue.
 .SH EXIT STATUS

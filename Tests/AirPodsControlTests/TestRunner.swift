@@ -7,6 +7,7 @@ struct TestRunner {
     runListeningModeTests()
     runCommandExecutionTests()
     runPrivateAudioDiscoveryTests()
+    runAudioRoutingTests()
     runStatusCommandTests()
     runPrivateAudioTests()
     runAppleAudioProductsTests()

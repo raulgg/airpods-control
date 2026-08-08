@@ -81,8 +81,8 @@ Resources:
   conversation-awareness, ca    Read or set Conversation Awareness.
 
 Command:
-  status       Read listening mode and Conversation Awareness for every
-               compatible device, or for one device selected by name.
+  status       Read modes and macOS audio output/input selection for every
+               compatible AirPods or Beats device, or one selected by name.
 
 Contributor command:
   support-report
@@ -91,7 +91,7 @@ Contributor command:
 
 Global options:
   --device NAME
-               Target a compatible output device by exact name (case-insensitive).
+               Target a compatible device by exact name (case-insensitive).
   --json       Emit structured JSON instead of plain script-friendly output.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --version, -v
@@ -106,10 +106,49 @@ let statusHelp = """
 Usage:
   airpods-control status [--device NAME] [--json] [--debug]
 
-Read listening mode and Conversation Awareness without changing either one.
-Without --device, print one record for every compatible AirPods or Beats device
-in the order supplied by macOS. With --device, require one unique exact name
-match (case-insensitive).
+Read the status of every compatible AirPods or Beats device without changing
+anything: listening mode, Conversation Awareness, and whether it is selected as
+the macOS audio output or input.
+"Selected" means that the device matches the ordinary default route. It does
+not mean that audio is playing or recording. App routes, the alert route, and
+membership in a composite route do not count.
+
+Without --device, status reads macOS's public list of available Core Audio
+devices. An eligible endpoint is ordinary and nonaggregate, uses classic
+Bluetooth, is alive and ready, has an audio stream, and maps to an
+IOBluetoothDevice. An undocumented HAL property identifies Apple audio
+hardware. If that property is unavailable, status checks an allowlisted Apple
+or Beats manufacturer. Input and output endpoints form one record when their
+mapped objects compare equal in both directions, with the output endpoint
+preferred. With --device, the Core Audio name must have one case-insensitive
+exact match. Names are used for display and targeting, not identity.
+
+Input and output are checked separately. Aggregate routes and known unrelated
+transports produce no. Bluetooth LE, USB, unknown transports, missing
+properties, and unavailable mappings produce unknown. A failed Core Audio read
+or mapper call is a read error.
+
+An inactive endpoint may expose its current listening mode through an
+undocumented HAL property. The mapped Bluetooth object is the fallback when the
+HAL property is unavailable or neutral, or when its read fails. The active AV
+endpoint takes priority when it can be joined to the stable default output and
+the same mapped Bluetooth object. Unknown AV or HAL values, and conflicting HAL
+values, leave the mode unknown rather than falling back. Conversation Awareness
+also requires this active-output join. The join translates a bounded AVOutputContext
+associatedAudioDeviceID through Core Audio and compares the result with the
+default output ID. It samples the private AVOutputDevice deviceID before and
+after to reject a route change.
+
+Core Audio handles are passed unchanged to macOS and never parsed. They and the
+enrichment identifiers stay inside the process and are never printed or logged.
+Inventory and selection do not read Bluetooth/MAC addresses, Core Audio UIDs,
+or private route identifiers. Raw HAL values are not emitted, and support-report
+does not use this status path.
+
+Plain selection values are yes, no, or unknown; the selection fields follow the
+listening-mode and Conversation Awareness fields, with read errors last. An
+unresolved or failed feature read is also unknown; a feature proven unsupported
+is omitted.
 
 If no compatible device is connected, or the requested name is not unique,
 print 'No compatible AirPods or Beats device is connected.' and exit 1.
@@ -117,7 +156,8 @@ print 'No compatible AirPods or Beats device is connected.' and exit 1.
 Options:
   --device NAME
                Return only the uniquely named compatible device.
-  --json       Emit a top-level devices array instead of labeled plain text.
+  --json       Emit a top-level devices array; selection values are Boolean or
+               null when they cannot be determined safely.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing any device.
 """
@@ -217,9 +257,12 @@ Options:
 
 The command never reads the customizable device name, firmware version, serial
 numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It
-never uses the clipboard, sends telemetry, or submits anything. A read-only
-report does not change device settings or intentionally interrupt audio. Check
-the report before choosing whether to open a prefilled GitHub issue form.
+does not enumerate the Core Audio status inventory, query selected audio routes,
+call the selection mapper, run the status feature-enrichment probe, or read or
+report routing identifiers. It never uses the clipboard, sends telemetry, or
+submits anything. A read-only report does not change device
+settings or intentionally interrupt audio. Check the report before choosing
+whether to open a prefilled GitHub issue form.
 """
 
 func helpText(for rawArgs: [String]) -> String? {

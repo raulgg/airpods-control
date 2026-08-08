@@ -20,6 +20,8 @@ So far, we have only tested the CLI on AirPods Pro 3.
 | Device discovery | Verified | Pending | Exploratory |
 | One-earbud discovery and control | Verified | Pending | Exploratory |
 | `status` | Pending | Pending | Exploratory |
+| Selected audio output observation | Pending | Pending | Exploratory |
+| Selected audio input observation | Pending | Pending | Exploratory |
 | `listening-mode get` | Verified | Pending | Exploratory |
 | `listening-mode list` | Verified | Pending | Exploratory |
 | `listening-mode set` | Verified | Pending | Exploratory |
@@ -29,7 +31,49 @@ So far, we have only tested the CLI on AirPods Pro 3.
 | `support-report` metadata | Pending | Pending | Exploratory |
 
 We have tested the individual resource commands on AirPods Pro 3. The aggregate
-`status` command and `support-report` still require connected-hardware checks.
+`status` command, its selected input/output observations, and `support-report`
+still require connected-hardware checks. Selection verification requires all
+four output-only, input-only, both, and neither cases in the
+[hardware-testing guide](hardware-testing.md#selected-audio-inputoutput-release-check).
+
+`status` starts with the public list of available Core Audio devices, not the
+selected output. An endpoint must be ordinary and nonaggregate, use classic
+Bluetooth, be alive and ready, have an audio stream, and map to an
+`IOBluetoothDevice`. A runtime-gated HAL property is the primary Apple audio
+compatibility signal. An allowlisted Apple or Beats manufacturer is used only
+when that property is unavailable.
+Input and output endpoints form one record when their mapped objects compare
+equal in both directions, with the output endpoint preferred. The Core Audio
+name is used only for display and `--device` matching.
+
+Selection is checked separately for input and output. A classic-Bluetooth
+default passes through the same mapper and must match the record's mapped
+object. Aggregate routes and known unrelated transports produce `no`. Bluetooth
+LE, USB, unknown transports, missing properties, and unavailable mappings
+produce `unknown`. A failed route, class, transport, or mapper read is a read
+error. Core Audio handles pass unchanged to macOS and never appear in logs or
+output. Inventory and selection do not read Bluetooth addresses, Core Audio
+UIDs, or private route identifiers.
+
+Runtime-gated HAL properties can report listening mode for inactive endpoints.
+The active AV value has priority, followed by one consistent HAL value from the
+mapped endpoints. An unknown active AV value stops the lookup. A future or
+unknown nonzero HAL value, or conflicting HAL values, does the same. The mapped
+Bluetooth object is tried only when HAL is unavailable or neutral, or when a
+HAL read fails. That failure is retained. If the fallback cannot resolve the
+mode, the field is `unknown` with a read error.
+
+The optional active-output probe asks Core Audio to translate the bounded AV
+context `associatedAudioDeviceID` and compares the result with the stable
+default output. The default's mapped Bluetooth object must also match the
+record. The probe samples the private endpoint `deviceID` before and after only
+to reject an endpoint change. Conversation Awareness is `unknown` without this
+join. These identifiers and raw HAL values are never logged or reported, and
+they do not determine Bluetooth identity or selection.
+
+`support-report` remains a separate private-output compatibility path. It does
+not enumerate the Core Audio status inventory, inspect default routes, call the
+selection mapper, or run active-output enrichment.
 
 ## Candidates pending verification
 

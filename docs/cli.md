@@ -35,11 +35,12 @@ produces `unsupported` (exit `4`). Aggregate status instead omits a
 proven-unsupported field.
 
 Operational commands accept `--device NAME`, `--json`, and `--debug` in any
-position. `--device` uses a case-insensitive, whole-name match among compatible
-output devices. It never falls back to another device. No match or multiple
-exact matches produce `no-device`. Without `--device`, the individual resource
-commands use the first compatible device; `status` reports all compatible
-devices.
+position. `--device` uses a case-insensitive, whole-name match among the
+command's compatible devices. It never falls back to another device. No match
+or multiple exact matches produce `no-device`. Without `--device`, the
+individual resource commands use the first compatible output device; `status`
+reports every eligible compatible record it can derive from currently available
+Core Audio endpoints, independently of the selected output.
 
 `support-report` is a separate contributor command. It accepts
 `--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
@@ -133,14 +134,38 @@ exits `4`.
 
 ## Status
 
-`status` reads the current listening mode and Conversation Awareness state in
-one command. It does not report battery levels, device metadata beyond the name
-required to identify each record, or other settings. Compatibility metadata and
-consented write tests remain the separate responsibility of `support-report`.
+`status` reads the listening mode, Conversation Awareness state, and whether
+each compatible device is selected as the macOS audio output or input. It does
+not report battery levels, device metadata beyond the name required to identify
+each record, or other settings. Compatibility metadata and consented write tests
+remain the separate responsibility of `support-report`.
 
-Without `--device`, it emits one record for every compatible connected output
-device, including Beats. Records follow the system audio routing discovery
-order, which the private API does not guarantee to be stable.
+`status` starts with the public `kAudioHardwarePropertyDevices` list. To become
+a record, an endpoint must be ordinary and nonaggregate, use classic Bluetooth,
+be alive, have an input or output stream, and map through
+`IOBluetoothAudioManager.bluetoothDevice:` to an `IOBluetoothDevice`. An
+undocumented HAL property identifies Apple audio hardware. If that property is
+unavailable, `status` checks an allowlisted Apple or Beats manufacturer. An
+endpoint is skipped when a required property or mapping cannot be established
+safely.
+
+AirPods and Beats can expose separate input and output Core Audio endpoints.
+`status` combines those endpoints when their mapped Bluetooth objects compare
+equal in both directions. If both exist, the output endpoint supplies the
+preferred name. That Core Audio name is used for display and `--device`
+matching, not to join endpoints or determine selection. Record order is
+consistent within one inventory but is not a stable interface.
+
+"Selected" means that the record's mapped Bluetooth object matches macOS's
+ordinary default output or input after that endpoint passes through the same
+mapper. Input and output are checked separately. Playing audio, recording, app
+routes, the system-alert route, and aggregate or multi-output membership do not
+count. Selection does not use names, model identifiers, Bluetooth addresses,
+Core Audio UIDs, private route identifiers, or discovery order.
+
+Without `--device`, the command prints every eligible AirPods or Beats record.
+The inventory does not depend on either default, so a device selected only for
+input, or for neither direction, still appears.
 
 With `--device`, the command emits one record for the unique case-insensitive
 whole-name match. A missing or ambiguous name fails with `no-device`; it never
@@ -152,42 +177,85 @@ $ airpods-control status
 My AirPods Pro:
   Listening mode: transparency
   Conversation Awareness: on
+  Selected as audio output: yes
+  Selected as audio input: no
 
 Studio Beats:
   Listening mode: adaptive
+  Conversation Awareness: unknown
+  Selected as audio output: no
+  Selected as audio input: no
 ```
 
 Device headings retain ordinary printable Unicode but render backslash, newline,
 carriage return, and tab as `\\`, `\n`, `\r`, and `\t`. Other control characters
 and the Unicode line and paragraph separators use `\u{XXXX}` form, so a device
 name cannot alter the record layout. This applies only to the plain heading.
-JSON retains the original name and uses normal JSON string escaping. Fields
-appear beneath the heading in Listening mode, Conversation Awareness, and Read
-errors order. Inapplicable lines are omitted, and records are separated by one
-blank line.
+JSON retains the original name and uses normal JSON string escaping. Plain
+fields appear beneath the heading in Listening mode, Conversation Awareness,
+Selected as audio output, Selected as audio input, and Read errors order.
+Inapplicable feature lines are omitted, and records are separated by one blank
+line. JSON object keys remain alphabetically sorted and carry no semantic order.
 
-A field is omitted only when the device is known not to support that feature. An
-unresolved read follows the corresponding individual getter: listening mode
-appears as `unknown`, while Conversation Awareness appears as `unsupported`.
-Either state is JSON `null`, with its canonical key still present. A genuine
-read failure keeps that same fallback state and also adds a plain summary such
-as `Read errors: Listening mode, Conversation Awareness`, indented by two spaces
-(errored labels only, in that fixed order), or an `errors` object in that
-device's JSON record. One failed field does not hide a successfully read field
-or stop the remaining devices from being sampled.
+Listening mode is read from three sources in order. The active AV endpoint comes
+first, followed by one consistent HAL value from the mapped endpoints. The
+mapped Bluetooth object is the last fallback. The HAL property can report the
+mode while a device is inactive.
 
-For example, when both reads genuinely fail, the record retains both getters'
-fallback states and names both errors:
+A source must return a recognized value. An unknown active AV value stops the
+lookup. A future HAL value or conflicting HAL values do the same. The mapped
+object is tried only when HAL is unavailable, neutral, or failed. A failed HAL
+read is retained, so `Listening mode` appears under Read errors if the fallback
+also fails to resolve the mode.
+
+Conversation Awareness requires the active AV endpoint to remain stable, bind
+to the default Core Audio output, and map to the record's Bluetooth object.
+Without that join, the value is `unknown`. A name or another endpoint is not
+used as a substitute.
+
+A feature field is omitted only when the device is known not to support that
+feature. An unresolved listening-mode or Conversation Awareness read appears as
+`unknown`. The same fallback is retained for a genuine read failure. Each case
+is JSON `null`, with its canonical key still present. This differs from an
+individual Conversation Awareness command, whose unsupported fallback remains
+`unsupported`.
+
+The selection lines are always present. Plain values are `yes`, `no`, or
+`unknown`. JSON records contain `isSelectedAudioOutput` and
+`isSelectedAudioInput` as Boolean or `null` values. `no` requires proof that the
+device is not selected. A composite default does not select any member, and a
+known unrelated transport cannot select a Bluetooth record, so both produce
+`no`.
+
+Only a classic-Bluetooth default is sent to the system mapper. A match is `yes`;
+a different mapped Bluetooth device is `no`. Bluetooth LE, USB, unknown or
+unsupported transports, missing selectors or properties, an unavailable mapper,
+or a nil mapping produce `unknown`. A failed default-route, class, transport, or
+mapper read is a read error and keeps the same `unknown` fallback. Input and
+output failures are independent.
+
+A genuine read failure keeps the field's unresolved fallback and also adds a
+plain summary such as `Read errors: Listening mode, Audio input selection`,
+indented by two spaces, or an `errors` object in that device's JSON record.
+Errored labels use the fixed field order Listening mode, Conversation Awareness,
+Audio output selection, Audio input selection. One failed field does not hide a
+successfully read field or stop the remaining fields and devices from being
+sampled. Input and output selection failures are isolated from each other.
+
+For example, when both feature reads and the input-selection read genuinely
+fail, the record retains their fallback states and names all three errors:
 
 ```text
 My AirPods Pro:
   Listening mode: unknown
-  Conversation Awareness: unsupported
-  Read errors: Listening mode, Conversation Awareness
+  Conversation Awareness: unknown
+  Selected as audio output: yes
+  Selected as audio input: unknown
+  Read errors: Listening mode, Conversation Awareness, Audio input selection
 ```
 
-A record whose two fields are both proven unsupported still appears, but has
-only its device heading in plain output and only `device` in JSON.
+A record whose two feature fields are both proven unsupported still includes
+its two selection observations.
 
 The command succeeds when at least one selected device produces any usable,
 unresolved, or unsupported status result. It exits `5` with `read-error` only
@@ -205,8 +273,25 @@ The corresponding JSON is exactly
 `{"devices":[],"error":"no-device","result":"error"}`. This contract also
 applies when `--device` has no unique match.
 
-`status` takes a read-only snapshot. One-earbud operation uses the same feature
-availability and getter behavior as the individual commands.
+Each `status` invocation reads the available Core Audio inventory once and
+shares the same default-route observations across its records. Input and output
+are read independently, so the pair is not an atomic system-wide snapshot. The
+selected defaults do not affect inventory or deduplication.
+
+An `AudioDeviceID` is an opaque Core Audio handle. `status` passes it unchanged
+to Core Audio and the system mapper. Its numeric value is not parsed, logged,
+printed, or compared as identity. Inventory and selection do not read raw Core
+Audio UIDs, Bluetooth/MAC addresses, serial numbers, or private route IDs. HAL
+property values are converted to bounded capability and state values, but the
+raw values are not logged or printed.
+
+Active-output enrichment is the exception that reads route identifiers. It asks
+Core Audio to translate `AVOutputContext.associatedAudioDeviceID`, then compares
+the resulting handle with the stable default output. The default's mapped
+Bluetooth object must also match the record. The probe samples the private
+`AVOutputDevice.deviceID` before and after to reject an endpoint change. These
+identifiers stay inside the process and never appear in output, diagnostics, or
+a support report. Enrichment failure does not change input or output selection.
 
 ## Contributor compatibility report
 
@@ -280,9 +365,12 @@ final state so it can be restored manually.
 
 The command never reads the customizable device name, firmware version, serial
 numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It
-never uses the clipboard, sends telemetry, or submits anything. A read-only
-report does not change device settings or intentionally interrupt audio;
-consented write tests temporarily change the settings in the captured plan.
+does not enumerate the Core Audio status inventory, query the selected input or
+output route, call the selection mapper, run active-output enrichment, or read
+or report routing identifiers. It never uses the clipboard, sends telemetry, or
+submits anything. A read-only report does not change device settings or
+intentionally interrupt audio; consented write tests temporarily change the
+settings in the captured plan.
 
 `support-report` does not read customizable names or accept `--device`, so it
 requires exactly one compatible output device. With zero or multiple compatible
@@ -376,8 +464,9 @@ interrupted run.
 
 Without `--device`, the individual listening-mode and Conversation Awareness
 commands use the first compatible system output device. `status` is the
-exception: it reports every compatible device in system audio-routing discovery
-order. To select one explicitly:
+exception: it reports every eligible canonical device derived from the currently
+available Core Audio endpoint list, regardless of which device is the selected
+output. To select one explicitly:
 
 ```console
 $ airpods-control --device "My AirPods Pro" listening-mode get
@@ -387,12 +476,15 @@ transparency
 Unlike operational commands, `support-report` does not read device names or
 accept `--device`. It requires exactly one compatible output device.
 
-Names are matched exactly but case-insensitively. Substrings are not accepted,
-so `--device "My"` will not silently select `"My AirPods Pro"`. If two devices
-have the same name ignoring case, the match is ambiguous and every operational
-command fails with `no-device` before reading or changing either one. A device
-name passed on the command line must not begin with `-`; this prevents an option
-token from being consumed as a missing `--device` value.
+`status` matches the preferred Core Audio display name after exact endpoint
+deduplication; individual resource commands match their AV output-device names.
+Both matches are exact but case-insensitive. Substrings are not accepted, so
+`--device "My"` will not silently select `"My AirPods Pro"`. If two devices have
+the same name ignoring case, the match is ambiguous and the command fails with
+`no-device` before reading or changing either one. Name matching targets an
+existing record; it is not device identity or correlation. A name passed on the
+command line must not begin with `-`; this prevents an option token from being
+consumed as a missing `--device` value.
 
 ## JSON output
 
@@ -413,7 +505,7 @@ $ airpods-control conversation-awareness get --json
 {"conversationAwareness":"on","device":"My AirPods Pro","result":"ok"}
 
 $ airpods-control status --device "My AirPods Pro" --json
-{"devices":[{"conversationAwareness":"on","device":"My AirPods Pro","listeningMode":"transparency"}],"result":"ok"}
+{"devices":[{"conversationAwareness":"on","device":"My AirPods Pro","isSelectedAudioInput":false,"isSelectedAudioOutput":true,"listeningMode":"transparency"}],"result":"ok"}
 ```
 
 Every JSON response contains `result`, with a value of `ok`, `no-op`, or
@@ -435,12 +527,16 @@ fallback, or JSON `null` when neither applies. Version JSON follows the same
 result convention: `{"result":"ok","version":"0.2.0"}`.
 
 `status` always returns a top-level `devices` array, including when `--device`
-selects a single device. Each record has `device` and only the canonical
-resource keys `listeningMode` and `conversationAwareness`; aliases such as `lm`
-and `ca` never appear in JSON. A key is omitted for a proven-unsupported feature
-and present with JSON `null` for an unresolved read. A genuine read failure
-additionally adds an `errors` map whose canonical field key maps to
-`"read-error"`; the map is absent when no genuine read error occurred. For
+selects a single device. Each record has `device`; applicable canonical resource
+keys `listeningMode` and `conversationAwareness`; and the always-present Boolean
+or `null` keys `isSelectedAudioOutput` and `isSelectedAudioInput`. Aliases such
+as `lm` and `ca` never appear in JSON. A resource key is omitted for a
+proven-unsupported feature and present with JSON `null` for an unresolved read.
+An unresolved selection is also JSON `null`, but its key is never omitted. A
+genuine read failure additionally adds an `errors` map whose affected canonical
+field key maps to `"read-error"`; selection errors use
+`isSelectedAudioOutput` and `isSelectedAudioInput`. The map is absent when no
+genuine read error occurred. Objects are serialized with sorted keys. For
 example, this mixed scan still succeeds:
 
 ```json
@@ -450,10 +546,14 @@ example, this mixed scan still succeeds:
       "conversationAwareness": null,
       "device": "My AirPods Pro",
       "errors": {"conversationAwareness": "read-error"},
+      "isSelectedAudioInput": false,
+      "isSelectedAudioOutput": true,
       "listeningMode": "transparency"
     },
     {
       "device": "Studio Beats",
+      "isSelectedAudioInput": null,
+      "isSelectedAudioOutput": false,
       "listeningMode": "adaptive"
     }
   ],
@@ -465,7 +565,7 @@ If every selected device produces only genuine read errors, the same records are
 returned with `"error":"read-error"`, `"result":"error"`, and exit `5`:
 
 ```json
-{"devices":[{"conversationAwareness":null,"device":"My AirPods Pro","errors":{"conversationAwareness":"read-error","listeningMode":"read-error"},"listeningMode":null}],"error":"read-error","result":"error"}
+{"devices":[{"conversationAwareness":null,"device":"My AirPods Pro","errors":{"conversationAwareness":"read-error","isSelectedAudioInput":"read-error","isSelectedAudioOutput":"read-error","listeningMode":"read-error"},"isSelectedAudioInput":null,"isSelectedAudioOutput":null,"listeningMode":null}],"error":"read-error","result":"error"}
 ```
 
 With no compatible device, status JSON is exactly
@@ -490,16 +590,21 @@ info: selected_device="My AirPods Pro"
 transparency
 ```
 
-Debug output covers the entitlement bypass, private API discovery, compatible
-devices, selection, capabilities, reads, and writes. It does not change stdout,
-JSON, or the exit code, so stdout remains safe to pipe or parse.
+Debug output covers discovery, selection, reads, writes, and the entitlement
+bypass. Status logs the result of each inventory and selection gate, using terms
+such as `mapped`, `composite`, and `unresolved`. It does not log Core Audio
+handles, raw HAL values, addresses, UIDs, or private route IDs. The enrichment
+probe also keeps `associatedAudioDeviceID`, its translated handle, and the
+private endpoint `deviceID` out of the log. Operational diagnostics may include
+the displayed device name, but names are not used as identity. `--debug` does
+not change stdout, JSON, or the exit code.
 
-`support-report` also accepts `--debug`. Its diagnostics explain device
-discovery and advertised capabilities without reading the customizable device
-name, but they can include the installed dylib path and therefore a home
-directory in a source build. Debug output from operational commands can also
-contain selected device names. Review diagnostics before pasting them into an
-issue.
+`support-report` also accepts `--debug`. Its diagnostics omit the customizable
+device name, though a source build can expose a home directory through the
+installed dylib path. The command does not use the Core Audio status inventory,
+selection mapping, or enrichment path. Operational diagnostics can contain a
+selected device name, but not raw routing identifiers. Review the output before
+pasting it into an issue.
 
 ## Write verification
 

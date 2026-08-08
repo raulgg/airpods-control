@@ -39,6 +39,7 @@ enum PrivateAudioDiscoverySource: String, Hashable {
 
 enum PrivateAudioAccessPolicy {
   case operational
+  case status
   case supportReport
 }
 
@@ -172,6 +173,10 @@ enum PrivateAudioDiscovery {
   static func systemOutputDevices(logger: DebugLogger) -> [AnyObject]? {
     guard let context = systemContext(logger: logger) else { return nil }
     return outputDevices(from: context, logger: logger)
+  }
+
+  static func systemStatusOutputContext(logger: DebugLogger) -> AnyObject? {
+    systemContext(logger: logger)
   }
 
   static func systemOperationalEndpoints(
@@ -461,6 +466,14 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     let enabled = shim.conversationAwarenessEnabled()
     logger.debug("device.conversation_awareness", enabled ? "on" : "off")
     return .value(enabled)
+  }
+
+  func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation {
+    .unresolved
+  }
+
+  func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation {
+    .unresolved
   }
 
   func canSetConversationAwareness() -> Bool {

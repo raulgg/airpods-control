@@ -5,13 +5,133 @@ change. Record the macOS version and device in the pull request, and update the
 [device compatibility matrix](compatibility.md) when a check changes a device or
 capability status.
 
-## One-earbud AVRouting regression check
+## Selected audio input/output release check
 
-The private-audio unit tests can model an AirPods endpoint whose listening-mode
+This check is required before selected-audio-device status is considered
+complete. Run it on the AirPods Pro 3 baseline hardware. Record the exact macOS
+and CLI versions in the pull request, but do not record Core Audio, Bluetooth,
+or private routing identifiers.
+
+Use the built-in Mac speakers and microphone as the alternate endpoints when
+possible. Do not use an aggregate or multi-output device for the four baseline
+cases. Build once with `make`, connect the AirPods, and then test each row after
+System Settings visibly shows both selections:
+
+| Case | macOS output | macOS input | Plain output | JSON |
+| --- | --- | --- | --- | --- |
+| Output only | AirPods | Built-in microphone | `yes`, then `no` | output `true`, input `false` |
+| Input only | Built-in speakers | AirPods | `no`, then `yes` | output `false`, input `true` |
+| Both | AirPods | AirPods | `yes`, then `yes` | output `true`, input `true` |
+| Neither | Built-in speakers | Built-in microphone | `no`, then `no` | output `false`, input `false` |
+
+For each row, set `case_name` to `output-only`, `input-only`, `both`, or
+`neither`, then capture both forms:
+
+```sh
+capture_parent="${TMPDIR:-/tmp}"
+capture_previous_umask="$(umask)"
+umask 077
+capture_dir="$(
+  mktemp -d "${capture_parent%/}/airpods-control-selection.XXXXXX"
+)" || exit 1
+chmod 700 "$capture_dir"
+
+case_name=output-only
+build/airpods-control status --device "My AirPods" \
+  >"$capture_dir/$case_name.txt"
+build/airpods-control status --device "My AirPods" --json --debug \
+  >"$capture_dir/$case_name.json" \
+  2>"$capture_dir/$case_name.debug.log"
+```
+
+Reuse the same private directory for the remaining rows. After the last capture,
+restore the saved mask with `umask "$capture_previous_umask"`. If you stop
+early, restore it before leaving the shell.
+
+For every case, verify:
+
+- The AirPods retain a status record in all four cases, including input-only and
+  neither; the currently available Core Audio inventory must not depend on the
+  selected output.
+- Plain fields remain in Listening mode, Conversation Awareness, Selected as
+  audio output, Selected as audio input, and Read errors order.
+- JSON contains `isSelectedAudioOutput` and `isSelectedAudioInput` with the
+  Boolean values in the table. Object keys may appear in sorted order.
+- When the system HAL listening-mode properties yield one safe recognized mode,
+  Listening mode stays canonical in input-only and neither instead of becoming
+  unknown. Future, unrecognized, or conflicting HAL evidence must remain
+  unknown; it must not borrow the mapped system Bluetooth object's mode. That
+  mapped value is a fallback only for unavailable, neutral, or failed HAL
+  evidence. Conversation Awareness may be unknown without the exact
+  active-output join.
+- Repeating the command without changing System Settings produces the same
+  selection pair.
+- Neither normal output nor debug output contains an opaque Core Audio device
+  handle, Bluetooth/MAC address, Core Audio UID, private device identifier, or
+  other routing identifier. Debug output may state only bounded inventory and
+  routing results, plus numeric system error codes.
+
+During code review, confirm that status starts with public
+`kAudioHardwarePropertyDevices`. It may admit only an ordinary, nonaggregate
+classic-Bluetooth endpoint that is alive and ready, has an audio stream, and
+maps through `IOBluetoothAudioManager.bluetoothDevice:` to an
+`IOBluetoothDevice`. The HAL Apple-audio property is the primary compatibility
+check. An allowlisted Apple or Beats manufacturer is allowed only when that
+property is unavailable.
+
+Input and output endpoints may form one record only when their mapped objects
+compare equal in both directions. Prefer the output endpoint. A Core Audio name
+may be used for display and exact `--device` matching, but never for identity or
+deduplication.
+
+The active AV endpoint supplies the highest-priority listening mode. Otherwise,
+use one consistent recognized HAL mode from the mapped endpoints. A future or
+unknown active AV or HAL value, and conflicting HAL values, must leave the mode
+`unknown` and block a lower-priority fallback. The mapped Bluetooth object is a
+fallback only when HAL is unavailable or neutral, or when a HAL read fails. Keep
+that failure: if the fallback does not resolve the mode, report `unknown` with a
+Listening mode read error. Never log or print raw HAL values.
+
+For each selection direction, read the ordinary default Core Audio endpoint.
+Reject aggregate and multi-output routes, classify the transport, and map only a
+classic-Bluetooth default. Compare mapped objects in both directions. Known
+unrelated transports must produce `no`. Bluetooth LE, USB, unknown transports,
+missing properties, and unavailable or nil mappings must produce `unknown` (JSON
+`null`). A failed default-route, class, transport, or mapper read must be a
+field-specific read error.
+
+Core Audio handles may pass unchanged to property APIs and the mapper, but they
+must never be parsed, logged, or printed. Inventory and selection must not use
+names, model identifiers, Bluetooth/MAC addresses, Core Audio UIDs, private
+route identifiers, or discovery order as identity. If either direction requires
+heuristic correlation, it must remain `unknown`. An `unknown` result on the
+AirPods Pro 3 baseline in any row above means the feature is incomplete.
+
+The optional active-output feature probe may ask Core Audio to translate the AV
+context's bounded `associatedAudioDeviceID` and compare the result only with the
+stable default output. The default's mapped Bluetooth object must also match the
+record. The probe may sample the private endpoint `deviceID` before and after
+only to reject an endpoint change. Its active AV mode has priority when
+available. These identifiers must not determine Bluetooth identity or selection,
+and they must never be logged, printed, or included in a support report. Without
+the exact join, Conversation Awareness must remain `unknown`. Listening mode may
+still come from HAL or the mapped Bluetooth object, but never from another
+device.
+
+The captures contain the customizable device name and can contain source-build
+or home paths. Review and redact them before sharing, then delete the private
+capture directory after recording the Boolean outcomes.
+
+## One-earbud feature-control regression check
+
+Individual resource commands still use the private AV output context for feature
+control. Their unit tests can model an AirPods endpoint whose listening-mode
 capabilities disappear or whose plural routing list omits the current device.
-Only connected hardware can verify private-API behavior across an earbud
-placement change. Run this check on the same Mac and AirPods before merging a
-discovery change.
+Only connected hardware can verify that behavior across an earbud placement
+change. Run this check on the same Mac and AirPods before merging a
+feature-control discovery change. Status inventory is separate and must keep an
+eligible record derived from the currently available Core Audio endpoints
+independently of the active output.
 
 1. Build once with `make`, wear both earbuds, and confirm the AirPods are the
    selected macOS input and output devices.
@@ -83,7 +203,8 @@ discovery change.
 The regression check passes when the plural or singular system-audio context
 retains the endpoint and the CLI can apply and read back every setting that
 System Settings permits in the same state. Do not add another discovery backend
-or make `--debug` change which devices are discovered.
+to the individual resource commands or make `--debug` change which devices are
+discovered.
 
 The debug logs can contain the customized device name and source-build or home
 paths. Review and redact the capture before sharing it, then delete the private

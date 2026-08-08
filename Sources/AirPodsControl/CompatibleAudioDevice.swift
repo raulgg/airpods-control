@@ -16,6 +16,17 @@ enum DeviceStatusField<State> {
   case readError
 }
 
+// Audio-device selection has no unsupported state: every compatible device
+// can be compared with the selected route when its identity is available.
+// Unresolved means that comparison could not be made safely; readError means
+// a required Core Audio route or identity read failed.
+enum AudioDeviceSelectionObservation: Equatable {
+  case selected
+  case notSelected
+  case unresolved
+  case readError
+}
+
 enum DeviceSelectionPolicy {
   // Existing operational commands use the first compatible device when no
   // name is supplied. A supplied name must always resolve uniquely.
@@ -48,6 +59,9 @@ protocol CompatibleAudioDevice {
   func setConversationAwarenessAndReadBack(
     _ target: Bool
   ) -> DeviceWriteObservation<Bool>
+
+  func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation
+  func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation
 
   // Blocks for the given interval without going stale: the production
   // adapter must keep pumping the main run loop while it waits. How long to
