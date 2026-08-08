@@ -111,16 +111,16 @@ above, the feature is not complete.
 
 Code review may find one separate, optional active-output feature-enrichment
 probe. It may translate the AV output context's bounded
-`associatedAudioDeviceID` through Core Audio and compare the resulting device
-ID only with the stable default output ID. The default endpoint's mapped
-Bluetooth object must also exactly equal the record's canonical object. The
-probe may compare the private endpoint `deviceID` only before and after to reject
-an endpoint change. Its exact active AV mode takes precedence when available.
-None of these identifiers may be used as Bluetooth identity or selection
-evidence, logged, printed, or included in a support report. Without this exact
-join, Conversation Awareness must remain `unknown`. Listening mode may still
-come from the record's HAL property or its mapped system Bluetooth object;
-otherwise it too remains `unknown`, never borrowed from another device.
+`associatedAudioDeviceID` through Core Audio and compare the resulting device ID
+only with the stable default output ID. The default endpoint's mapped Bluetooth
+object must also exactly equal the record's canonical object. The probe may
+compare the private endpoint `deviceID` only before and after to reject an
+endpoint change. Its exact active AV mode takes precedence when available. None
+of these identifiers may be used as Bluetooth identity or selection evidence,
+logged, printed, or included in a support report. Without this exact join,
+Conversation Awareness must remain `unknown`. Listening mode may still come from
+the record's HAL property or its mapped system Bluetooth object; otherwise it
+too remains `unknown`, never borrowed from another device.
 
 The captures contain the customizable device name and can contain source-build
 or home paths. Review and redact them before sharing, then delete the private

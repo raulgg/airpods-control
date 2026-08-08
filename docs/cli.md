@@ -216,8 +216,8 @@ remains `unknown` and lower-priority inference is suppressed. When HAL evidence
 is unavailable or neutral, the mapped system Bluetooth object's recognized value
 is the final fallback. A HAL current-mode read failure also permits that
 fallback, but the failure is retained: if the mapped object cannot resolve the
-mode, the plain value is `unknown` and the record includes `Listening mode` under
-Read errors.
+mode, the plain value is `unknown` and the record includes `Listening mode`
+under Read errors.
 
 Conversation Awareness requires the exact active-output join. The active AV
 endpoint must remain stable, bind to the default Core Audio output, and map to
@@ -309,8 +309,8 @@ identifiers. It reads `AVOutputContext.associatedAudioDeviceID`, asks Core Audio
 to translate it to a device handle, and compares that handle only with the
 stable default output handle. It also requires the default's mapped Bluetooth
 object to exactly equal the record's canonical object. The private
-`AVOutputDevice.deviceID` is sampled before and after the probe only to reject an
-endpoint change; it is never Bluetooth identity. All enrichment identifiers
+`AVOutputDevice.deviceID` is sampled before and after the probe only to reject
+an endpoint change; it is never Bluetooth identity. All enrichment identifiers
 stay inside the process and are never printed in plain or JSON output, logged in
 diagnostics, or included in a support report. Failure to enrich a feature does
 not change the device's input or output selection result.

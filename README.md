@@ -132,18 +132,18 @@ write verification, and exit codes. After installation, you can also run
 
 macOS exposes the feature controls through the private, undocumented
 `AVOutputDevice` API in `AVRouting.framework`. For `status`, the CLI enumerates
-macOS's public list of currently available Core Audio devices. It keeps ordinary,
-nonaggregate classic-Bluetooth endpoints that are alive and ready, have audio
-streams, and map through the system audio-to-Bluetooth mapper to a canonical
-`IOBluetoothDevice`. A runtime-gated, undocumented system HAL Apple-audio
-capability is the primary compatibility signal; an allowlisted Apple or Beats
-manufacturer is only the fallback when that capability property is unavailable.
-Input and output endpoints are deduplicated only when those canonical objects
-are exactly equal in both directions; the output endpoint is preferred
-deterministically. The Core Audio name is used only for display and `--device`
-targeting, never as identity or correlation evidence. This inventory does not
-depend on which device is selected as output, so an eligible AirPods or Beats
-device can remain listed when it is selected only for input or for neither
+macOS's public list of currently available Core Audio devices. It keeps
+ordinary, nonaggregate classic-Bluetooth endpoints that are alive and ready,
+have audio streams, and map through the system audio-to-Bluetooth mapper to a
+canonical `IOBluetoothDevice`. A runtime-gated, undocumented system HAL
+Apple-audio capability is the primary compatibility signal; an allowlisted Apple
+or Beats manufacturer is only the fallback when that capability property is
+unavailable. Input and output endpoints are deduplicated only when those
+canonical objects are exactly equal in both directions; the output endpoint is
+preferred deterministically. The Core Audio name is used only for display and
+`--device` targeting, never as identity or correlation evidence. This inventory
+does not depend on which device is selected as output, so an eligible AirPods or
+Beats device can remain listed when it is selected only for input or for neither
 direction.
 
 For each selection direction, `status` reads the ordinary default Core Audio
