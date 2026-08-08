@@ -29,6 +29,8 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var appliesConversationAwarenessWrite: Bool
   var listeningModeStatusOverride: DeviceStatusField<ListeningMode>?
   var conversationAwarenessStatusOverride: DeviceStatusField<Bool>?
+  var audioOutputSelectionStatus: AudioDeviceSelectionObservation
+  var audioInputSelectionStatus: AudioDeviceSelectionObservation
   var reportMetadata: SupportReportDeviceMetadata
   var exposesListeningModeSetter = true
   var exposesConversationAwarenessSetter = true
@@ -51,6 +53,8 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var conversationAwarenessSupportReadCount = 0
   var conversationAwarenessStateReadCount = 0
   var conversationAwarenessStatusReadCount = 0
+  var audioOutputSelectionStatusReadCount = 0
+  var audioInputSelectionStatusReadCount = 0
 
   // Defaults to no name, matching a device discovered without reading the
   // name selector. Tests that select or print a name pass one.
@@ -62,6 +66,8 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     conversationAwarenessSupported: Bool? = true,
     conversationAwarenessEnabled: Bool? = false,
     appliesConversationAwarenessWrite: Bool = true,
+    audioOutputSelectionStatus: AudioDeviceSelectionObservation = .notSelected,
+    audioInputSelectionStatus: AudioDeviceSelectionObservation = .notSelected,
     reportMetadata: SupportReportDeviceMetadata = SupportReportDeviceMetadata(
       family: .airPods,
       modelIdentifier: "AirPodsTest1,1",
@@ -76,6 +82,8 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     self.conversationAwarenessSupported = conversationAwarenessSupported
     self.conversationAwarenessEnabled = conversationAwarenessEnabled
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
+    self.audioOutputSelectionStatus = audioOutputSelectionStatus
+    self.audioInputSelectionStatus = audioInputSelectionStatus
     self.reportMetadata = reportMetadata
   }
 
@@ -161,5 +169,15 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
       setterAccepted: setterAccepted,
       observed: conversationAwarenessEnabled
     )
+  }
+
+  func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation {
+    audioOutputSelectionStatusReadCount += 1
+    return audioOutputSelectionStatus
+  }
+
+  func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation {
+    audioInputSelectionStatusReadCount += 1
+    return audioInputSelectionStatus
   }
 }

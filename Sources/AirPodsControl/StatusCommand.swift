@@ -3,11 +3,15 @@ import Foundation
 private enum StatusFieldKey: String {
   case listeningMode
   case conversationAwareness
+  case isSelectedAudioOutput
+  case isSelectedAudioInput
 
   var plainLabel: String {
     switch self {
     case .listeningMode: return "Listening mode"
     case .conversationAwareness: return "Conversation Awareness"
+    case .isSelectedAudioOutput: return "Audio output selection"
+    case .isSelectedAudioInput: return "Audio input selection"
     }
   }
 }
@@ -16,24 +20,33 @@ private struct DeviceStatusSnapshot {
   let deviceName: String
   let listeningMode: DeviceStatusField<ListeningMode>
   let conversationAwareness: DeviceStatusField<Bool>
+  let audioOutputSelection: AudioDeviceSelectionObservation
+  let audioInputSelection: AudioDeviceSelectionObservation
 
   static func capture(_ device: any CompatibleAudioDevice) -> DeviceStatusSnapshot? {
     guard let deviceName = device.name else { return nil }
     return DeviceStatusSnapshot(
       deviceName: deviceName,
       listeningMode: device.readListeningModeStatus(),
-      conversationAwareness: device.readConversationAwarenessStatus()
+      conversationAwareness: device.readConversationAwarenessStatus(),
+      audioOutputSelection: device.readAudioOutputSelectionStatus(),
+      audioInputSelection: device.readAudioInputSelectionStatus()
     )
   }
 
   var hasNonErrorResult: Bool {
-    !listeningMode.isReadError || !conversationAwareness.isReadError
+    !listeningMode.isReadError
+      || !conversationAwareness.isReadError
+      || !audioOutputSelection.isReadError
+      || !audioInputSelection.isReadError
   }
 
   var readErrorFields: [StatusFieldKey] {
     var fields: [StatusFieldKey] = []
     if listeningMode.isReadError { fields.append(.listeningMode) }
     if conversationAwareness.isReadError { fields.append(.conversationAwareness) }
+    if audioOutputSelection.isReadError { fields.append(.isSelectedAudioOutput) }
+    if audioInputSelection.isReadError { fields.append(.isSelectedAudioInput) }
     return fields
   }
 
@@ -55,8 +68,15 @@ private struct DeviceStatusSnapshot {
     case .unsupported:
       break
     case .unresolved, .readError:
-      lines.append("  Conversation Awareness: unsupported")
+      lines.append("  Conversation Awareness: unknown")
     }
+
+    lines.append(
+      "  Selected as audio output: \(audioOutputSelection.plainValue)"
+    )
+    lines.append(
+      "  Selected as audio input: \(audioInputSelection.plainValue)"
+    )
 
     let errors = readErrorFields
     if !errors.isEmpty {
@@ -85,6 +105,9 @@ private struct DeviceStatusSnapshot {
     case .unresolved, .readError:
       payload[StatusFieldKey.conversationAwareness.rawValue] = NSNull()
     }
+
+    payload[StatusFieldKey.isSelectedAudioOutput.rawValue] = audioOutputSelection.jsonValue
+    payload[StatusFieldKey.isSelectedAudioInput.rawValue] = audioInputSelection.jsonValue
 
     let errors = readErrorFields
     if !errors.isEmpty {
@@ -125,6 +148,29 @@ private extension DeviceStatusField {
   var isReadError: Bool {
     if case .readError = self { return true }
     return false
+  }
+}
+
+private extension AudioDeviceSelectionObservation {
+  var isReadError: Bool {
+    if case .readError = self { return true }
+    return false
+  }
+
+  var plainValue: String {
+    switch self {
+    case .selected: return "yes"
+    case .notSelected: return "no"
+    case .unresolved, .readError: return "unknown"
+    }
+  }
+
+  var jsonValue: Any {
+    switch self {
+    case .selected: return true
+    case .notSelected: return false
+    case .unresolved, .readError: return NSNull()
+    }
   }
 }
 

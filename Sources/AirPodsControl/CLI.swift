@@ -81,7 +81,7 @@ Resources:
   conversation-awareness, ca    Read or set Conversation Awareness.
 
 Command:
-  status       Read listening mode and Conversation Awareness for every
+  status       Read modes and macOS audio output/input selection for every
                compatible device, or for one device selected by name.
 
 Contributor command:
@@ -91,7 +91,7 @@ Contributor command:
 
 Global options:
   --device NAME
-               Target a compatible output device by exact name (case-insensitive).
+               Target a compatible device by exact name (case-insensitive).
   --json       Emit structured JSON instead of plain script-friendly output.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --version, -v
@@ -106,10 +106,57 @@ let statusHelp = """
 Usage:
   airpods-control status [--device NAME] [--json] [--debug]
 
-Read listening mode and Conversation Awareness without changing either one.
-Without --device, print one record for every compatible AirPods or Beats device
-in the order supplied by macOS. With --device, require one unique exact name
-match (case-insensitive).
+Read listening mode, Conversation Awareness, and whether each compatible device
+is selected as the macOS audio output or input, without changing anything.
+Selection means an exact match with the default ordinary route, not active use,
+an app-specific route, the alert route, or membership in a composite route.
+Without --device, inspect macOS's public list of currently available Core Audio
+devices. A record requires an ordinary, nonaggregate classic-Bluetooth endpoint
+that is alive and ready, has audio streams, and maps to a canonical
+IOBluetoothDevice. A runtime-gated system HAL Apple-audio capability is the
+primary compatibility signal; an allowlisted Apple or Beats manufacturer is the
+fallback only when that property is unavailable. Input and output endpoints are
+deduplicated only by symmetric exact object equality, with the output endpoint
+preferred. This yields one record for every compatible AirPods or Beats device
+with an eligible Core Audio endpoint. With --device, require one unique exact
+Core Audio name match (case-insensitive). Names are only display and target
+attributes.
+
+For each direction, status maps a classic Bluetooth default endpoint to a system
+Bluetooth device and compares exact identity. Aggregate routes and known
+unrelated transports are no. Bluetooth LE, USB, unknown or unsupported
+transports, unavailable selectors or properties, and unavailable or nil mappings
+are unknown. An actual failure reading the default route, device class, or
+transport, or performing an available mapper operation, is a read error.
+Opaque Core Audio object handles are passed unchanged to macOS but are never
+parsed, logged, or emitted. Names are never identity or correlation evidence;
+raw Bluetooth/MAC addresses, UIDs, and private route identifiers are not read
+for inventory or selection.
+
+Status can read listening-mode state from a runtime-gated system HAL property,
+including for inactive endpoints; a recognized value from the
+mapped system Bluetooth object is a fallback. For optional active-output feature
+enrichment, status may translate a bounded AVOutputContext
+associatedAudioDeviceID through Core Audio and compare only the resulting device
+ID with the default output ID. It checks the private AVOutputDevice deviceID
+before and after only for probe stability. A recognized exact active AV mode has
+priority, followed by one consistent recognized HAL mode. If active AV exposes
+an unrecognized value, or HAL evidence contains a future or unrecognized nonzero
+value or conflicting recognized modes, Listening mode remains unknown and
+lower-priority inference is suppressed. The mapped Bluetooth object is a
+fallback only when higher-priority evidence is unavailable or neutral, or when
+the HAL read failed. If that failed read has no resolving fallback, Listening
+mode is unknown with a read error.
+
+None of these identifiers is used for Bluetooth identity or selection; none is
+logged, printed, or added to support-report. Raw HAL values are not logged or
+emitted. Conversation Awareness requires the exact active-output join and
+otherwise reports unknown.
+
+Plain selection values are yes, no, or unknown; the selection fields follow the
+listening-mode and Conversation Awareness fields, with read errors last. An
+unresolved or failed feature read is also unknown; a feature proven unsupported
+is omitted.
 
 If no compatible device is connected, or the requested name is not unique,
 print 'No compatible AirPods or Beats device is connected.' and exit 1.
@@ -117,7 +164,8 @@ print 'No compatible AirPods or Beats device is connected.' and exit 1.
 Options:
   --device NAME
                Return only the uniquely named compatible device.
-  --json       Emit a top-level devices array instead of labeled plain text.
+  --json       Emit a top-level devices array; selection values are Boolean or
+               null when they cannot be determined safely.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing any device.
 """
@@ -217,9 +265,12 @@ Options:
 
 The command never reads the customizable device name, firmware version, serial
 numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It
-never uses the clipboard, sends telemetry, or submits anything. A read-only
-report does not change device settings or intentionally interrupt audio. Check
-the report before choosing whether to open a prefilled GitHub issue form.
+does not enumerate the Core Audio status inventory, query selected audio routes,
+call the selection mapper, run the status feature-enrichment probe, or read or
+report routing identifiers. It never uses the clipboard, sends telemetry, or
+submits anything. A read-only report does not change device
+settings or intentionally interrupt audio. Check the report before choosing
+whether to open a prefilled GitHub issue form.
 """
 
 func helpText(for rawArgs: [String]) -> String? {

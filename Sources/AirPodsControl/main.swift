@@ -91,13 +91,24 @@ func bootstrapAndResolveAudioDevices(
 ) -> [any CompatibleAudioDevice]? {
   ensureBypass(logger: logger)
 
-  let controller: PrivateAudioController
   switch accessPolicy {
   case .operational:
     guard let endpoints = PrivateAudioDiscovery.systemOperationalEndpoints(
       logger: logger
     ) else { return nil }
-    controller = PrivateAudioController(endpoints: endpoints, logger: logger)
+    return PrivateAudioController(endpoints: endpoints, logger: logger)
+      .selectDevices(named: requestedName, policy: policy)
+
+  case .status:
+    let activeOutputContext = PrivateAudioDiscovery.systemStatusOutputContext(
+      logger: logger
+    )
+    guard let controller = IOBluetoothStatusController(
+      logger: logger,
+      activeOutputContext: activeOutputContext
+    ), let devices = controller.selectDevices(named: requestedName, policy: policy)
+    else { return nil }
+    return devices.map { $0 }
 
   case .supportReport:
     // Preserve the name-free, plural-only support-report discovery contract.
@@ -105,13 +116,12 @@ func bootstrapAndResolveAudioDevices(
     guard let devices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
       return nil
     }
-    controller = PrivateAudioController(
+    return PrivateAudioController(
       rawDevices: devices,
       logger: logger,
       includeDeviceNames: false
-    )
+    ).selectDevices(named: requestedName, policy: policy)
   }
-  return controller.selectDevices(named: requestedName, policy: policy)
 }
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
@@ -149,6 +159,8 @@ let outcome = CommandExecution.execute(
     let accessPolicy: PrivateAudioAccessPolicy
     if case .supportReport = invocation.command {
       accessPolicy = .supportReport
+    } else if case .status = invocation.command {
+      accessPolicy = .status
     } else {
       accessPolicy = .operational
     }

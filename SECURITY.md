@@ -35,11 +35,48 @@ other processes, and its code stops running when `airpods-control` exits.
 
 ## Data and network behavior
 
-Operational commands read the selected device's customizable name and audio
-state, and setters can change that state. `support-report` uses a separate
-name-free discovery path and never reads the customizable device name. Its
-privacy rules are documented in the
-[CLI reference](docs/cli.md#contributor-compatibility-report).
+Individual listening-mode and Conversation Awareness commands read the chosen AV
+output device's customizable name and requested audio state; setters can change
+that state. `status` enumerates the public list of currently available Core
+Audio device objects. To decide which entries can become records, it reads only
+their class, transport, alive/readiness state, stream presence, runtime-gated
+system HAL Apple-audio/listening capabilities and state, and human-readable
+name. Only when the HAL Apple-audio capability is unavailable does it read the
+manufacturer and compare it with an allowlist. It then passes each eligible
+classic-Bluetooth object's opaque handle unchanged to macOS's audio-to-Bluetooth
+mapper. The HAL capability is the primary admission signal; the manufacturer is
+only a fallback.
+`status` validates the returned object type and deduplicates records only by
+symmetric exact object equality. The name is used for display and exact
+`--device` matching; it is never identity or correlation evidence. Raw HAL
+property values are not logged or emitted. Only recognized canonical listening
+modes are rendered. If HAL evidence contains a future or unrecognized nonzero
+current-mode value, or conflicting recognized values from exactly deduplicated
+endpoints, Listening mode remains `unknown` and lower-priority inference is
+suppressed.
+
+`status` also reads the ordinary default input and output routes and passes an
+eligible classic-Bluetooth default through the same mapper for exact selection
+comparison. Opaque Core Audio object handles are never parsed, logged, or
+emitted. Inventory and selection do not read raw Bluetooth/MAC addresses, Core
+Audio UIDs, private route identifiers, serial numbers, or other identifier
+properties.
+
+The optional active-output feature-enrichment probe is deliberately separate.
+It keeps its bounded `associatedAudioDeviceID`, translated Core Audio device
+handle, and private endpoint `deviceID` inside the process; none is logged or
+rendered, and none is used as Bluetooth identity or selection evidence. The HAL
+can supply listening-mode state for inactive endpoints, with a recognized value
+from the mapped system Bluetooth object as fallback, while Conversation
+Awareness remains unavailable without the exact active-output enrichment. Debug
+output can contain customizable device names and source-build paths, so review
+it before sharing.
+
+`support-report` uses a separate name-free discovery path. It does not read the
+customizable device name, enumerate the Core Audio status inventory, query the
+selected input or output routes, call the selection mapper, or run the optional
+enrichment probe. Its privacy rules are documented in the [CLI
+reference](docs/cli.md#contributor-compatibility-report).
 
 The CLI itself makes no network requests, sends no telemetry, and does not
 submit reports. If you accept the prompt to open a compatibility issue, it asks
