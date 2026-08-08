@@ -108,50 +108,41 @@ Usage:
 
 Read listening mode, Conversation Awareness, and whether each compatible device
 is selected as the macOS audio output or input, without changing anything.
-Selection means an exact match with the default ordinary route, not active use,
-an app-specific route, the alert route, or membership in a composite route.
-Without --device, inspect macOS's public list of currently available Core Audio
-devices. A record requires an ordinary, nonaggregate classic-Bluetooth endpoint
-that is alive and ready, has audio streams, and maps to a canonical
-IOBluetoothDevice. A runtime-gated system HAL Apple-audio capability is the
-primary compatibility signal; an allowlisted Apple or Beats manufacturer is the
-fallback only when that property is unavailable. Input and output endpoints are
-deduplicated only by symmetric exact object equality, with the output endpoint
-preferred. This yields one record for every compatible AirPods or Beats device
-with an eligible Core Audio endpoint. With --device, require one unique exact
-Core Audio name match (case-insensitive). Names are only display and target
-attributes.
+"Selected" means that the device matches the ordinary default route. It does
+not mean that audio is playing or recording. App routes, the alert route, and
+membership in a composite route do not count.
 
-For each direction, status maps a classic Bluetooth default endpoint to a system
-Bluetooth device and compares exact identity. Aggregate routes and known
-unrelated transports are no. Bluetooth LE, USB, unknown or unsupported
-transports, unavailable selectors or properties, and unavailable or nil mappings
-are unknown. An actual failure reading the default route, device class, or
-transport, or performing an available mapper operation, is a read error.
-Opaque Core Audio object handles are passed unchanged to macOS but are never
-parsed, logged, or emitted. Names are never identity or correlation evidence;
-raw Bluetooth/MAC addresses, UIDs, and private route identifiers are not read
-for inventory or selection.
+Without --device, status reads macOS's public list of available Core Audio
+devices. An eligible endpoint is ordinary and nonaggregate, uses classic
+Bluetooth, is alive and ready, has an audio stream, and maps to an
+IOBluetoothDevice. An undocumented HAL property identifies Apple audio
+hardware. If that property is unavailable, status checks an allowlisted Apple
+or Beats manufacturer. Input and output endpoints form one record when their
+mapped objects compare equal in both directions, with the output endpoint
+preferred. With --device, the Core Audio name must have one case-insensitive
+exact match. Names are used for display and targeting, not identity.
 
-Status can read listening-mode state from a runtime-gated system HAL property,
-including for inactive endpoints; a recognized value from the
-mapped system Bluetooth object is a fallback. For optional active-output feature
-enrichment, status may translate a bounded AVOutputContext
-associatedAudioDeviceID through Core Audio and compare only the resulting device
-ID with the default output ID. It checks the private AVOutputDevice deviceID
-before and after only for probe stability. A recognized exact active AV mode has
-priority, followed by one consistent recognized HAL mode. If active AV exposes
-an unrecognized value, or HAL evidence contains a future or unrecognized nonzero
-value or conflicting recognized modes, Listening mode remains unknown and
-lower-priority inference is suppressed. The mapped Bluetooth object is a
-fallback only when higher-priority evidence is unavailable or neutral, or when
-the HAL read failed. If that failed read has no resolving fallback, Listening
-mode is unknown with a read error.
+Input and output are checked separately. Aggregate routes and known unrelated
+transports produce no. Bluetooth LE, USB, unknown transports, missing
+properties, and unavailable mappings produce unknown. A failed Core Audio read
+or mapper call is a read error.
 
-None of these identifiers is used for Bluetooth identity or selection; none is
-logged, printed, or added to support-report. Raw HAL values are not logged or
-emitted. Conversation Awareness requires the exact active-output join and
-otherwise reports unknown.
+An inactive endpoint may expose its current listening mode through an
+undocumented HAL property. The mapped Bluetooth object is the fallback when the
+HAL property is unavailable or neutral, or when its read fails. The active AV
+endpoint takes priority when it can be joined to the stable default output and
+the same mapped Bluetooth object. Unknown AV or HAL values, and conflicting HAL
+values, leave the mode unknown rather than falling back. Conversation Awareness
+also requires this active-output join. The join translates a bounded AVOutputContext
+associatedAudioDeviceID through Core Audio and compares the result with the
+default output ID. It samples the private AVOutputDevice deviceID before and
+after to reject a route change.
+
+Core Audio handles are passed unchanged to macOS and never parsed. They and the
+enrichment identifiers stay inside the process and are never printed or logged.
+Inventory and selection do not read Bluetooth/MAC addresses, Core Audio UIDs,
+or private route identifiers. Raw HAL values are not emitted, and support-report
+does not use this status path.
 
 Plain selection values are yes, no, or unknown; the selection fields follow the
 listening-mode and Conversation Awareness fields, with read errors last. An

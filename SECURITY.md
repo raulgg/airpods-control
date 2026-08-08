@@ -37,23 +37,19 @@ other processes, and its code stops running when `airpods-control` exits.
 
 Individual listening-mode and Conversation Awareness commands read the chosen AV
 output device's customizable name and requested audio state; setters can change
-that state. `status` enumerates the public list of currently available Core
-Audio device objects. To decide which entries can become records, it reads only
-their class, transport, alive/readiness state, stream presence, runtime-gated
-system HAL Apple-audio/listening capabilities and state, and human-readable
-name. Only when the HAL Apple-audio capability is unavailable does it read the
-manufacturer and compare it with an allowlist. It then passes each eligible
-classic-Bluetooth object's opaque handle unchanged to macOS's audio-to-Bluetooth
-mapper. The HAL capability is the primary admission signal; the manufacturer is
-only a fallback.
-`status` validates the returned object type and deduplicates records only by
-symmetric exact object equality. The name is used for display and exact
-`--device` matching; it is never identity or correlation evidence. Raw HAL
-property values are not logged or emitted. Only recognized canonical listening
-modes are rendered. If HAL evidence contains a future or unrecognized nonzero
-current-mode value, or conflicting recognized values from exactly deduplicated
-endpoints, Listening mode remains `unknown` and lower-priority inference is
-suppressed.
+that state. `status` starts with the public list of available Core Audio
+devices. For each candidate, it checks that the endpoint is ordinary and
+nonaggregate, then reads the transport, alive and ready state, stream presence,
+name, and runtime-gated HAL Apple-audio and listening-mode properties. It checks
+the manufacturer against an allowlist only when the HAL Apple-audio property is
+unavailable. Eligible classic-Bluetooth handles pass unchanged to macOS's
+audio-to-Bluetooth mapper.
+
+`status` checks the mapped object's type and combines endpoints only when their
+objects compare equal in both directions. A name is used for display and exact
+`--device` matching, never as identity. Raw HAL values are not logged or
+printed. A future or unknown nonzero HAL mode, or conflicting HAL modes, leaves
+Listening mode `unknown` and prevents a lower-priority fallback.
 
 `status` also reads the ordinary default input and output routes and passes an
 eligible classic-Bluetooth default through the same mapper for exact selection
@@ -62,15 +58,13 @@ emitted. Inventory and selection do not read raw Bluetooth/MAC addresses, Core
 Audio UIDs, private route identifiers, serial numbers, or other identifier
 properties.
 
-The optional active-output feature-enrichment probe is deliberately separate.
-It keeps its bounded `associatedAudioDeviceID`, translated Core Audio device
-handle, and private endpoint `deviceID` inside the process; none is logged or
-rendered, and none is used as Bluetooth identity or selection evidence. The HAL
-can supply listening-mode state for inactive endpoints, with a recognized value
-from the mapped system Bluetooth object as fallback, while Conversation
-Awareness remains unavailable without the exact active-output enrichment. Debug
-output can contain customizable device names and source-build paths, so review
-it before sharing.
+The optional active-output feature probe is separate from selection. Its bounded
+`associatedAudioDeviceID`, translated Core Audio handle, and private endpoint
+`deviceID` stay inside the process. They are not logged, rendered, or used as
+Bluetooth identity. The HAL can supply listening mode for an inactive endpoint,
+with the mapped Bluetooth object as a fallback. Conversation Awareness requires
+the exact active-output join. Debug output can contain customizable device names
+and source-build paths, so review it before sharing.
 
 `support-report` uses a separate name-free discovery path. It does not read the
 customizable device name, enumerate the Core Audio status inventory, query the

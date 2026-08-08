@@ -36,49 +36,40 @@ still require connected-hardware checks. Selection verification requires all
 four output-only, input-only, both, and neither cases in the
 [hardware-testing guide](hardware-testing.md#selected-audio-inputoutput-release-check).
 
-`status` derives its records from the public list of currently available Core
-Audio devices, independently of the selected output. It accepts only ordinary,
-nonaggregate classic-Bluetooth endpoints that are alive and ready, have audio
-streams, and map through the system audio-to-Bluetooth mapper to an expected
-canonical `IOBluetoothDevice`. A runtime-gated system HAL Apple-audio capability
-is the primary compatibility signal; an allowlisted Apple or Beats manufacturer
-is used only when that property is unavailable. Separate input and output
-endpoints become one record only when their canonical objects compare exactly
-equal in both directions; the output endpoint is preferred deterministically.
-The Core Audio name is only a display and `--device` target attribute, never
-identity or correlation evidence.
+`status` starts with the public list of available Core Audio devices, not the
+selected output. An endpoint must be ordinary and nonaggregate, use classic
+Bluetooth, be alive and ready, have an audio stream, and map to an
+`IOBluetoothDevice`. A runtime-gated HAL property is the primary Apple audio
+compatibility signal. An allowlisted Apple or Beats manufacturer is used only
+when that property is unavailable.
+Input and output endpoints form one record when their mapped objects compare
+equal in both directions, with the output endpoint preferred. The Core Audio
+name is used only for display and `--device` matching.
 
-Selection classifies each direction's ordinary default Core Audio endpoint,
-passes only a classic-Bluetooth default through the same mapper, and requires an
-exact canonical-object match. Aggregate and multi-output defaults do not select
-their members, and known unrelated transports prove non-selection. Bluetooth
-LE, USB, unknown or unsupported transports, unavailable selectors or
-properties, and unavailable or nil mappings produce `unknown`. An actual
-failure reading the default route, device class, or transport, or performing an
-available mapper operation, is a read error. Inventory and selection do not read
-or correlate raw Bluetooth/MAC addresses, Core Audio UIDs, or private route
-identifiers; opaque Core Audio object handles are passed unchanged to macOS and
-never logged or emitted.
+Selection is checked separately for input and output. A classic-Bluetooth
+default passes through the same mapper and must match the record's mapped
+object. Aggregate routes and known unrelated transports produce `no`. Bluetooth
+LE, USB, unknown transports, missing properties, and unavailable mappings
+produce `unknown`. A failed route, class, transport, or mapper read is a read
+error. Core Audio handles pass unchanged to macOS and never appear in logs or
+output. Inventory and selection do not read Bluetooth addresses, Core Audio
+UIDs, or private route identifiers.
 
-Runtime-gated system HAL properties can supply current listening-mode state for
-inactive endpoints. Mode resolution accepts the highest-
-priority safe recognized value: exact active AV first, then one consistent mode
-from the exactly deduplicated HAL endpoints. If active AV exposes an
-unrecognized value, or HAL evidence contains a future or unrecognized nonzero
-value or conflicting recognized modes, the field remains `unknown` and the
-mapped-object fallback is suppressed. Only unavailable or neutral HAL evidence,
-or a HAL read failure, permits a recognized value from the mapped system
-Bluetooth object. If that retained failure has no resolving fallback, the mode
-is `unknown` with a field-specific read error.
+Runtime-gated HAL properties can report listening mode for inactive endpoints.
+The active AV value has priority, followed by one consistent HAL value from the
+mapped endpoints. An unknown active AV value stops the lookup. A future or
+unknown nonzero HAL value, or conflicting HAL values, does the same. The mapped
+Bluetooth object is tried only when HAL is unavailable or neutral, or when a
+HAL read fails. That failure is retained. If the fallback cannot resolve the
+mode, the field is `unknown` with a read error.
 
-The optional active-output probe may translate the AV context's bounded
-`associatedAudioDeviceID` through Core Audio and compare the resulting device
-handle with the stable default output handle. It samples the private endpoint
-`deviceID` before and after only to prove stability, and the default endpoint's
-mapped Bluetooth object must exactly equal the record. Conversation Awareness
-remains `unknown` without that exact join. None of these identifiers or raw HAL
-values participates in Bluetooth identity or selection, and none is logged or
-reported.
+The optional active-output probe asks Core Audio to translate the bounded AV
+context `associatedAudioDeviceID` and compares the result with the stable
+default output. The default's mapped Bluetooth object must also match the
+record. The probe samples the private endpoint `deviceID` before and after only
+to reject an endpoint change. Conversation Awareness is `unknown` without this
+join. These identifiers and raw HAL values are never logged or reported, and
+they do not determine Bluetooth identity or selection.
 
 `support-report` remains a separate private-output compatibility path. It does
 not enumerate the Core Audio status inventory, inspect default routes, call the
