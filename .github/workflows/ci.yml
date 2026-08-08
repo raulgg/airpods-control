@@ -46,7 +46,7 @@ jobs:
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
           test -f "$stage/usr/local/share/man/man1/airpods-control.1"
-          test "$("$stage/usr/local/bin/airpods-control" --version)" = "0.2.0"
+          test "$("$stage/usr/local/bin/airpods-control" --version)" = "0.2.1"
           make uninstall DESTDIR="$stage" PREFIX=/usr/local
           test ! -e "$stage/usr/local/bin/airpods-control"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
