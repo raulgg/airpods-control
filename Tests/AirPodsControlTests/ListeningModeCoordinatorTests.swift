@@ -8,6 +8,7 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
   var current: ListeningMode?
   var settable: Bool
   var appliesWrites: Bool
+  var availabilityObservation: ListeningModeAvailabilityObservation?
   private(set) var readModesCount = 0
   private(set) var readCurrentCount = 0
   private(set) var canSetCount = 0
@@ -32,6 +33,11 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
   func availableListeningModes() -> [ListeningMode] {
     readModesCount += 1
     return modes
+  }
+
+  func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
+    readModesCount += 1
+    return availabilityObservation ?? .value(modes)
   }
 
   func currentListeningMode() -> ListeningMode? {
@@ -61,7 +67,9 @@ private final class FakeHALRoutingBackend: AudioRoutingBackend {
   var settableRead: AudioRoutingRead<Bool> = .value(true)
   var writeResult: AudioRoutingWrite = .success
   var appliesWrite = true
+  var deviceUIDs: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   private(set) var writtenValues: [UInt32] = []
+  private(set) var deviceUIDReads: [AudioDeviceID] = []
 
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]> { .unavailable }
   func readDefaultDevice(
@@ -85,6 +93,10 @@ private final class FakeHALRoutingBackend: AudioRoutingBackend {
   }
   func readName(for deviceID: AudioDeviceID) -> AudioRoutingRead<String?> {
     .unavailable
+  }
+  func readDeviceUID(for deviceID: AudioDeviceID) -> AudioRoutingRead<String?> {
+    deviceUIDReads.append(deviceID)
+    return deviceUIDs[deviceID] ?? .unavailable
   }
   func readIsAppleAudioDevice(_ deviceID: AudioDeviceID) -> AudioRoutingRead<Bool> {
     .unavailable
@@ -110,6 +122,34 @@ private final class FakeHALRoutingBackend: AudioRoutingBackend {
       rawModeRead = .value(rawValue)
     }
     return writeResult
+  }
+
+  func resetWrites() {
+    writtenValues.removeAll()
+  }
+}
+
+private final class FailingRemovalAllowOffCache: ListeningModeAllowOffCaching {
+  let wrapped: InMemoryListeningModeAllowOffCache
+
+  init(wrapped: InMemoryListeningModeAllowOffCache) {
+    self.wrapped = wrapped
+  }
+
+  func lookup(rawDeviceUID: String) -> AllowOffCacheLookup {
+    wrapped.lookup(rawDeviceUID: rawDeviceUID)
+  }
+
+  func storePositiveObservation(rawDeviceUID: String) -> AllowOffCacheMutation {
+    wrapped.storePositiveObservation(rawDeviceUID: rawDeviceUID)
+  }
+
+  func removeEvidence(rawDeviceUID: String) -> AllowOffCacheMutation {
+    .unavailable
+  }
+
+  func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
+    wrapped.remove(record: record)
   }
 }
 
@@ -139,14 +179,16 @@ private func candidate(
   name: String = "Desk AirPods",
   av: FakeListeningModeTransport? = nil,
   hal: FakeListeningModeTransport? = nil,
-  route: ListeningModeCandidateRoute
+  route: ListeningModeCandidateRoute,
+  allowOffCorrelation: ListeningModeAllowOffCorrelation? = nil
 ) -> ListeningModeCandidate {
   ListeningModeCandidate(
     displayName: name,
     selectableNames: [name],
     avTransport: av,
     halTransport: hal,
-    route: route
+    route: route,
+    allowOffCorrelation: allowOffCorrelation
   )
 }
 
@@ -593,6 +635,441 @@ func testHALListeningModeTranslationAndOffLimitation() {
   check(transport.availableListeningModes().isEmpty, "failed HAL support read is unavailable")
 }
 
+private func allowOffCacheFixture(
+  backend: FakeHALRoutingBackend,
+  now: @escaping () -> Date,
+  targetID: AudioDeviceID = 42,
+  collisionIDs: [AudioDeviceID] = [42]
+) -> (
+  cache: InMemoryListeningModeAllowOffCache,
+  correlation: ListeningModeAllowOffCorrelation,
+  transport: HALListeningModeTransport
+) {
+  let cache = InMemoryListeningModeAllowOffCache(
+    salt: Data(repeating: 0xA5, count: 32),
+    now: now
+  )!
+  backend.deviceUIDs[targetID] = .value("uid-\(targetID)")
+  let correlation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: targetID,
+    collisionAudioDeviceIDs: collisionIDs,
+    backend: backend,
+    cache: cache,
+    logger: DebugLogger(enabled: false),
+    now: now
+  )
+  let transport = HALListeningModeTransport(
+    name: "Cached AirPods",
+    audioDeviceID: targetID,
+    bluetoothDevice: NSObject(),
+    backend: backend,
+    logger: DebugLogger(enabled: false),
+    wait: { _ in }
+  )
+  return (cache, correlation, transport)
+}
+
+func testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata() {
+  var clock = Date(timeIntervalSince1970: 2_000_000_000)
+  let backend = FakeHALRoutingBackend()
+  backend.rawModeRead = .value(2)
+  let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+
+  let listOutcome = coordinatorOutcome(
+    ["lm", "list", "--json"],
+    candidates: [
+      candidate(
+        name: "Cached AirPods",
+        hal: nil,
+        route: .notSelected,
+        allowOffCorrelation: fixture.correlation
+      )
+    ]
+  )
+  // A correlation without a HAL provider cannot affect selection or output.
+  check(listOutcome.plain == "no-device", "cache evidence never creates a device")
+
+  let halCandidate = ListeningModeCandidate(
+    displayName: "Cached AirPods",
+    selectableNames: ["Cached AirPods"],
+    avTransport: nil,
+    halTransport: fixture.transport,
+    route: .notSelected,
+    allowOffCorrelation: fixture.correlation
+  )
+  let cachedList = coordinatorOutcome(
+    ["lm", "list", "--json"],
+    candidates: [halCandidate]
+  )
+  check(
+    cachedList.plain == "off,transparency,adaptive,noise-cancellation",
+    "a HAL list consumes positive evidence and adds Off"
+  )
+  let metadata = cachedList.payload["allowOffAvailability"] as? [String: Any]
+  check(
+    metadata?["source"] as? String == "cached-av-observation",
+    "cached HAL output identifies only its safe provenance"
+  )
+  check(
+    metadata?["observedAt"] as? String == "2033-05-18T03:33:20.000Z"
+      && metadata?["expiresAt"] as? String == "2033-05-25T03:33:20.000Z",
+    "cached HAL output reports the observation and fixed expiry timestamps"
+  )
+  let serialized = String(
+    data: try! JSONSerialization.data(withJSONObject: cachedList.payload),
+    encoding: .utf8
+  )!
+  check(!serialized.contains("uid-42"), "cache JSON never includes the Core Audio UID")
+  check(!serialized.contains("a5a5"), "cache JSON never includes cache key material")
+
+  let debugCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 42,
+    collisionAudioDeviceIDs: [42],
+    backend: backend,
+    cache: fixture.cache,
+    logger: DebugLogger(enabled: true),
+    now: { clock }
+  )
+  let debugOutput = capturingStandardError {
+    _ = debugCorrelation.cachedAuthorization()
+  }
+  check(
+    debugOutput?.contains("debug: allow_off_cache=\"hit\"") == true
+      && debugOutput?.contains("debug: allow_off_cache.age_seconds=0") == true,
+    "cache debug output is limited to hit and bounded age"
+  )
+  check(
+    debugOutput?.contains("uid-42") == false
+      && debugOutput?.contains("a5a5") == false,
+    "cache debug output never contains correlation material"
+  )
+
+  let uidReadsAfterList = backend.deviceUIDReads.count
+  let getOutcome = coordinatorOutcome(["lm", "get"], candidates: [halCandidate])
+  check(getOutcome.plain == "noise-cancellation", "HAL get retains current-mode behavior")
+  check(
+    backend.deviceUIDReads.count == uidReadsAfterList,
+    "HAL get never consumes cached Allow Off evidence"
+  )
+  check(
+    getOutcome.payload["allowOffAvailability"] == nil,
+    "HAL get has no cache provenance even when current state is Off-capable"
+  )
+
+  clock.addTimeInterval(PersistentListeningModeAllowOffCache.defaultTTL)
+  let expired = coordinatorOutcome(["lm", "list"], candidates: [halCandidate])
+  check(
+    expired.plain == "transparency,adaptive,noise-cancellation",
+    "evidence expires after a non-sliding seven-day TTL"
+  )
+}
+
+func testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly() {
+  let clock = Date(timeIntervalSince1970: 2_000_000_100)
+  let backend = FakeHALRoutingBackend()
+  backend.rawModeRead = .value(2)
+  let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  let halCandidate = ListeningModeCandidate(
+    displayName: "Cached AirPods",
+    selectableNames: ["Cached AirPods"],
+    avTransport: nil,
+    halTransport: fixture.transport,
+    route: .notSelected,
+    allowOffCorrelation: fixture.correlation
+  )
+
+  let setOff = coordinatorOutcome(["lm", "set", "off", "--json"], candidates: [halCandidate])
+  check(setOff.plain == "ok", "cached AV evidence authorizes an explicit HAL Off write")
+  check(backend.writtenValues == [1], "cache-authorized Off writes exact raw mode one")
+  check(setOff.payload["listeningMode"] as? String == "off", "HAL reads Off back")
+  check(
+    setOff.payload["allowOffAvailability"] != nil,
+    "cache-authorized Off write includes additive provenance"
+  )
+
+  backend.rawModeRead = .value(2)
+  backend.resetWrites()
+  let defaultCycle = coordinatorOutcome(["lm", "cycle"], candidates: [halCandidate])
+  check(defaultCycle.plain == "transparency", "default cycle remains non-Off")
+  check(backend.writtenValues == [3], "default cycle never targets cached Off")
+
+  backend.rawModeRead = .value(2)
+  backend.resetWrites()
+  let explicitCycle = coordinatorOutcome(
+    ["lm", "cycle", "--modes", "off,noise-cancellation"],
+    candidates: [halCandidate]
+  )
+  check(explicitCycle.plain == "off", "an explicit Off cycle consumes the cache")
+  check(backend.writtenValues == [1], "explicit Off cycle writes raw mode one")
+}
+
+func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
+  let clock = Date(timeIntervalSince1970: 2_000_000_200)
+  let backend = FakeHALRoutingBackend()
+  backend.rawModeRead = .value(2)
+  backend.appliesWrite = false
+  let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  let halCandidate = ListeningModeCandidate(
+    displayName: "Cached AirPods",
+    selectableNames: ["Cached AirPods"],
+    avTransport: nil,
+    halTransport: fixture.transport,
+    route: .notSelected,
+    allowOffCorrelation: fixture.correlation
+  )
+
+  let mismatch = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [halCandidate]
+  )
+  check(mismatch.plain == "no-op", "definitive non-Off HAL readback is a no-op")
+  check(mismatch.exitCode == 3, "definitive HAL mismatch exits three")
+  check(
+    mismatch.payload["listeningMode"] as? String == "noise-cancellation",
+    "cache-authorized mismatch reports the actual final mode"
+  )
+  check(
+    mismatch.payload["allowOffAvailability"] != nil,
+    "mismatch reports the cached evidence consumed by that invocation"
+  )
+  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "accepted definitive mismatch evicts the positive evidence")
+  } else {
+    check(false, "accepted definitive mismatch evicts the positive evidence")
+  }
+
+  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  backend.writeResult = .notSettable
+  let rejected = coordinatorOutcome(["lm", "set", "off"], candidates: [halCandidate])
+  check(rejected.plain == "no-op", "a provider rejection remains a no-op")
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "setter rejection leaves positive evidence unchanged")
+  } else {
+    check(false, "setter rejection leaves positive evidence unchanged")
+  }
+
+  let av = FakeListeningModeTransport(
+    name: "Cached AirPods",
+    kind: .av,
+    current: .noiseCancellation,
+    appliesWrites: false
+  )
+  let avMismatch = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [
+      candidate(
+        name: "Cached AirPods",
+        av: av,
+        route: .selected,
+        allowOffCorrelation: fixture.correlation
+      )
+    ]
+  )
+  check(avMismatch.plain == "no-op", "a definitive non-Off AV readback is a no-op")
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "an AV mismatch preserves its fresh availability evidence")
+  } else {
+    check(false, "an AV mismatch preserves its fresh availability evidence")
+  }
+}
+
+func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
+  let clock = Date(timeIntervalSince1970: 2_000_000_300)
+  let backend = FakeHALRoutingBackend()
+  backend.rawModeRead = .value(2)
+  let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  let av = FakeListeningModeTransport(
+    name: "Cached AirPods",
+    kind: .av,
+    modes: ListeningMode.allCases,
+    current: .transparency
+  )
+  let joined = candidate(
+    name: "Cached AirPods",
+    av: av,
+    route: .selected,
+    allowOffCorrelation: fixture.correlation
+  )
+  _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "successful AV availability with Off refreshes positive evidence")
+  } else {
+    check(false, "successful AV availability with Off refreshes positive evidence")
+  }
+
+  av.modes = [.transparency, .adaptive, .noiseCancellation]
+  _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
+  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "successful AV availability without Off deletes evidence")
+  } else {
+    check(false, "successful AV availability without Off deletes evidence")
+  }
+
+  av.current = .off
+  let readsBeforeGet = av.readModesCount
+  _ = coordinatorOutcome(["lm", "get"], candidates: [joined])
+  check(av.readModesCount == readsBeforeGet, "AV get does not add an availability read")
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "a live AV get that returns Off refreshes positive evidence")
+  } else {
+    check(false, "a live AV get that returns Off refreshes positive evidence")
+  }
+
+  av.availabilityObservation = .unavailable
+  _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "AV selector/read failure leaves evidence unchanged")
+  } else {
+    check(false, "AV selector/read failure leaves evidence unchanged")
+  }
+
+  _ = fixture.cache.removeEvidence(rawDeviceUID: "uid-42")
+  av.availabilityObservation = nil
+  av.current = .off
+  _ = coordinatorOutcome(["lm", "set", "adaptive"], candidates: [joined])
+  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "a non-Off operation does not warm evidence from incidental reads")
+  } else {
+    check(false, "a non-Off operation does not warm evidence from incidental reads")
+  }
+
+  let ambiguousBackend = FakeHALRoutingBackend()
+  ambiguousBackend.rawModeRead = .value(2)
+  ambiguousBackend.deviceUIDs[42] = .value("same-uid")
+  ambiguousBackend.deviceUIDs[43] = .value("same-uid")
+  let ambiguousCache = InMemoryListeningModeAllowOffCache(
+    salt: Data(repeating: 0xB6, count: 32),
+    now: { clock }
+  )!
+  _ = ambiguousCache.storePositiveObservation(rawDeviceUID: "same-uid")
+  let ambiguousCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 42,
+    collisionAudioDeviceIDs: [42, 43],
+    backend: ambiguousBackend,
+    cache: ambiguousCache,
+    logger: DebugLogger(enabled: false),
+    now: { clock }
+  )
+  let ambiguousTransport = HALListeningModeTransport(
+    name: "Ambiguous AirPods",
+    audioDeviceID: 42,
+    bluetoothDevice: NSObject(),
+    backend: ambiguousBackend,
+    logger: DebugLogger(enabled: false),
+    wait: { _ in }
+  )
+  let ambiguousOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [
+      ListeningModeCandidate(
+        displayName: "Ambiguous AirPods",
+        selectableNames: ["Ambiguous AirPods"],
+        avTransport: nil,
+        halTransport: ambiguousTransport,
+        route: .notSelected,
+        allowOffCorrelation: ambiguousCorrelation
+      )
+    ]
+  )
+  check(ambiguousOutcome.plain == "unsupported", "ambiguous UID correlation is a silent miss")
+  check(
+    ambiguousBackend.writtenValues.isEmpty,
+    "ambiguous cache correlation never authorizes a write"
+  )
+
+  let liveBackend = FakeHALRoutingBackend()
+  liveBackend.rawModeRead = .value(2)
+  let liveHAL = HALListeningModeTransport(
+    name: "Live Evidence AirPods",
+    audioDeviceID: 52,
+    bluetoothDevice: NSObject(),
+    backend: liveBackend,
+    logger: DebugLogger(enabled: false),
+    wait: { _ in }
+  )
+  let incompleteLiveAV = FakeListeningModeTransport(
+    name: "Live Evidence AirPods",
+    kind: .av,
+    modes: ListeningMode.allCases,
+    current: .noiseCancellation,
+    settable: false
+  )
+  let liveFallback = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [
+      ListeningModeCandidate(
+        displayName: "Live Evidence AirPods",
+        selectableNames: ["Live Evidence AirPods"],
+        avTransport: incompleteLiveAV,
+        halTransport: liveHAL,
+        route: .unknown
+      )
+    ]
+  )
+  check(liveFallback.plain == "ok", "fresh AV Off evidence authorizes same-command HAL fallback")
+  check(liveBackend.writtenValues == [1], "fresh evidence does not require cache persistence")
+  check(
+    liveFallback.payload["allowOffAvailability"] == nil,
+    "fresh live evidence is never mislabeled as cached provenance"
+  )
+
+  let staleBackend = FakeHALRoutingBackend()
+  staleBackend.rawModeRead = .value(2)
+  staleBackend.deviceUIDs[62] = .value("uid-62")
+  let wrappedCache = InMemoryListeningModeAllowOffCache(
+    salt: Data(repeating: 0xD8, count: 32),
+    now: { clock }
+  )!
+  _ = wrappedCache.storePositiveObservation(rawDeviceUID: "uid-62")
+  let failingRemovalCache = FailingRemovalAllowOffCache(wrapped: wrappedCache)
+  let staleCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 62,
+    collisionAudioDeviceIDs: [62],
+    backend: staleBackend,
+    cache: failingRemovalCache,
+    logger: DebugLogger(enabled: false),
+    now: { clock }
+  )
+  let staleHAL = HALListeningModeTransport(
+    name: "Fresh Negative AirPods",
+    audioDeviceID: 62,
+    bluetoothDevice: NSObject(),
+    backend: staleBackend,
+    logger: DebugLogger(enabled: false),
+    wait: { _ in }
+  )
+  let negativeAV = FakeListeningModeTransport(
+    name: "Fresh Negative AirPods",
+    kind: .av,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation
+  )
+  let freshNegative = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [
+      ListeningModeCandidate(
+        displayName: "Fresh Negative AirPods",
+        selectableNames: ["Fresh Negative AirPods"],
+        avTransport: negativeAV,
+        halTransport: staleHAL,
+        route: .unknown,
+        allowOffCorrelation: staleCorrelation
+      )
+    ]
+  )
+  check(
+    freshNegative.plain == "unsupported",
+    "fresh AV negative evidence suppresses a stale cache hit even if deletion fails"
+  )
+  check(
+    staleBackend.writtenValues.isEmpty,
+    "failed negative-evidence persistence never reauthorizes HAL Off in the same command"
+  )
+}
+
 func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorRouteAndPreflightSelection()
   testListeningModeCoordinatorPreservesAVUnknownStateWrites()
@@ -602,4 +1079,8 @@ func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL()
   testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames()
   testHALListeningModeTranslationAndOffLimitation()
+  testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata()
+  testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly()
+  testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence()
+  testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity()
 }

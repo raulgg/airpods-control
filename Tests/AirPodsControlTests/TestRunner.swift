@@ -6,6 +6,7 @@ struct TestRunner {
     runCLIParsingTests()
     runInteractiveDeviceChooserTests()
     runListeningModeTests()
+    runListeningModeAllowOffCacheTests()
     runListeningModeCoordinatorTests()
     runCommandExecutionTests()
     runPrivateAudioDiscoveryTests()

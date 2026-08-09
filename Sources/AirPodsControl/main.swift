@@ -150,10 +150,13 @@ func bootstrapAndResolveListeningMode(
     avDevices = []
   }
 
+  let allowOffCache = PersistentListeningModeAllowOffCache.systemDefault()
+
   let halCandidates = IOBluetoothStatusController(
     logger: logger,
     activeOutputContext: outputContext,
-    readStatusListeningMode: false
+    readStatusListeningMode: false,
+    allowOffCache: allowOffCache
   )?.listeningModeCandidates() ?? []
   let coordinator = ListeningModeCoordinator(
     avDevices: avDevices,

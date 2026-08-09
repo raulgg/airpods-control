@@ -113,11 +113,14 @@ off,transparency,adaptive,noise-cancellation
 
 Modes are always printed in that order, filtered to the modes supported by the
 connected device. A HAL-backed list uses the `lsms` capability mask and can
-currently establish Noise Cancellation, Transparency, and Adaptive. It omits
-Off because HAL does not expose the separate user-configured Allow Off setting.
-Consequently HAL-only `set off` and cycles whose remaining usable set is too
-small report `unsupported`; AV-backed commands continue to expose Off when AV
-advertises it. A route-independent Allow Off getter is deferred work.
+establish Noise Cancellation, Transparency, and Adaptive. HAL does not expose
+the separate user-configured Allow Off setting. A HAL-backed command includes
+Off only when it can consume recent positive AV evidence for the exact output
+endpoint, as described under
+[Cached Allow Off availability](#cached-allow-off-availability). Without that
+evidence, HAL `list` omits Off, `set off` is unsupported, and Off is removed
+from an explicit cycle set. AV-backed commands continue to expose Off when AV
+advertises it.
 
 ### Cycle through modes
 
@@ -155,6 +158,57 @@ or an unknown token produces `bad-args` (exit `2`). The command skips modes that
 the connected device does not support. If fewer than two remain, it reports
 `unsupported` (exit `4`). A change that cannot be verified reports `no-op` (exit
 `3`).
+
+### Cached Allow Off availability
+
+The HAL `lsms` mask has no Allow Off bit. To support a connected but unselected
+device without changing the audio route, the CLI keeps a weak positive cache of
+the exact output endpoint having advertised Off through AV.
+
+An AV available-mode read updates this cache only when the read is already
+needed for `list`, `set off`, or an explicit cycle set containing Off. A
+successful eligible read that includes Off writes or refreshes the positive
+observation; a successful eligible read that omits Off deletes it. An AV-backed
+`listening-mode get` also refreshes the observation when it returns Off. A
+non-Off result is not negative evidence, and incidental current-mode reads made
+by other operations do not warm the cache. Selector failures, unavailable
+endpoints, and failed reads leave the cache unchanged. The CLI does not perform
+an extra AV read solely to warm the cache, and HAL observations never refresh
+it.
+
+A valid observation lets the exact HAL target include Off in `list`, attempt
+`set off`, or retain Off in an explicit cycle set. It never adds Off to the
+default cycle. A cache miss preserves the ordinary HAL behavior, including the
+minimum-size check after unavailable modes are removed from an explicit cycle
+set. Cache correlation happens after target and provider selection; it cannot
+select, merge, or disambiguate devices. A missing or nonunique exact endpoint
+correlation is a silent miss.
+
+The cache contains positive observations only. Each one expires seven days
+after the AV observation, and use does not extend that lifetime. A new eligible
+positive AV observation starts a new seven-day period; a macOS update does not.
+Missing, expired, malformed, or unreadable data is treated as a miss. The
+disposable, backup-excluded cache is stored at:
+
+```text
+~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
+```
+
+The key is the full SHA-256 digest of a random per-cache salt followed by the
+exact, case-sensitive public Core Audio UID. The cache persists the salt,
+digest, and observation time. The raw UID is held only transiently and is never
+persisted; the raw UID, digest, and salt are never printed or logged.
+`support-report` does not access the cache or include its data. Deleting the
+cache file safely restores the pre-cache HAL behavior.
+
+This evidence may be stale if Allow Off changes before another eligible AV read
+or a HAL write disproves it. If an accepted cache-authorized Off write finishes
+with a definitive non-Off state, the command reports `no-op` with that actual
+state and deletes the observation. It does not retry through AV, infer a
+Transparency fallback, or choose a second cycle target. A rejected write,
+timeout, failed read, or unknown final state leaves the observation in place.
+As with every listening-mode readback, a match is macOS-reported state, not a
+direct AirPods acknowledgement.
 
 ## Conversation Awareness
 
@@ -528,6 +582,11 @@ existing record; it is not device identity or correlation. A name passed on the
 command line must not begin with `-`; this prevents an option token from being
 consumed as a missing `--device` value.
 
+Allow Off cache correlation is a separate, downstream step for an already
+selected output endpoint. It never changes name matching, target selection,
+endpoint deduplication, or provider routing. Failure to correlate exactly one
+endpoint is a silent cache miss.
+
 ## JSON output
 
 Add `--json` to an operational command or the version command for structured
@@ -573,6 +632,14 @@ write uses `"result":"no-op"` and exits `3`. The response contains the final
 canonical state read during the bounded settling window, the Transparency
 fallback, or JSON `null` when neither applies. Version JSON follows the same
 result convention: `{"result":"ok","version":"0.1.0"}`.
+
+When a listening-mode command actually consumes cached AV evidence to make Off
+available through HAL, its JSON response also contains
+`allowOffAvailability`. The object reports `source` as
+`"cached-av-observation"`, plus RFC 3339 `observedAt` and `expiresAt`
+timestamps. Live AV evidence, HAL behavior that did not need the observation,
+and cache misses omit the object. Plain output never changes because of cache
+provenance.
 
 `status` always returns a top-level `devices` array, including when `--device`
 selects a single device. Each record has `device`; applicable canonical resource
@@ -648,7 +715,9 @@ include bounded numeric property values and OSStatus codes (numeric status
 codes returned by macOS), but never the Core Audio device ID, UID, Bluetooth
 address, serial, or object description.
 Operational diagnostics may include the displayed device name, but names are
-not used as identity. `--debug` does not change stdout, JSON, or the exit code.
+not used as identity. Allow Off cache diagnostics are limited to hit or miss and
+record age; they never include the Core Audio UID, cache digest, salt, key, or
+contents. `--debug` does not change stdout, JSON, or the exit code.
 
 `support-report` also accepts `--debug`. Its diagnostics omit the customizable
 device name, though a source build can expose a home directory through the
@@ -670,6 +739,13 @@ with `listeningMode: "transparency"`. This is the expected eventual fallback
 when Off Listening Mode is disabled, not an observed final sample. For rejected
 writes or devices without Transparency, the response contains the final observed
 canonical mode or `null`.
+
+A cache-authorized HAL Off write uses the stricter cache contract instead. If
+its definitive final read is a known non-Off mode, that actual mode is returned
+with `no-op` and the positive observation is deleted. The command does not use
+the inferred Transparency fallback, retry through AV, or select another cycle
+target. Rejection, timeout, read failure, or an unknown final state does not
+delete the observation.
 
 ## Exit codes
 

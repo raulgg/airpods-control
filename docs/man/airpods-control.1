@@ -210,7 +210,9 @@ if the requested mode is not observed within the bounded verification window.
 Print the comma-separated modes supported by the connected device in the deterministic order documented under
 .BR MODES .
 .IP
-A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. It omits Off because HAL does not expose the separate user-configured Allow Off setting. HAL-only direct writes or cycles into Off are therefore unsupported until that setting can be established. AV-backed commands continue to expose Off when AV advertises it.
+A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. HAL does not expose the separate user-configured Allow Off setting. A valid cached AV observation for the exact output endpoint can additionally establish Off as described under
+.BR "ALLOW OFF CACHE" .
+Without that evidence, HAL lists omit Off, direct writes to Off are unsupported, and Off is removed from explicit cycle sets. AV-backed commands continue to expose Off when AV advertises it.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
 Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes always cycle in the order documented under
@@ -225,6 +227,33 @@ selects an explicit subset of at least two distinct modes. Modes the device does
 cycle still advances in canonical order from the current mode to the next mode that is in the set, wrapping around; if the current mode is unknown, cycle starts at the set's first mode. A change that does not verify reports
 .B no-op
 (exit 3).
+.SS ALLOW OFF CACHE
+The CLI can reuse a recent positive AV observation of Allow Off for an exact HAL output endpoint. This weak evidence says only that the endpoint recently advertised Off through AV; it is not a live device query, durable device identity, or protocol acknowledgement.
+.PP
+An AV available-mode read updates the cache only when already needed for
+.BR list ,
+.BR "set off" ,
+or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes the positive observation; a successful eligible read omitting Off deletes it. An AV-backed
+.B listening-mode get
+also refreshes the observation when it returns Off. A non-Off result is not negative evidence, and incidental current-mode reads made by other operations do not warm the cache. Selector failures, unavailable endpoints, and failed reads leave the cache unchanged. The CLI does not perform an extra AV read to warm the cache, and HAL observations never refresh it.
+.PP
+A valid observation lets the exact HAL target include Off in
+.BR list ,
+attempt
+.BR "set off" ,
+or retain Off in an explicit cycle set. The default cycle always excludes Off. A cache miss preserves the existing fail-closed HAL behavior, including the explicit-cycle minimum-size check after unavailable modes are removed.
+.PP
+Correlation occurs after target and provider selection and cannot select, merge, or disambiguate devices. The cache key is the full SHA-256 digest of a random per-cache salt followed by the exact, case-sensitive public Core Audio UID. The cache persists the salt, digest, and observation time. The raw UID is used only transiently and is never persisted; the raw UID, digest, and salt are never printed or logged.
+.B support-report
+does not access this cache or include its data. Missing or nonunique correlation is a silent cache miss.
+.PP
+Positive observations expire seven days after the AV observation. Use does not extend the lifetime, and macOS version changes do not invalidate or refresh it. Missing, expired, unreadable, or malformed data is a miss. The disposable, backup-excluded file is stored at
+.BR ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json .
+Deleting it safely restores the pre-cache HAL behavior.
+.PP
+An accepted cache-authorized Off write still requires bounded HAL readback. A definitive non-Off final state produces
+.B no-op
+with that actual state and deletes the observation. The command does not retry through AV, infer Transparency, or choose another cycle target. A rejected write, timeout, failed read, or unknown final state leaves the observation in place.
 .SS CONVERSATION AWARENESS
 .TP
 .BR "conversation-awareness get" ", " "ca get"
@@ -349,6 +378,18 @@ state; unavailable values are JSON
 The listening-mode list command additionally returns
 .BR supportedListeningModes .
 .IP
+When a listening-mode command actually consumes cached AV evidence to make Off available through HAL, its JSON response also contains
+.BR allowOffAvailability .
+That object contains
+.B source
+set to
+.BR cached-av-observation ,
+plus RFC 3339
+.B observedAt
+and
+.B expiresAt
+timestamps. Live AV evidence, cache misses, and HAL behavior that did not need the observation omit the object. Plain output is unchanged.
+.IP
 .B status
 always returns a top-level
 .B devices
@@ -388,7 +429,7 @@ where the diagnostics can explain why a device is not recognized.
 .B support-report
 does not read the customizable device name, enumerate the Core Audio status inventory, query audio selection, or run enrichment, but its diagnostics can contain the installed dylib path and therefore a home directory in a source build.
 .IP
-Debug output from operational commands can also contain selected device names. Review diagnostics before pasting them into an issue.
+Debug output from operational commands can also contain selected device names. Allow Off cache diagnostics are limited to hit or miss and record age; they never contain the Core Audio UID, cache digest, salt, key, or contents. Review diagnostics before pasting them into an issue.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -431,6 +472,10 @@ set to
 This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. Rejected writes and devices without Transparency report the final observed canonical mode, or
 .B null
 when the final readback is missing or unknown.
+.PP
+A cache-authorized HAL Off write does not use that inferred Transparency fallback. If its definitive final read is a known non-Off mode, it reports
+.B no-op
+with that actual mode and deletes the positive observation. It does not retry through AV or choose another cycle target. Rejection, timeout, read failure, or an unknown final state leaves the observation unchanged.
 .PP
 This relies on a private API and targets macOS Tahoe (26); Apple may change it in any update. Missing capabilities are reported as
 .B unsupported

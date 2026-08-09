@@ -204,8 +204,9 @@ Listening-mode commands use a command-ready AV endpoint for the selected
 output and an eligible Core Audio HAL output endpoint when unselected. They
 never change the audio route. In an interactive terminal, multiple unnamed HAL
 targets prompt for a displayed number; automated or JSON ambiguity fails.
-HAL-backed mode lists currently omit off because HAL does not expose the
-separate Allow Off configuration.
+HAL-backed commands can reuse a recent AV Allow Off observation for the exact
+output endpoint. The observation expires after seven days; cache misses
+preserve HAL's non-Off behavior, and the default cycle always excludes off.
 """
 
 let conversationAwarenessHelp = """

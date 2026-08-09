@@ -69,7 +69,8 @@ enum CommandExecution {
         deviceName: session.name,
         plain: mode?.rawValue ?? "unknown",
         result: "ok",
-        state: mode?.rawValue
+        state: mode?.rawValue,
+        extra: listeningModeExtra(for: session)
       )
 
     case .list:
@@ -80,7 +81,10 @@ enum CommandExecution {
         plain: tokens.joined(separator: ","),
         result: "ok",
         state: session.currentMode?.rawValue,
-        extra: ["supportedListeningModes": tokens]
+        extra: listeningModeExtra(
+          for: session,
+          adding: ["supportedListeningModes": tokens]
+        )
       )
 
     case .set(let target):
@@ -100,7 +104,8 @@ enum CommandExecution {
           deviceName: session.name,
           plain: "ok",
           result: "ok",
-          state: target.rawValue
+          state: target.rawValue,
+          extra: listeningModeExtra(for: session)
         )
       }
 
@@ -276,7 +281,8 @@ enum CommandExecution {
       exitCode: 4,
       result: "error",
       state: session.currentMode?.rawValue,
-      error: "unsupported"
+      error: "unsupported",
+      extra: listeningModeExtra(for: session)
     )
   }
 
@@ -286,12 +292,33 @@ enum CommandExecution {
     session: ListeningModeSession,
     logger: DebugLogger
   ) -> CommandOutcome {
-    let observation = session.transport.setListeningModeAndReadBack(target)
+    let observation: DeviceWriteObservation<ListeningMode>
+    if let hal = session.transport as? HALListeningModeTransport {
+      observation = hal.setListeningModeAndReadBack(
+        target,
+        allowOff: session.allowOffAuthorization != nil
+      )
+    } else {
+      observation = session.transport.setListeningModeAndReadBack(target)
+    }
+    if target == .off,
+      session.transport.listeningModeTransportKind == .hal,
+      session.allowOffAuthorization?.cachedEvidence != nil,
+      observation.setterAccepted,
+      let observed = observation.observed,
+      observed != .off
+    {
+      session.allowOffAuthorization?.invalidate()
+    }
+    let allowsInferredOffFallback =
+      !(session.transport.listeningModeTransportKind == .hal
+        && session.allowOffAuthorization != nil)
     let resolution = resolveListeningModeWrite(
       requested: target,
       setterAccepted: observation.setterAccepted,
       observed: observation.observed,
       transparencySupported: session.availableModes.contains(.transparency)
+        && allowsInferredOffFallback
     )
     if resolution.inferredOffFallback {
       logger.debug("verify.listening_mode.inferred_off_fallback", true)
@@ -303,7 +330,8 @@ enum CommandExecution {
         deviceName: session.name,
         plain: successPlain,
         result: "ok",
-        state: resolution.state?.rawValue
+        state: resolution.state?.rawValue,
+        extra: listeningModeExtra(for: session)
       )
     }
     return resourceOutcome(
@@ -312,7 +340,8 @@ enum CommandExecution {
       plain: "no-op",
       exitCode: 3,
       result: "no-op",
-      state: resolution.state?.rawValue
+      state: resolution.state?.rawValue,
+      extra: listeningModeExtra(for: session)
     )
   }
 
@@ -370,5 +399,23 @@ enum CommandExecution {
       exitCode: exitCode,
       payload: payload
     )
+  }
+
+  private static func listeningModeExtra(
+    for session: ListeningModeSession,
+    adding extra: [String: Any] = [:]
+  ) -> [String: Any] {
+    var result = extra
+    guard let evidence = session.allowOffAuthorization?.cachedEvidence else {
+      return result
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    result["allowOffAvailability"] = [
+      "source": "cached-av-observation",
+      "observedAt": formatter.string(from: evidence.observedAt),
+      "expiresAt": formatter.string(from: evidence.expiresAt),
+    ]
+    return result
   }
 }

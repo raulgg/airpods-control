@@ -368,6 +368,7 @@ private struct IOBluetoothListeningModeBinding {
   let name: String
   let audioDeviceID: AudioDeviceID
   let bluetoothDevice: AnyObject
+  let allowOffCorrelation: ListeningModeAllowOffCorrelation?
 }
 
 final class IOBluetoothStatusController {
@@ -380,7 +381,8 @@ final class IOBluetoothStatusController {
   convenience init?(
     logger: DebugLogger,
     activeOutputContext: AnyObject?,
-    readStatusListeningMode: Bool = true
+    readStatusListeningMode: Bool = true,
+    allowOffCache: (any ListeningModeAllowOffCaching)? = nil
   ) {
     let runtime = SystemBluetoothAudioRuntime(logger: logger)
     self.init(
@@ -388,6 +390,7 @@ final class IOBluetoothStatusController {
       routingBackend: CoreAudioRoutingBackend(),
       activeEndpointProbe: activeOutputContext.map(SystemActiveAudioEndpointProbe.init),
       readStatusListeningMode: readStatusListeningMode,
+      allowOffCache: allowOffCache,
       logger: logger
     )
   }
@@ -397,6 +400,7 @@ final class IOBluetoothStatusController {
     routingBackend: any AudioRoutingBackend,
     activeEndpointProbe: (any ActiveAudioEndpointProbing)? = nil,
     readStatusListeningMode: Bool = true,
+    allowOffCache: (any ListeningModeAllowOffCaching)? = nil,
     logger: DebugLogger
   ) {
     self.logger = logger
@@ -602,6 +606,14 @@ final class IOBluetoothStatusController {
       )
     }
     devices = compatibleDevices
+    let cacheCollisionAudioDeviceIDs = groups.flatMap { group -> [AudioDeviceID] in
+      guard !group.endpoints.contains(where: {
+        $0.appleAudioAdmission == .negative
+      }) else { return [] }
+      return group.endpoints.filter {
+        $0.appleAudioAdmission == .positive && $0.hasOutput
+      }.map(\.audioDeviceID)
+    }
     listeningModeBindings = groups.compactMap { group in
       guard !group.endpoints.contains(where: {
         $0.appleAudioAdmission == .negative
@@ -621,7 +633,17 @@ final class IOBluetoothStatusController {
       return IOBluetoothListeningModeBinding(
         name: name,
         audioDeviceID: outputEndpoint.audioDeviceID,
-        bluetoothDevice: outputEndpoint.bluetoothDevice
+        bluetoothDevice: outputEndpoint.bluetoothDevice,
+        allowOffCorrelation: {
+          guard outputEndpoints.count == 1, let allowOffCache else { return nil }
+          return ListeningModeAllowOffCorrelation(
+            targetAudioDeviceID: outputEndpoint.audioDeviceID,
+            collisionAudioDeviceIDs: cacheCollisionAudioDeviceIDs,
+            backend: routingBackend,
+            cache: allowOffCache,
+            logger: logger
+          )
+        }()
       )
     }
     logger.info("compatible_device_count", devices.count)
@@ -667,7 +689,8 @@ final class IOBluetoothStatusController {
         avTransport: avTransport,
         halTransport: transport,
         route: route,
-        avJoinEvidence: avJoinEvidence
+        avJoinEvidence: avJoinEvidence,
+        allowOffCorrelation: binding.allowOffCorrelation
       )
     }
   }
