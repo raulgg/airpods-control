@@ -130,6 +130,67 @@ func bootstrapAndResolveAudioDevices(
   }
 }
 
+func bootstrapAndResolveListeningModeDevice(
+  invocation: CLIInvocation,
+  logger: DebugLogger
+) -> CompatibleDeviceResolution {
+  ensureBypass(logger: logger)
+
+  let outputContext = PrivateAudioDiscovery.systemStatusOutputContext(logger: logger)
+  let avDevices: [PrivateAudioDevice]
+  if let outputContext {
+    let endpoints = PrivateAudioDiscovery.contextEndpoints(
+      from: outputContext,
+      logger: logger
+    )
+    avDevices = PrivateAudioController(endpoints: endpoints, logger: logger)
+      .selectDevices(named: nil, policy: .allOrExact) ?? []
+  } else {
+    avDevices = []
+  }
+
+  let halCandidates = IOBluetoothStatusController(
+    logger: logger,
+    activeOutputContext: outputContext,
+    readStatusListeningMode: false
+  )?.listeningModeCandidates() ?? []
+  let candidates = ListeningModeCoordinator.candidates(
+    avDevices: avDevices,
+    halCandidates: halCandidates
+  )
+  let coordinator = ListeningModeCoordinator(candidates: candidates, logger: logger)
+
+  return coordinator.resolve(
+    command: invocation.command,
+    named: invocation.requestedDeviceName,
+    chooseAmbiguous: { names in
+      let inputIsTerminal = isatty(STDIN_FILENO) == 1
+      let errorIsTerminal = isatty(STDERR_FILENO) == 1
+      guard inputIsTerminal, errorIsTerminal, !invocation.jsonOutput else {
+        return .unavailable
+      }
+
+      let outcome = InteractiveDeviceChooser.choose(
+        deviceNames: names,
+        eligibility: .init(
+          inputIsTerminal: inputIsTerminal,
+          errorIsTerminal: errorIsTerminal,
+          jsonOutput: invocation.jsonOutput
+        ),
+        readResponse: { readLine() },
+        writeError: { text in
+          fputs(text, stderr)
+          fflush(stderr)
+        }
+      )
+      switch outcome {
+      case let .selected(index): return .selected(index: index)
+      case .cancelled: return .cancelled
+      }
+    }
+  )
+}
+
 let rawArgs = Array(CommandLine.arguments.dropFirst())
 
 if rawArgs.isEmpty {
@@ -161,7 +222,21 @@ do {
 
 let outcome = CommandExecution.execute(
   invocation,
-  resolveDevices: { requestedName, policy, logger in
+  resolveDeviceResolution: { requestedName, policy, logger in
+    switch invocation.command {
+    case .listeningModeGet, .listeningModeSet,
+         .listeningModeList, .listeningModeCycle:
+      return bootstrapAndResolveListeningModeDevice(
+        invocation: invocation,
+        logger: logger
+      )
+    case .version:
+      preconditionFailure("version does not resolve devices")
+    case .status, .supportReport,
+         .conversationAwarenessGet, .conversationAwarenessSet:
+      break
+    }
+
     let accessPolicy: PrivateAudioAccessPolicy
     if case .supportReport = invocation.command {
       accessPolicy = .supportReport
@@ -170,12 +245,13 @@ let outcome = CommandExecution.execute(
     } else {
       accessPolicy = .operational
     }
-    return bootstrapAndResolveAudioDevices(
+    guard let devices = bootstrapAndResolveAudioDevices(
       named: requestedName,
       policy: policy,
       logger: logger,
       accessPolicy: accessPolicy
-    )
+    ), !devices.isEmpty else { return .noDevice }
+    return .devices(devices)
   },
   supportReport: SupportReportCommand(
     requestWriteTestConsent: { plan in

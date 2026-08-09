@@ -191,13 +191,21 @@ Cycle:
 
 Options:
   --device NAME
-               Target a compatible output device by exact name (case-insensitive).
+               Target a compatible device by exact name (case-insensitive).
+               Duplicate exact names are ambiguous.
   --modes <m1,m2[,...]>
                Cycle set for listening-mode cycle: at least two distinct
                modes, comma-separated. Mode aliases are accepted.
   --json       Emit structured JSON instead of plain script-friendly output.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing the device.
+
+Listening-mode commands use a command-ready AV endpoint for the selected
+output and an eligible Core Audio HAL output endpoint when unselected. They
+never change the audio route. In an interactive terminal, multiple unnamed HAL
+targets prompt for a displayed number; automated or JSON ambiguity fails.
+HAL-backed mode lists currently omit off because HAL does not expose the
+separate Allow Off configuration.
 """
 
 let conversationAwarenessHelp = """

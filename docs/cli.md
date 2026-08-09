@@ -36,11 +36,21 @@ proven-unsupported field.
 
 Operational commands accept `--device NAME`, `--json`, and `--debug` in any
 position. `--device` uses a case-insensitive, whole-name match among the
-command's compatible devices. It never falls back to another device. No match
-or multiple exact matches produce `no-device`. Without `--device`, the
-individual resource commands use the first compatible output device; `status`
-reports every eligible compatible record it can derive from currently available
-Core Audio endpoints, independently of the selected output.
+command's compatible devices. It never falls back to another device. For
+listening-mode commands, multiple exact matches produce `ambiguous-device`;
+the user must give connected devices distinct names. Without `--device`, a
+selected AirPods output remains the automatic listening-mode target, and a
+single eligible HAL device is selected automatically. If several HAL devices
+remain, an interactive terminal displays them in discovery order and asks for
+a displayed number. The chooser is used only when standard input and standard
+error are terminals and `--json` is absent. Blank input, `q`, or end of input
+prints `cancelled` and exits `1`; automated or JSON ambiguity returns
+`ambiguous-device` and exits `1`. Conversation Awareness retains its existing
+first compatible AV output behavior. If listening-mode HAL control is entirely
+unavailable, the older AV-only behavior likewise keeps the first compatible AV
+output. Mixed AV/HAL ambiguity fails closed instead of opening the HAL chooser.
+`status` reports every eligible compatible record it can derive from currently
+available Core Audio endpoints, independently of the selected output.
 
 `support-report` is a separate contributor command. It accepts
 `--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
@@ -73,6 +83,17 @@ $ airpods-control lm set noise-cancellation
 no-op
 ```
 
+The provider is selected before any write. A command-ready selected AV endpoint
+uses the existing AV control surface; an unselected device uses its mapped Core
+Audio HAL output endpoint. Unknown routing tries AV first and may fall back to
+HAL only if AV preflight fails before a setter call. Once a setter is attempted,
+the command never retries through the other provider. No listening-mode command
+changes the default output or starts an audio stream.
+
+A matching bounded readback means the chosen macOS control surface reports the
+requested state. It is operational verification for this CLI, not a direct
+AirPods protocol acknowledgement.
+
 ### List the modes this device supports
 
 ```console
@@ -81,7 +102,12 @@ off,transparency,adaptive,noise-cancellation
 ```
 
 Modes are always printed in that order, filtered to the modes supported by the
-connected device.
+connected device. A HAL-backed list uses the `lsms` capability mask and can
+currently establish Noise Cancellation, Transparency, and Adaptive. It omits
+Off because HAL does not expose the separate user-configured Allow Off setting.
+Consequently HAL-only `set off` and cycles whose remaining usable set is too
+small report `unsupported`; AV-backed commands continue to expose Off when AV
+advertises it. A route-independent Allow Off getter is deferred work.
 
 ### Cycle through modes
 
@@ -462,11 +488,14 @@ interrupted run.
 
 ## Target a device
 
-Without `--device`, the individual listening-mode and Conversation Awareness
-commands use the first compatible system output device. `status` is the
-exception: it reports every eligible canonical device derived from the currently
-available Core Audio endpoint list, regardless of which device is the selected
-output. To select one explicitly:
+Without `--device`, listening-mode commands automatically use the selected
+AirPods output or one unique eligible HAL target. When multiple unselected HAL
+targets remain, a fully interactive terminal presents a numbered chooser;
+automated and JSON invocations fail with `ambiguous-device`. Conversation
+Awareness retains the first compatible AV output behavior. `status` reports
+every eligible canonical device derived from the currently available Core Audio
+endpoint list, regardless of which device is the selected output. To select one
+explicitly:
 
 ```console
 $ airpods-control --device "My AirPods Pro" listening-mode get
@@ -476,12 +505,13 @@ transparency
 Unlike operational commands, `support-report` does not read device names or
 accept `--device`. It requires exactly one compatible output device.
 
-`status` matches the preferred Core Audio display name after exact endpoint
-deduplication; individual resource commands match their AV output-device names.
-Both matches are exact but case-insensitive. Substrings are not accepted, so
-`--device "My"` will not silently select `"My AirPods Pro"`. If two devices have
-the same name ignoring case, the match is ambiguous and the command fails with
-`no-device` before reading or changing either one. Name matching targets an
+`status` and HAL-backed listening-mode commands match the preferred Core Audio
+display name after exact endpoint deduplication; AV-backed commands match their
+AV output-device names. Matches are exact but case-insensitive. Substrings are
+not accepted, so `--device "My"` will not silently select `"My AirPods Pro"`. If
+two devices have the same name ignoring case, a listening-mode command fails
+with `ambiguous-device` before reading or changing either one. Other commands
+retain their existing `no-device` ambiguity result. Name matching targets an
 existing record; it is not device identity or correlation. A name passed on the
 command line must not begin with `-`; this prevents an option token from being
 consumed as a missing `--device` value.
@@ -518,7 +548,13 @@ unresolved device or state is JSON `null`. Errors add an `error` field:
 ```console
 $ airpods-control --device "Missing AirPods" listening-mode get --json
 {"device":null,"error":"no-device","listeningMode":null,"result":"error"}
+
+$ airpods-control listening-mode get --json
+{"device":null,"error":"ambiguous-device","listeningMode":null,"result":"error"}
 ```
+
+The second shape applies only when multiple eligible listening-mode targets
+remain; JSON never opens the interactive chooser.
 
 `listening-mode list` also returns `supportedListeningModes`. An unverified
 write uses `"result":"no-op"` and exits `3`. The response contains the final
@@ -586,7 +622,7 @@ Add `--debug` to emit private-API discovery and operation diagnostics on stderr:
 $ airpods-control --debug listening-mode get
 debug: cli.command="listening-mode.get"
 info: audio_context_selector="sharedSystemAudioContext"
-info: selected_device="My AirPods Pro"
+info: listening_mode.transport="av"
 transparency
 ```
 
@@ -595,9 +631,11 @@ bypass. Status logs the result of each inventory and selection gate, using terms
 such as `mapped`, `composite`, and `unresolved`. It does not log Core Audio
 handles, raw HAL values, addresses, UIDs, or private route IDs. The enrichment
 probe also keeps `associatedAudioDeviceID`, its translated handle, and the
-private endpoint `deviceID` out of the log. Operational diagnostics may include
-the displayed device name, but names are not used as identity. `--debug` does
-not change stdout, JSON, or the exit code.
+private endpoint `deviceID` out of the log. Operational HAL diagnostics may
+include bounded numeric property values and OSStatus codes, but never the Core
+Audio device ID, UID, Bluetooth address, serial, or object description.
+Operational diagnostics may include the displayed device name, but names are
+not used as identity. `--debug` does not change stdout, JSON, or the exit code.
 
 `support-report` also accepts `--debug`. Its diagnostics omit the customizable
 device name, though a source build can expose a home directory through the
@@ -608,7 +646,10 @@ pasting it into an issue.
 
 ## Write verification
 
-Listening-mode writes use a bounded readback window while the device settles.
+Listening-mode writes use a bounded same-provider readback window while the
+device settles. A matching readback means the selected macOS AV or HAL control
+surface reports the requested state; it is not a direct protocol-level
+acknowledgement from the AirPods.
 
 When the setter accepts `off` but the change cannot be verified and the device
 advertises Transparency, `set off` and explicit cycles into `off` report `no-op`
@@ -621,8 +662,8 @@ canonical mode or `null`.
 
 | Code | Meaning     | When                                                       |
 | ---- | ----------- | ---------------------------------------------------------- |
-| `0`  | ok          | Command succeeded, including reads and verified writes.    |
-| `1`  | no-device   | No supported target was selected, or no unique identifiable report device was available. |
+| `0`  | ok          | Command succeeded, including writes with matching macOS readback. |
+| `1`  | selection  | No target, an ambiguous target, chooser cancellation, or no unique identifiable report device. |
 | `2`  | bad-args    | Arguments are missing or malformed.                        |
 | `3`  | no-op       | A write was not verified in the bounded window, or write tests could not restore the initial state. |
 | `4`  | unsupported | The mode or feature is not available on the selected device. |
@@ -632,6 +673,7 @@ canonical mode or `null`.
 | `143` | terminated | An externally delivered SIGTERM was caught during the tests and restoration was attempted. |
 
 Individual-resource plain stdout uses a single token such as `ok`, `no-op`,
-`no-device`, `unsupported`, or a mode name. `status` emits headed device
-records, and `support-report` emits its terminal-native compatibility report or
-local guidance. Scripts can branch on the exit code.
+`no-device`, `ambiguous-device`, `cancelled`, `unsupported`, or a mode name.
+`status` emits headed device records, and `support-report` emits its
+terminal-native compatibility report or local guidance. Scripts can branch on
+the exit code.

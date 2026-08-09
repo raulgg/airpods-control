@@ -31,9 +31,10 @@ ok
 ```
 
 `airpods-control` talks directly to private macOS audio interfaces used by
-AirPods. Successful changes take effect immediately and display the same
-on-screen banner as a stem press. Each operational command performs one
-operation and exits without polling in the background or automating the UI.
+AirPods. A successful write means the selected macOS provider reports the
+requested state within a bounded readback window; it is not a direct accessory
+acknowledgement. Each operational command performs one operation and exits
+without polling in the background or automating the UI.
 
 ## Features
 
@@ -51,9 +52,11 @@ operation and exits without polling in the background or automating the UI.
 ## Requirements
 
 - macOS (developed and tested on Tahoe 26).
-- A compatible AirPods or Beats device connected over Bluetooth. Individual
-  resource commands and `support-report` also require the private output-device
-  interface described in [device compatibility](docs/compatibility.md).
+- A compatible AirPods or Beats device connected over Bluetooth. Operational
+  listening-mode commands can use either the selected private AV output-device
+  interface or an eligible mapped Core Audio HAL output endpoint. Conversation
+  Awareness and `support-report` still require the private AV interface
+  described in [device compatibility](docs/compatibility.md).
 - Command Line Tools (`clang` and `swiftc`) for Homebrew or source installs.
   Install them with `xcode-select --install`; full Xcode is not required. The
   optional signed binary archive does not require a compiler.
@@ -181,7 +184,12 @@ airpods-control status --device "My AirPods Pro" --json
 `status` has no alias. Without `--device`, `status` reports every eligible
 AirPods or Beats record derived from the currently available Core Audio device
 list, even when it is not the selected audio output. The individual resource
-commands continue to use the first compatible output device. Run
+commands retain their documented adapters. Listening-mode commands prefer the
+selected output, use a unique eligible HAL device when unselected, and prompt in
+a fully interactive terminal if several HAL targets remain. Automated and
+mixed-provider ambiguity fails closed. On systems where HAL control is entirely
+unavailable, the prior AV-only behavior continues to use the first compatible
+AV output. Run
 `airpods-control --help` for built-in help. The
 [complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics,
 write verification, and exit codes. After installation, you can also run
@@ -197,9 +205,13 @@ write verification, and exit codes. After installation, you can also run
 
 ## How it works
 
-Feature commands use the private `AVOutputDevice` API in
-`AVRouting.framework`. `status` uses a separate Core Audio inventory so it can
-find an eligible device even when that device is not the selected output.
+Conversation Awareness uses the private `AVOutputDevice` API in
+`AVRouting.framework`. Listening-mode commands use that same provider when a
+command-ready AirPods endpoint is selected, and the mapped BTAudio HAL
+`lstm`/`lsms` properties when the device is unselected. Provider selection and
+all pre-write state, capability, setter, and bounded readback operations are
+sticky for one command. The CLI never changes the default route or starts an
+audio stream. `status` remains a separate read-only Core Audio adapter.
 
 The inventory starts with macOS's public list of available Core Audio devices.
 It accepts an ordinary, nonaggregate classic-Bluetooth endpoint when the

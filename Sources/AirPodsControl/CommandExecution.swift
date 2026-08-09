@@ -19,6 +19,13 @@ struct CommandOutcome {
   }
 }
 
+enum CompatibleDeviceResolution {
+  case devices([any CompatibleAudioDevice])
+  case noDevice
+  case ambiguousDevice
+  case cancelled
+}
+
 enum CommandExecution {
   static func execute(
     _ invocation: CLIInvocation,
@@ -27,6 +34,27 @@ enum CommandExecution {
       _ policy: DeviceSelectionPolicy,
       _ logger: DebugLogger
     ) -> [any CompatibleAudioDevice]?,
+    supportReport: SupportReportCommand = SupportReportCommand()
+  ) -> CommandOutcome {
+    execute(
+      invocation,
+      resolveDeviceResolution: { requestedName, policy, logger in
+        guard let devices = resolveDevices(requestedName, policy, logger),
+              !devices.isEmpty
+        else { return .noDevice }
+        return .devices(devices)
+      },
+      supportReport: supportReport
+    )
+  }
+
+  static func execute(
+    _ invocation: CLIInvocation,
+    resolveDeviceResolution: (
+      _ requestedName: String?,
+      _ policy: DeviceSelectionPolicy,
+      _ logger: DebugLogger
+    ) -> CompatibleDeviceResolution,
     supportReport: SupportReportCommand = SupportReportCommand()
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
@@ -48,13 +76,33 @@ enum CommandExecution {
       selectionPolicy = .firstOrExact
     }
 
-    guard let devices = resolveDevices(
+    let resolution = resolveDeviceResolution(
       invocation.requestedDeviceName,
       selectionPolicy,
       logger
-    ), !devices.isEmpty
-    else {
-      return noDeviceOutcome(for: invocation.command)
+    )
+    let devices: [any CompatibleAudioDevice]
+    switch resolution {
+    case let .devices(resolvedDevices) where !resolvedDevices.isEmpty:
+      devices = resolvedDevices
+    case .devices, .noDevice:
+      return deviceResolutionFailureOutcome(
+        for: invocation.command,
+        plain: "no-device",
+        error: "no-device"
+      )
+    case .ambiguousDevice:
+      return deviceResolutionFailureOutcome(
+        for: invocation.command,
+        plain: "ambiguous-device",
+        error: "ambiguous-device"
+      )
+    case .cancelled:
+      return deviceResolutionFailureOutcome(
+        for: invocation.command,
+        plain: "cancelled",
+        error: "cancelled"
+      )
     }
 
     if case .status = invocation.command {
@@ -275,7 +323,11 @@ enum CommandExecution {
     }
   }
 
-  private static func noDeviceOutcome(for command: CLICommand) -> CommandOutcome {
+  private static func deviceResolutionFailureOutcome(
+    for command: CLICommand,
+    plain: String,
+    error: String
+  ) -> CommandOutcome {
     if case .status = command {
       return StatusCommand.noDeviceOutcome()
     }
@@ -294,11 +346,11 @@ enum CommandExecution {
     return resourceOutcome(
       resource: resource,
       deviceName: nil,
-      plain: "no-device",
+      plain: plain,
       exitCode: 1,
       result: "error",
       state: nil,
-      error: "no-device",
+      error: error,
       extra: extra
     )
   }

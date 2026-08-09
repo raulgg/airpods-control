@@ -351,6 +351,7 @@ private enum AppleAudioAdmission: Equatable {
 }
 
 private struct CoreAudioBluetoothEndpoint {
+  let audioDeviceID: AudioDeviceID
   let bluetoothDevice: AnyObject
   let hasOutput: Bool
   let name: String?
@@ -363,19 +364,30 @@ private struct CoreAudioBluetoothDeviceGroup {
   var endpoints: [CoreAudioBluetoothEndpoint]
 }
 
+private struct IOBluetoothListeningModeBinding {
+  let name: String
+  let audioDeviceID: AudioDeviceID
+  let bluetoothDevice: AnyObject
+}
+
 final class IOBluetoothStatusController {
   private let devices: [IOBluetoothStatusDevice]
+  private let listeningModeBindings: [IOBluetoothListeningModeBinding]
+  private let routingBackend: any AudioRoutingBackend
+  private let routingObserver: AudioRoutingObserver
   private let logger: DebugLogger
 
   convenience init?(
     logger: DebugLogger,
-    activeOutputContext: AnyObject?
+    activeOutputContext: AnyObject?,
+    readStatusListeningMode: Bool = true
   ) {
     let runtime = SystemBluetoothAudioRuntime(logger: logger)
     self.init(
       runtime: runtime,
       routingBackend: CoreAudioRoutingBackend(),
       activeEndpointProbe: activeOutputContext.map(SystemActiveAudioEndpointProbe.init),
+      readStatusListeningMode: readStatusListeningMode,
       logger: logger
     )
   }
@@ -384,9 +396,11 @@ final class IOBluetoothStatusController {
     runtime: any BluetoothAudioRuntime,
     routingBackend: any AudioRoutingBackend,
     activeEndpointProbe: (any ActiveAudioEndpointProbing)? = nil,
+    readStatusListeningMode: Bool = true,
     logger: DebugLogger
   ) {
     self.logger = logger
+    self.routingBackend = routingBackend
     let audioDeviceIDs: [AudioDeviceID]
     switch routingBackend.readAudioDevices() {
     case let .value(value):
@@ -406,6 +420,7 @@ final class IOBluetoothStatusController {
       activeEndpointProbe: activeEndpointProbe,
       logger: logger
     )
+    self.routingObserver = routingObserver
     var groups: [CoreAudioBluetoothDeviceGroup] = []
     var mappedEndpointCount = 0
     for (index, audioDeviceID) in audioDeviceIDs.enumerated() {
@@ -516,9 +531,9 @@ final class IOBluetoothStatusController {
       let name = appleAudioAdmission == .positive
         ? Self.usableName(routingBackend.readName(for: audioDeviceID))
         : nil
-      let listeningModeRead = routingBackend.readBluetoothListeningMode(
-        for: audioDeviceID
-      )
+      let listeningModeRead: AudioRoutingRead<UInt32> = readStatusListeningMode
+        ? routingBackend.readBluetoothListeningMode(for: audioDeviceID)
+        : .unavailable
       switch listeningModeRead {
       case let .value(listeningMode):
         logger.debug("\(prefix).listening_mode", "available")
@@ -536,6 +551,7 @@ final class IOBluetoothStatusController {
       logger.debug("\(prefix).eligible", appleAudioAdmission == .positive)
       mappedEndpointCount += 1
       let endpoint = CoreAudioBluetoothEndpoint(
+        audioDeviceID: audioDeviceID,
         bluetoothDevice: bluetoothDevice,
         hasOutput: hasOutput,
         name: name,
@@ -586,7 +602,66 @@ final class IOBluetoothStatusController {
       )
     }
     devices = compatibleDevices
+    listeningModeBindings = groups.compactMap { group in
+      guard !group.endpoints.contains(where: {
+        $0.appleAudioAdmission == .negative
+      }) else { return nil }
+      let outputEndpoints = group.endpoints.filter {
+        $0.appleAudioAdmission == .positive && $0.hasOutput
+      }
+      guard let outputEndpoint = outputEndpoints.first,
+            let namedEndpoint = outputEndpoints.first(where: { $0.name != nil }),
+            let name = namedEndpoint.name
+      else { return nil }
+      return IOBluetoothListeningModeBinding(
+        name: name,
+        audioDeviceID: outputEndpoint.audioDeviceID,
+        bluetoothDevice: outputEndpoint.bluetoothDevice
+      )
+    }
     logger.info("compatible_device_count", devices.count)
+  }
+
+  func listeningModeCandidates() -> [ListeningModeCandidate] {
+    return listeningModeBindings.map { binding in
+      let route = routingObserver.listeningModeOutputRoute(
+        bluetoothDevice: binding.bluetoothDevice
+      )
+      let transport = HALListeningModeTransport(
+        name: binding.name,
+        audioDeviceID: binding.audioDeviceID,
+        bluetoothDevice: binding.bluetoothDevice,
+        backend: routingBackend,
+        logger: logger
+      )
+      let avTransport = routingObserver.activeFeatureEndpoint(
+        for: binding.bluetoothDevice
+      ).flatMap { endpoint in
+        PrivateAudioDevice.compatible(
+          object: endpoint,
+          sources: [.contextSingular],
+          index: 0,
+          logger: logger
+        )
+      }
+
+      let names = [transport.name, avTransport?.name]
+        .compactMap { $0 }
+        .reduce(into: [String]()) { result, name in
+          guard !result.contains(where: {
+            $0.localizedCaseInsensitiveCompare(name) == .orderedSame
+          }) else { return }
+          result.append(name)
+        }
+      return ListeningModeCandidate(
+        displayName: transport.name ?? "Compatible device",
+        selectableNames: names,
+        avTransport: avTransport,
+        halTransport: transport,
+        route: route,
+        avIdentifiesActiveOutput: avTransport != nil
+      )
+    }
   }
 
   func selectDevices(

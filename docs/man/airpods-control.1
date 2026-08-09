@@ -65,7 +65,7 @@ reads and sets the AirPods listening mode and Conversation Awareness through pri
 .RB ( AVOutputDevice
 in
 .BR AVRouting.framework ).
-A successful change takes effect immediately and shows the same on-screen banner as a stem press. No Control Center, menu bar, or Accessibility permission is involved.
+A successful write means the selected macOS provider reports the requested state within a bounded readback window; it is not a direct accessory acknowledgement. No Control Center, menu bar, or Accessibility permission is involved.
 .PP
 Reaching the API requires one private audio entitlement
 .RB ( com.apple.avfoundation.allow-system-wide-context )
@@ -180,6 +180,7 @@ An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to C
 .IP
 The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
 .SS LISTENING MODE
+For each command, a command-ready selected AirPods output uses the private AV provider; an eligible device proven unselected uses its mapped Core Audio HAL output endpoint. Unknown routing tries AV before a pre-write HAL fallback. Once a setter is attempted, the provider is sticky and the command never retries through the other provider. No command changes the audio route.
 .TP
 .BR "listening-mode get" ", " "lm get"
 Print the current listening mode.
@@ -196,6 +197,8 @@ if the requested mode is not observed within the bounded verification window.
 .BR "listening-mode list" ", " "lm list"
 Print the comma-separated modes supported by the connected device in the deterministic order documented under
 .BR MODES .
+.IP
+A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. It omits Off because HAL does not expose the separate user-configured Allow Off setting. HAL-only direct writes or cycles into Off are therefore unsupported until that setting can be established. AV-backed commands continue to expose Off when AV advertises it.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
 Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes always cycle in the order documented under
@@ -303,12 +306,19 @@ at least two distinct entries. Mode aliases are accepted. Duplicates are ignored
 (exit 2).
 .TP
 .BI "--device " name
-Target a compatible device using a case-insensitive exact name match. Individual resource commands match their compatible AV output devices; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. No match or multiple exact matches produce
+Target a compatible device using a case-insensitive exact name match. Listening-mode commands can match a mapped Core Audio HAL device or their compatible AV output device; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. Multiple exact listening-mode matches produce
+.BR ambiguous-device ;
+other missing or ambiguous matches retain
 .BR no-device .
 .IP
 The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
 .IP
-Without this option, listening-mode and Conversation Awareness commands use the first compatible system output device.
+Without this option, listening-mode commands automatically use the selected output or a unique eligible HAL target. Multiple HAL targets prompt only when standard input and standard error are terminals and JSON is absent; otherwise they fail with
+.BR ambiguous-device .
+If HAL listening-mode control is entirely unavailable, the established AV-only behavior continues to use the first compatible AV output. Mixed AV/HAL ambiguity fails closed instead of opening the chooser.
+Blank input,
+.BR q ,
+or end of input cancels the chooser. Conversation Awareness retains the first compatible AV output behavior.
 .B status
 instead reports every eligible canonical device derived from the currently available Core Audio endpoint list, regardless of which device is the selected output.
 .TP
@@ -370,7 +380,7 @@ Debug output from operational commands can also contain selected device names. R
 Success.
 .TP
 .B 1
-No supported target was selected, or no unique identifiable report device was available (no-device).
+No supported target was selected, selection was cancelled, devices were ambiguous, or no unique identifiable report device was available.
 .TP
 .B 2
 Missing or malformed arguments (bad-args).
@@ -393,7 +403,7 @@ An externally delivered SIGINT was caught during the write tests and restoration
 .B 143
 An externally delivered SIGTERM was caught during the write tests and restoration was attempted.
 .SH NOTES
-Listening-mode writes use a bounded readback window while the device settles. If
+Listening-mode writes use one route-selected AV or HAL provider and a bounded same-provider readback window while the device settles. A matching readback means macOS reports the requested state through that provider; it is not a direct AirPods protocol acknowledgement. Commands never change the default output or start an audio stream. If
 .B off
 is not verified, the setter accepted the request, and the device advertises Transparency, direct writes and explicit cycles into
 .B off

@@ -14,11 +14,16 @@ private final class FakeAudioRoutingBackend: AudioRoutingBackend {
   var names: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   var appleAudioDevices: [AudioDeviceID: AudioRoutingRead<Bool>] = [:]
   var listeningModes: [AudioDeviceID: AudioRoutingRead<UInt32>] = [:]
+  var listeningModeSupport: [AudioDeviceID: AudioRoutingRead<UInt32>] = [:]
+  var listeningModeSettable: [AudioDeviceID: AudioRoutingRead<Bool>] = [:]
+  var listeningModeWriteResult: AudioRoutingWrite = .unavailable
+  private(set) var listeningModeWrites: [(AudioDeviceID, UInt32)] = []
   private(set) var audioDeviceReadCount = 0
   private(set) var outputDefaultReadCount = 0
   private(set) var inputDefaultReadCount = 0
   private(set) var aggregateReads: [AudioDeviceID] = []
   private(set) var transportReads: [AudioDeviceID] = []
+  private(set) var listeningModeReads: [AudioDeviceID] = []
 
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]> {
     audioDeviceReadCount += 1
@@ -85,7 +90,28 @@ private final class FakeAudioRoutingBackend: AudioRoutingBackend {
   func readBluetoothListeningMode(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32> {
-    listeningModes[deviceID] ?? .unavailable
+    listeningModeReads.append(deviceID)
+    return listeningModes[deviceID] ?? .unavailable
+  }
+
+  func readBluetoothListeningModeSupport(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<UInt32> {
+    listeningModeSupport[deviceID] ?? .unavailable
+  }
+
+  func isBluetoothListeningModeSettable(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<Bool> {
+    listeningModeSettable[deviceID] ?? .unavailable
+  }
+
+  func writeBluetoothListeningMode(
+    _ rawValue: UInt32,
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingWrite {
+    listeningModeWrites.append((deviceID, rawValue))
+    return listeningModeWriteResult
   }
 
   private func read<Value>(
@@ -94,6 +120,99 @@ private final class FakeAudioRoutingBackend: AudioRoutingBackend {
   ) -> AudioRoutingRead<Value> {
     precondition(!values.isEmpty)
     return values[min(index, values.count - 1)]
+  }
+}
+
+private struct RecordedCoreAudioPropertyAddress: Equatable {
+  let objectID: AudioObjectID
+  let selector: AudioObjectPropertySelector
+  let scope: AudioObjectPropertyScope
+  let element: AudioObjectPropertyElement
+
+  init(_ objectID: AudioObjectID, _ address: AudioObjectPropertyAddress) {
+    self.objectID = objectID
+    selector = address.mSelector
+    scope = address.mScope
+    element = address.mElement
+  }
+}
+
+private final class FakeCoreAudioPropertyAccess: CoreAudioPropertyAccess {
+  var propertyPresent = true
+  var dataSizeStatus: OSStatus = noErr
+  var reportedDataSize = UInt32(MemoryLayout<UInt32>.size)
+  var readStatus: OSStatus = noErr
+  var returnedDataSize: UInt32?
+  var readValue: UInt32 = 0
+  var settableStatus: OSStatus = noErr
+  var propertySettable = true
+  var writeStatus: OSStatus = noErr
+
+  private(set) var propertyChecks: [RecordedCoreAudioPropertyAddress] = []
+  private(set) var sizeReads: [RecordedCoreAudioPropertyAddress] = []
+  private(set) var valueReads: [RecordedCoreAudioPropertyAddress] = []
+  private(set) var settableReads: [RecordedCoreAudioPropertyAddress] = []
+  private(set) var writes: [(
+    address: RecordedCoreAudioPropertyAddress,
+    dataSize: UInt32,
+    value: UInt32
+  )] = []
+
+  func hasProperty(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress
+  ) -> Bool {
+    propertyChecks.append(RecordedCoreAudioPropertyAddress(objectID, address))
+    return propertyPresent
+  }
+
+  func readPropertyDataSize(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: inout UInt32
+  ) -> OSStatus {
+    sizeReads.append(RecordedCoreAudioPropertyAddress(objectID, address))
+    dataSize = reportedDataSize
+    return dataSizeStatus
+  }
+
+  func readPropertyData(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: inout UInt32,
+    data: UnsafeMutableRawPointer
+  ) -> OSStatus {
+    valueReads.append(RecordedCoreAudioPropertyAddress(objectID, address))
+    guard readStatus == noErr else { return readStatus }
+    data.storeBytes(of: readValue, as: UInt32.self)
+    dataSize = returnedDataSize ?? dataSize
+    return noErr
+  }
+
+  func isPropertySettable(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    settable: inout DarwinBoolean
+  ) -> OSStatus {
+    settableReads.append(RecordedCoreAudioPropertyAddress(objectID, address))
+    settable = DarwinBoolean(propertySettable)
+    return settableStatus
+  }
+
+  func writePropertyData(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: UInt32,
+    data: UnsafeRawPointer
+  ) -> OSStatus {
+    writes.append(
+      (
+        RecordedCoreAudioPropertyAddress(objectID, address),
+        dataSize,
+        data.load(as: UInt32.self)
+      )
+    )
+    return writeStatus
   }
 }
 
@@ -174,7 +293,8 @@ private func makeBluetoothController(
   featureEntries: [(AnyObject, FakeBluetoothEntry)] = [],
   backend: FakeAudioRoutingBackend = FakeAudioRoutingBackend(),
   configureRuntime: (FakeBluetoothAudioRuntime) -> Void = { _ in },
-  activeProbe: (any ActiveAudioEndpointProbing)? = nil
+  activeProbe: (any ActiveAudioEndpointProbing)? = nil,
+  readStatusListeningMode: Bool = true
 ) -> (IOBluetoothStatusController, FakeBluetoothAudioRuntime) {
   let runtime = FakeBluetoothAudioRuntime()
   for (device, entry) in featureEntries { runtime.add(device, entry: entry) }
@@ -197,6 +317,7 @@ private func makeBluetoothController(
     runtime: runtime,
     routingBackend: backend,
     activeEndpointProbe: activeProbe,
+    readStatusListeningMode: readStatusListeningMode,
     logger: DebugLogger(enabled: false)
   )!
   return (controller, runtime)
@@ -711,7 +832,403 @@ func testActiveAVFeatureEnrichmentRequiresExactStableOutputJoin() {
         "a wrong-device enrichment cannot attribute Conversation Awareness")
 }
 
+func testCoreAudioListeningModeRawReadsAreRuntimeGatedAndExactlyUInt32() {
+  let deviceID = AudioDeviceID(91)
+  let listeningModeSelector = AudioObjectPropertySelector(0x6C73_746D) // lstm
+  let listeningModeSupportSelector = AudioObjectPropertySelector(0x6C73_6D73) // lsms
+
+  let missingAccess = FakeCoreAudioPropertyAccess()
+  missingAccess.propertyPresent = false
+  let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
+  check(
+    routingIsUnavailable(missingBackend.readBluetoothListeningMode(for: deviceID)),
+    "a missing lstm property is unavailable"
+  )
+  check(missingAccess.sizeReads.isEmpty && missingAccess.valueReads.isEmpty,
+        "a missing property is never sized or read")
+
+  let access = FakeCoreAudioPropertyAccess()
+  let backend = CoreAudioRoutingBackend(propertyAccess: access)
+  access.readValue = 0x1234_5678
+  check(
+    routingValue(backend.readBluetoothListeningMode(for: deviceID)) == 0x1234_5678,
+    "lstm exposes the exact raw UInt32 value"
+  )
+  access.readValue = 0xA5A5_5A5A
+  check(
+    routingValue(backend.readBluetoothListeningModeSupport(for: deviceID))
+      == 0xA5A5_5A5A,
+    "lsms exposes the exact raw UInt32 value without mapping it"
+  )
+
+  let expectedAddresses = [
+    RecordedCoreAudioPropertyAddress(
+      deviceID,
+      AudioObjectPropertyAddress(
+        mSelector: listeningModeSelector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+      )
+    ),
+    RecordedCoreAudioPropertyAddress(
+      deviceID,
+      AudioObjectPropertyAddress(
+        mSelector: listeningModeSupportSelector,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+      )
+    ),
+  ]
+  check(access.propertyChecks == expectedAddresses,
+        "lstm and lsms are runtime-gated at global/main")
+  check(access.sizeReads == expectedAddresses && access.valueReads == expectedAddresses,
+        "both raw properties are sized before their exact reads")
+}
+
+func testCoreAudioListeningModeRawReadsPreserveSizeAndReadFailures() {
+  let deviceID = AudioDeviceID(92)
+  let sizeFailure: OSStatus = -7_001
+  let readFailure: OSStatus = -7_002
+
+  let sizeFailureAccess = FakeCoreAudioPropertyAccess()
+  sizeFailureAccess.dataSizeStatus = sizeFailure
+  let sizeFailureBackend = CoreAudioRoutingBackend(propertyAccess: sizeFailureAccess)
+  check(
+    routingFailure(sizeFailureBackend.readBluetoothListeningMode(for: deviceID))
+      == sizeFailure,
+    "a lstm size-query OSStatus is preserved"
+  )
+  check(sizeFailureAccess.valueReads.isEmpty,
+        "a failed size query prevents a value read")
+
+  for malformedSize in [UInt32(0), UInt32(3), UInt32(8)] {
+    let malformedAccess = FakeCoreAudioPropertyAccess()
+    malformedAccess.reportedDataSize = malformedSize
+    let malformedBackend = CoreAudioRoutingBackend(propertyAccess: malformedAccess)
+    check(
+      routingFailure(malformedBackend.readBluetoothListeningModeSupport(for: deviceID))
+        == kAudioHardwareBadPropertySizeError,
+      "lsms rejects a reported \(malformedSize)-byte payload"
+    )
+    check(malformedAccess.valueReads.isEmpty,
+          "a malformed lsms size is rejected before reading")
+  }
+
+  let readFailureAccess = FakeCoreAudioPropertyAccess()
+  readFailureAccess.readStatus = readFailure
+  let readFailureBackend = CoreAudioRoutingBackend(propertyAccess: readFailureAccess)
+  check(
+    routingFailure(readFailureBackend.readBluetoothListeningMode(for: deviceID))
+      == readFailure,
+    "a lstm read OSStatus is preserved"
+  )
+
+  let changedSizeAccess = FakeCoreAudioPropertyAccess()
+  changedSizeAccess.returnedDataSize = 2
+  let changedSizeBackend = CoreAudioRoutingBackend(propertyAccess: changedSizeAccess)
+  check(
+    routingFailure(changedSizeBackend.readBluetoothListeningMode(for: deviceID))
+      == kAudioHardwareBadPropertySizeError,
+    "lstm rejects a read that changes the returned payload size"
+  )
+}
+
+func testCoreAudioListeningModeSettableCheckIsTypedAndRuntimeGated() {
+  let deviceID = AudioDeviceID(93)
+  let expectedAddress = RecordedCoreAudioPropertyAddress(
+    deviceID,
+    AudioObjectPropertyAddress(
+      mSelector: AudioObjectPropertySelector(0x6C73_746D),
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
+  )
+
+  let missingAccess = FakeCoreAudioPropertyAccess()
+  missingAccess.propertyPresent = false
+  let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
+  check(
+    routingIsUnavailable(missingBackend.isBluetoothListeningModeSettable(for: deviceID)),
+    "settable is unavailable when lstm is missing"
+  )
+  check(missingAccess.settableReads.isEmpty,
+        "a missing lstm property is not queried for settable state")
+
+  let failureAccess = FakeCoreAudioPropertyAccess()
+  failureAccess.settableStatus = -7_003
+  let failureBackend = CoreAudioRoutingBackend(propertyAccess: failureAccess)
+  check(
+    routingFailure(failureBackend.isBluetoothListeningModeSettable(for: deviceID))
+      == -7_003,
+    "the settable-query OSStatus is preserved"
+  )
+
+  for expected in [false, true] {
+    let access = FakeCoreAudioPropertyAccess()
+    access.propertySettable = expected
+    let backend = CoreAudioRoutingBackend(propertyAccess: access)
+    check(
+      routingValue(backend.isBluetoothListeningModeSettable(for: deviceID)) == expected,
+      "the raw Core Audio settable state is preserved"
+    )
+    check(access.propertyChecks == [expectedAddress]
+            && access.settableReads == [expectedAddress],
+          "the settable query uses the lstm global/main address")
+  }
+}
+
+func testCoreAudioListeningModeWritePreservesRawUInt32AndOSStatus() {
+  let deviceID = AudioDeviceID(94)
+  let exactSize = UInt32(MemoryLayout<UInt32>.size)
+  let access = FakeCoreAudioPropertyAccess()
+  let backend = CoreAudioRoutingBackend(propertyAccess: access)
+  let rawValues: [UInt32] = [0, 1, 4, UInt32.max]
+
+  for rawValue in rawValues {
+    check(
+      backend.writeBluetoothListeningMode(rawValue, for: deviceID) == .success,
+      "a successful lstm write reports success"
+    )
+  }
+  check(access.writes.map { $0.value } == rawValues,
+        "lstm writes preserve every raw UInt32 without mapping or narrowing")
+  check(access.writes.allSatisfy { $0.dataSize == exactSize },
+        "every lstm write sends exactly four bytes")
+  check(access.writes.allSatisfy {
+    $0.address.objectID == deviceID
+      && $0.address.selector == AudioObjectPropertySelector(0x6C73_746D)
+      && $0.address.scope == kAudioObjectPropertyScopeGlobal
+      && $0.address.element == kAudioObjectPropertyElementMain
+  }, "every lstm write uses the global/main address")
+
+  access.writeStatus = -7_004
+  check(
+    backend.writeBluetoothListeningMode(3, for: deviceID) == .failure(-7_004),
+    "the lstm write OSStatus is preserved"
+  )
+}
+
+func testCoreAudioListeningModeWriteHonorsAvailabilityAndSettableState() {
+  let deviceID = AudioDeviceID(95)
+
+  let missingAccess = FakeCoreAudioPropertyAccess()
+  missingAccess.propertyPresent = false
+  let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
+  check(missingBackend.writeBluetoothListeningMode(2, for: deviceID) == .unavailable,
+        "a write reports unavailable when lstm is missing")
+  check(missingAccess.writes.isEmpty, "a missing property is never written")
+
+  let readOnlyAccess = FakeCoreAudioPropertyAccess()
+  readOnlyAccess.propertySettable = false
+  let readOnlyBackend = CoreAudioRoutingBackend(propertyAccess: readOnlyAccess)
+  check(readOnlyBackend.writeBluetoothListeningMode(2, for: deviceID) == .notSettable,
+        "a read-only lstm property reports not-settable")
+  check(readOnlyAccess.writes.isEmpty, "a read-only property is never written")
+
+  let settableFailureAccess = FakeCoreAudioPropertyAccess()
+  settableFailureAccess.settableStatus = -7_005
+  let settableFailureBackend = CoreAudioRoutingBackend(
+    propertyAccess: settableFailureAccess
+  )
+  check(
+    settableFailureBackend.writeBluetoothListeningMode(2, for: deviceID)
+      == .failure(-7_005),
+    "a settable-query failure prevents the write and preserves OSStatus"
+  )
+  check(settableFailureAccess.writes.isEmpty,
+        "a failed settable query never reaches the write")
+
+  let sizeFailureAccess = FakeCoreAudioPropertyAccess()
+  sizeFailureAccess.dataSizeStatus = -7_006
+  let sizeFailureBackend = CoreAudioRoutingBackend(
+    propertyAccess: sizeFailureAccess
+  )
+  check(
+    sizeFailureBackend.writeBluetoothListeningMode(2, for: deviceID)
+      == .failure(-7_006),
+    "a write-size query failure prevents the write and preserves OSStatus"
+  )
+  check(sizeFailureAccess.writes.isEmpty,
+        "a failed write-size query never reaches the setter")
+
+  let malformedSizeAccess = FakeCoreAudioPropertyAccess()
+  malformedSizeAccess.reportedDataSize = 8
+  let malformedSizeBackend = CoreAudioRoutingBackend(
+    propertyAccess: malformedSizeAccess
+  )
+  check(
+    malformedSizeBackend.writeBluetoothListeningMode(2, for: deviceID)
+      == .failure(kAudioHardwareBadPropertySizeError),
+    "a malformed lstm write size fails closed"
+  )
+  check(malformedSizeAccess.writes.isEmpty,
+        "a malformed lstm write size never reaches the setter")
+}
+
+func testListeningModeControlCandidatesReuseMappedOutputInventory() {
+  let bluetoothDevice = EqualBluetoothObject(identity: 501)
+  let backend = FakeAudioRoutingBackend()
+  backend.outputDefaults = [.value(70), .value(70)]
+  backend.inputDefaults = [.value(nil), .value(nil)]
+  backend.listeningModeSupport[70] = .value(0b111)
+  backend.listeningModeSettable[70] = .value(true)
+  let (controller, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 70,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Control AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ],
+    backend: backend
+  )
+
+  let candidates = controller.listeningModeCandidates()
+  check(candidates.count == 1, "mapped output inventory supplies one control candidate")
+  check(candidates.first?.displayName == "Control AirPods", "control keeps Core Audio name")
+  check(candidates.first?.route == .selected, "mapped default output marks control selected")
+  let transport = candidates.first?.halTransport as? HALListeningModeTransport
+  check(transport?.audioDeviceID == 70, "control keeps the eligible playback endpoint")
+  check(
+    transport?.availableListeningModes()
+      == [.transparency, .adaptive, .noiseCancellation],
+    "control reads the HAL non-Off capability mask"
+  )
+
+  let inputOnlyDevice = EqualBluetoothObject(identity: 502)
+  let (inputOnlyController, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 71,
+        bluetoothDevice: inputOnlyDevice,
+        inputStreams: .value(true),
+        outputStreams: .value(false),
+        name: .value("Input AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ]
+  )
+  check(
+    inputOnlyController.listeningModeCandidates().isEmpty,
+    "input-only endpoints never become listening-mode write targets"
+  )
+}
+
+func testListeningModeControlInventoryDefersHALStateReads() {
+  let bluetoothDevice = EqualBluetoothObject(identity: 504)
+  let backend = FakeAudioRoutingBackend()
+  backend.outputDefaults = [.value(73), .value(73)]
+  backend.inputDefaults = [.value(nil), .value(nil)]
+  backend.listeningModes[73] = .value(3)
+  let (controller, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 73,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Deferred AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ],
+    backend: backend,
+    readStatusListeningMode: false
+  )
+  check(backend.listeningModeReads.isEmpty, "control inventory does not read HAL state")
+  let transport = controller.listeningModeCandidates().first?.halTransport
+    as? HALListeningModeTransport
+  check(backend.listeningModeReads.isEmpty, "candidate construction keeps HAL state lazy")
+  _ = transport?.currentListeningMode()
+  check(backend.listeningModeReads == [73], "chosen HAL transport performs its own state read")
+}
+
+func testListeningModeControlCandidateJoinsOnlyExactActiveEndpoint() {
+  let bluetoothDevice = EqualBluetoothObject(identity: 503)
+  let backend = FakeAudioRoutingBackend()
+  backend.outputDefaults = [.value(72), .value(72)]
+  backend.inputDefaults = [.value(nil), .value(nil)]
+  let rawAVDevice = FakeRawDevice(name: "Joined AirPods")
+  let activeProbe = FakeActiveAudioEndpointProbe(
+    .value(ActiveAudioEndpointBinding(audioDeviceID: 72, endpoint: rawAVDevice))
+  )
+  let (controller, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 72,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Joined AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ],
+    backend: backend,
+    activeProbe: activeProbe
+  )
+
+  let candidate = controller.listeningModeCandidates().first
+  check(candidate?.route == .selected, "stable mapped route proves the control selected")
+  check(candidate?.avIdentifiesActiveOutput == true, "exact endpoint join marks active AV")
+  check(
+    (candidate?.avTransport as? PrivateAudioDevice)?.object === rawAVDevice,
+    "exact Core Audio endpoint binding supplies the AV transport"
+  )
+
+  let wrongBackend = FakeAudioRoutingBackend()
+  wrongBackend.outputDefaults = [.value(72), .value(72)]
+  wrongBackend.inputDefaults = [.value(nil), .value(nil)]
+  let wrongProbe = FakeActiveAudioEndpointProbe(
+    .value(ActiveAudioEndpointBinding(audioDeviceID: 999, endpoint: rawAVDevice))
+  )
+  let (wrongController, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 72,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Joined AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ],
+    backend: wrongBackend,
+    activeProbe: wrongProbe
+  )
+  let unmatched = wrongController.listeningModeCandidates().first
+  check(unmatched?.avTransport == nil, "a different Core Audio endpoint never name-joins AV")
+
+  let compositeBackend = FakeAudioRoutingBackend()
+  compositeBackend.outputDefaults = [.value(900), .value(900)]
+  compositeBackend.inputDefaults = [.value(nil), .value(nil)]
+  compositeBackend.aggregates[900] = .value(true)
+  let (compositeController, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 72,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Joined AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ],
+    backend: compositeBackend,
+    activeProbe: activeProbe
+  )
+  check(
+    compositeController.listeningModeCandidates().first?.route == .unknown,
+    "a composite output is unknown rather than positively unselected for control"
+  )
+}
+
 func runAudioRoutingTests() {
+  testCoreAudioListeningModeRawReadsAreRuntimeGatedAndExactlyUInt32()
+  testCoreAudioListeningModeRawReadsPreserveSizeAndReadFailures()
+  testCoreAudioListeningModeSettableCheckIsTypedAndRuntimeGated()
+  testCoreAudioListeningModeWritePreservesRawUInt32AndOSStatus()
+  testCoreAudioListeningModeWriteHonorsAvailabilityAndSettableState()
+  testListeningModeControlCandidatesReuseMappedOutputInventory()
+  testListeningModeControlInventoryDefersHALStateReads()
+  testListeningModeControlCandidateJoinsOnlyExactActiveEndpoint()
   testCoreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping()
   testCoreAudioInventoryRequiresEveryPositiveEndpointGate()
   testGroupedEndpointIdentityConflictsFailClosed()
@@ -724,6 +1241,21 @@ func runAudioRoutingTests() {
   testBluetoothCanonicalEqualityAcceptsDistinctSystemWrappers()
   testBluetoothMapperMissingAndDifferentDeviceAreDistinguished()
   testActiveAVFeatureEnrichmentRequiresExactStableOutputJoin()
+}
+
+private func routingValue<Value>(_ read: AudioRoutingRead<Value>) -> Value? {
+  if case let .value(value) = read { return value }
+  return nil
+}
+
+private func routingFailure<Value>(_ read: AudioRoutingRead<Value>) -> OSStatus? {
+  if case let .failure(status) = read { return status }
+  return nil
+}
+
+private func routingIsUnavailable<Value>(_ read: AudioRoutingRead<Value>) -> Bool {
+  if case .unavailable = read { return true }
+  return false
 }
 
 private extension DeviceStatusField {

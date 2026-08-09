@@ -13,6 +13,8 @@ private let continuityCaptureTransport: UInt32 = 0x6363_6170 // ccap
 // SDK and from non-Apple Bluetooth audio devices.
 private let appleAudioDeviceProperty: AudioObjectPropertySelector = 0x6961_6170 // iaap
 private let bluetoothListeningModeProperty: AudioObjectPropertySelector = 0x6C73_746D // lstm
+private let bluetoothListeningModeSupportProperty: AudioObjectPropertySelector =
+  0x6C73_6D73 // lsms
 
 enum AudioRoutingDirection: CaseIterable {
   case output
@@ -46,6 +48,85 @@ enum AudioRoutingRead<Value> {
   case failure(OSStatus)
 }
 
+enum AudioRoutingWrite: Equatable {
+  case success
+  case unavailable
+  case notSettable
+  case failure(OSStatus)
+}
+
+protocol CoreAudioPropertyAccess {
+  func hasProperty(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress
+  ) -> Bool
+  func readPropertyDataSize(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: inout UInt32
+  ) -> OSStatus
+  func readPropertyData(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: inout UInt32,
+    data: UnsafeMutableRawPointer
+  ) -> OSStatus
+  func isPropertySettable(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    settable: inout DarwinBoolean
+  ) -> OSStatus
+  func writePropertyData(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: UInt32,
+    data: UnsafeRawPointer
+  ) -> OSStatus
+}
+
+struct SystemCoreAudioPropertyAccess: CoreAudioPropertyAccess {
+  func hasProperty(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress
+  ) -> Bool {
+    AudioObjectHasProperty(objectID, &address)
+  }
+
+  func readPropertyDataSize(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: inout UInt32
+  ) -> OSStatus {
+    AudioObjectGetPropertyDataSize(objectID, &address, 0, nil, &dataSize)
+  }
+
+  func readPropertyData(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: inout UInt32,
+    data: UnsafeMutableRawPointer
+  ) -> OSStatus {
+    AudioObjectGetPropertyData(objectID, &address, 0, nil, &dataSize, data)
+  }
+
+  func isPropertySettable(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    settable: inout DarwinBoolean
+  ) -> OSStatus {
+    AudioObjectIsPropertySettable(objectID, &address, &settable)
+  }
+
+  func writePropertyData(
+    _ objectID: AudioObjectID,
+    address: inout AudioObjectPropertyAddress,
+    dataSize: UInt32,
+    data: UnsafeRawPointer
+  ) -> OSStatus {
+    AudioObjectSetPropertyData(objectID, &address, 0, nil, dataSize, data)
+  }
+}
+
 protocol AudioRoutingBackend {
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]>
   func readDefaultDevice(
@@ -72,10 +153,27 @@ protocol AudioRoutingBackend {
   func readBluetoothListeningMode(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32>
+  func readBluetoothListeningModeSupport(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<UInt32>
+  func isBluetoothListeningModeSettable(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<Bool>
+  func writeBluetoothListeningMode(
+    _ rawValue: UInt32,
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingWrite
 }
 
 struct CoreAudioRoutingBackend: AudioRoutingBackend {
   private let maximumAudioDeviceCount = 1_024
+  private let propertyAccess: any CoreAudioPropertyAccess
+
+  init(
+    propertyAccess: any CoreAudioPropertyAccess = SystemCoreAudioPropertyAccess()
+  ) {
+    self.propertyAccess = propertyAccess
+  }
 
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]> {
     var address = AudioObjectPropertyAddress(
@@ -270,6 +368,72 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
     )
   }
 
+  func readBluetoothListeningModeSupport(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<UInt32> {
+    readUInt32Property(
+      bluetoothListeningModeSupportProperty,
+      from: deviceID,
+      scope: kAudioObjectPropertyScopeGlobal
+    )
+  }
+
+  func isBluetoothListeningModeSettable(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<Bool> {
+    var address = bluetoothListeningModeAddress
+    guard propertyAccess.hasProperty(deviceID, address: &address) else {
+      return .unavailable
+    }
+    var settable = DarwinBoolean(false)
+    let status = propertyAccess.isPropertySettable(
+      deviceID,
+      address: &address,
+      settable: &settable
+    )
+    guard status == noErr else { return .failure(status) }
+    return .value(settable.boolValue)
+  }
+
+  func writeBluetoothListeningMode(
+    _ rawValue: UInt32,
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingWrite {
+    switch isBluetoothListeningModeSettable(for: deviceID) {
+    case .unavailable:
+      return .unavailable
+    case let .failure(status):
+      return .failure(status)
+    case .value(false):
+      return .notSettable
+    case .value(true):
+      break
+    }
+
+    var address = bluetoothListeningModeAddress
+    var dataSize: UInt32 = 0
+    let sizeStatus = propertyAccess.readPropertyDataSize(
+      deviceID,
+      address: &address,
+      dataSize: &dataSize
+    )
+    guard sizeStatus == noErr else { return .failure(sizeStatus) }
+    guard dataSize == MemoryLayout<UInt32>.size else {
+      return .failure(kAudioHardwareBadPropertySizeError)
+    }
+
+    var value = rawValue
+    let status = withUnsafePointer(to: &value) { data in
+      propertyAccess.writePropertyData(
+        deviceID,
+        address: &address,
+        dataSize: dataSize,
+        data: data
+      )
+    }
+    return status == noErr ? .success : .failure(status)
+  }
+
   private func readUInt32Property(
     _ selector: AudioObjectPropertySelector,
     from deviceID: AudioDeviceID,
@@ -280,22 +444,40 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
       mScope: scope,
       mElement: kAudioObjectPropertyElementMain
     )
-    guard AudioObjectHasProperty(deviceID, &address) else { return .unavailable }
-    var value: UInt32 = 0
-    var dataSize = UInt32(MemoryLayout<UInt32>.size)
-    let status = AudioObjectGetPropertyData(
+    guard propertyAccess.hasProperty(deviceID, address: &address) else {
+      return .unavailable
+    }
+    var reportedSize: UInt32 = 0
+    let sizeStatus = propertyAccess.readPropertyDataSize(
       deviceID,
-      &address,
-      0,
-      nil,
-      &dataSize,
-      &value
+      address: &address,
+      dataSize: &reportedSize
+    )
+    guard sizeStatus == noErr else { return .failure(sizeStatus) }
+    guard reportedSize == MemoryLayout<UInt32>.size else {
+      return .failure(kAudioHardwareBadPropertySizeError)
+    }
+    var value: UInt32 = 0
+    var dataSize = reportedSize
+    let status = propertyAccess.readPropertyData(
+      deviceID,
+      address: &address,
+      dataSize: &dataSize,
+      data: &value
     )
     guard status == noErr else { return .failure(status) }
     guard dataSize == MemoryLayout<UInt32>.size else {
       return .failure(kAudioHardwareBadPropertySizeError)
     }
     return .value(value)
+  }
+
+  private var bluetoothListeningModeAddress: AudioObjectPropertyAddress {
+    AudioObjectPropertyAddress(
+      mSelector: bluetoothListeningModeProperty,
+      mScope: kAudioObjectPropertyScopeGlobal,
+      mElement: kAudioObjectPropertyElementMain
+    )
   }
 
   private func readStringProperty(
@@ -424,6 +606,23 @@ final class AudioRoutingObserver {
       return .unresolved
     case .readError:
       return .readError
+    }
+  }
+
+  func listeningModeOutputRoute(
+    bluetoothDevice candidate: AnyObject
+  ) -> ListeningModeCandidateRoute {
+    switch snapshot().route(for: .output) {
+    case .noDefault, .notBluetooth:
+      return .notSelected
+    case .composite:
+      return .unknown
+    case let .device(_, selected):
+      return bluetoothDevicesAreExactlyEqual(candidate, selected)
+        ? .selected
+        : .notSelected
+    case .unresolved, .readError:
+      return .unknown
     }
   }
 

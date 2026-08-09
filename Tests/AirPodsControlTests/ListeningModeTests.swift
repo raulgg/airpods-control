@@ -34,9 +34,9 @@ func testOffFallbackResolutionSeams() {
     observed: .off,
     transparencySupported: true
   )
-  check(verified.verified, "observed Off verifies regardless of setter result")
-  check(verified.state == .off, "verified Off reports Off")
-  check(!verified.inferredOffFallback, "verified Off is not inferred")
+  check(!verified.verified, "a rejected setter never verifies from readback alone")
+  check(verified.state == .off, "rejected matching readback still reports observed Off")
+  check(!verified.inferredOffFallback, "rejected matching Off is not inferred")
 
   for (description, observed) in inferenceCases {
     let inferred = resolveListeningModeWrite(
