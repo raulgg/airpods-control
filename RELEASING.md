@@ -15,6 +15,14 @@ Homebrew formula in
    and description (`PR_TITLE` and `PR_BODY`).
 4. Require CI, Quality Checks, and PR Title on `main`.
 5. For tags matching `v*`, restrict updates and deletions but allow creation.
+6. Store a separate fine-grained personal access token as
+   `HOMEBREW_TAP_DISPATCH_TOKEN` in the `main`-only `tap-dispatch` environment.
+   Limit it to `raulgg/homebrew-tap` with write access to contents.
+7. In the tap repository, store a separate fine-grained personal access token
+   as `HOMEBREW_TAP_TOKEN` in the `main`-only `formula-updater` environment.
+   Grant it write access to contents and pull requests.
+8. Enable auto-merge in the tap repository and require every `brew test-bot`
+   check on `main`. Do not allow the updater to push directly to `main`.
 
 ## Pull request titles
 
@@ -39,15 +47,9 @@ new patch release.
 
 ## Update the Homebrew tap
 
-Until the automated handoff is enabled:
-
-1. Wait until the GitHub release is public.
-2. Create `feat/airpods-control-VERSION` from the tap's current `main`.
-3. Download the release's tag archive twice, compare the files byte for byte,
-   and calculate its SHA-256.
-4. Update `Formula/airpods-control.rb` with the new tag URL and checksum. Keep
-   the source build, Apple toolchain overrides, exact read-only version test,
-   and absence of a `bottle` block.
-5. Open a tap pull request. Merge it with squash only after every required
-   `brew test-bot` check passes. Do not use `brew pr-pull`; this tap does not
-   publish bottles.
+1. Verify that the release run completed its `tap-dispatch` job.
+2. Verify that the tap's `Update airpods-control formula` workflow opened a pull
+   request.
+3. Wait for every required `brew test-bot` check and the squash auto-merge.
+4. If dispatch fails, run the tap workflow manually with the existing release
+   tag.

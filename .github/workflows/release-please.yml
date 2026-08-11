@@ -19,10 +19,59 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-automation
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
 
     steps:
       - name: Run Release Please
+        id: release
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           target-branch: main
+
+  tap-dispatch:
+    name: Validate release and notify Homebrew tap
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: tap-dispatch
+
+    steps:
+      - name: Validate published release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .prerelease <<<"$release")" = false
+
+          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          comparison=$(gh api \
+            "repos/$GITHUB_REPOSITORY/compare/$tag_sha...$GITHUB_SHA" --jq .status)
+          case "$comparison" in
+            ahead | identical) ;;
+            *)
+              echo "Release tag $RELEASE_TAG is not on this protected main history" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Notify Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
+          RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh api --method POST \
+            repos/raulgg/homebrew-tap/dispatches \
+            -f event_type=airpods-control-release \
+            -f "client_payload[tag]=$RELEASE_TAG" \
+            -f "client_payload[release_url]=https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
