@@ -295,11 +295,10 @@ a support report. Enrichment failure does not change input or output selection.
 
 ## Contributor compatibility report
 
-The CLI's listening-mode and Conversation Awareness controls have been verified
-with AirPods Pro 3 and AirPods Pro 2 (Lightning). Other AirPods may work when
-macOS exposes the same private audio capabilities. We have not verified Beats,
-but reports are welcome. The [device compatibility matrix](compatibility.md)
-tracks each command separately.
+Compatibility varies by device, firmware, and macOS version, and a product name
+alone does not establish support. See the [device compatibility
+matrix](compatibility.md) for current per-device, per-command results. Reports
+are welcome, and the matrix tracks each command separately.
 
 Connect exactly one compatible AirPods or Beats device as a macOS output device,
 then run:

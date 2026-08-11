@@ -4,8 +4,7 @@ Support can vary by device, firmware, and macOS version. This project uses a
 private Apple API that Apple does not document, so a product name alone cannot
 tell us whether every command will work.
 
-The current verified hardware includes AirPods Pro 3 and AirPods Pro 2
-(Lightning), with the individual capabilities shown below.
+Use the matrix below to track compatibility per device and capability.
 
 ## Status
 
@@ -33,12 +32,11 @@ The current verified hardware includes AirPods Pro 3 and AirPods Pro 2
 | `conversation-awareness set` | Verified | Verified | Pending | Exploratory |
 | `support-report` metadata | Pending | Verified | Pending | Exploratory |
 
-We have tested the individual resource commands on AirPods Pro 3, and the
-listening-mode and Conversation Awareness controls on AirPods Pro 2 (Lightning).
-The aggregate `status` command, its selected input/output observations, and
-one-earbud behavior still require connected-hardware checks on AirPods Pro 2
-(Lightning). Selection verification requires all four output-only, input-only,
-both, and neither cases in the
+The matrix tracks individual resource commands, the aggregate `status` command,
+selected input/output observations, one-earbud behavior, and `support-report`
+metadata separately because they exercise different private macOS paths.
+Selection verification requires all four output-only, input-only, both, and
+neither cases in the
 [hardware-testing guide](hardware-testing.md#selected-audio-inputoutput-release-check).
 
 `status` starts with the public list of available Core Audio devices, not the
@@ -80,11 +78,10 @@ they do not determine Bluetooth identity or selection.
 not enumerate the Core Audio status inventory, inspect default routes, call the
 selection mapper, or run active-output enrichment.
 
-## Candidate devices
+## Candidates pending verification
 
-Apple or Beats documents listening modes for these devices, but hardware
-coverage remains incomplete for most rows. We do not assume that macOS exposes
-the controls through the same private API on every model.
+Apple or Beats documents listening modes for these devices, but we do not know
+whether macOS exposes the controls through the same private API.
 
 ### AirPods
 
@@ -95,19 +92,12 @@ table tracks them separately in case macOS exposes them differently.
 | --- | --- | --- | --- | --- |
 | AirPods 4 (ANC) | A3056, A3055, A3057 | 0x201B | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
 | AirPods Pro 1 | A2084, A2083 | 0x200E | ANC, Transparency | Pending |
-| AirPods Pro 2 (Lightning) | A2931, A2699, A2698 | 0x2014 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Partially verified |
+| AirPods Pro 2 (Lightning) | A2931, A2699, A2698 | 0x2014 | ANC, Transparency, Adaptive Audio, Conversation Awareness | [Partially verified](https://github.com/raulgg/airpods-control/issues/34) |
 | AirPods Pro 2 (USB-C) | A3047, A3048, A3049 | 0x2024 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
 | AirPods Pro 3 | A3063, A3064, A3065 | 0x2027 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Verified baseline |
 | AirPods Max 1 (Lightning) | A2096 | 0x200A | ANC, Transparency | Pending |
 | AirPods Max 1 (USB-C) | A3184 | 0x201F | ANC, Transparency | Pending |
 | AirPods Max 2 | A3454 | 0x202D | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
-
-[Issue #34](https://github.com/raulgg/airpods-control/issues/34) records a
-consented report from AirPods Pro 2 (Lightning) on macOS 27.0.0. It verifies
-listening-mode discovery and writes, Conversation Awareness queries and
-writes, and support-report metadata. It does not verify status inventory,
-selected input/output observation, one-earbud behavior, or the explicit cycle
-command.
 
 The model identifiers in the table come from Apple's
 [AirPods identification guide](https://support.apple.com/en-in/109525). Its
