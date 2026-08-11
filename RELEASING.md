@@ -55,3 +55,11 @@ new patch release.
 3. Wait for every required `brew test-bot` check and the squash auto-merge.
 4. If dispatch fails, run the tap workflow manually with the existing release
    tag.
+
+## Experimental binary bundle
+
+1. Run the `Experimental Binary Bundle` workflow.
+2. Verify that its Apple Silicon and Intel jobs pass.
+3. Download the seven-day Actions artifact if the package needs inspection.
+
+Do not attach the ad-hoc-signed experimental artifact to a GitHub release.

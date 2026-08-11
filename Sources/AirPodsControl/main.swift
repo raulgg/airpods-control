@@ -8,6 +8,7 @@
 
 import Darwin
 import Foundation
+import BypassProbe
 
 func resolvedExecutablePath() -> String? {
   var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
@@ -26,7 +27,11 @@ func resolvedExecutablePath() -> String? {
 
 func ensureBypass(logger: DebugLogger) {
   if ProcessInfo.processInfo.environment["AIRPODS_CONTROL_BYPASSED"] != nil {
-    logger.debug("bypass.status", "active")
+    if AirPodsControlBypassIsActive() {
+      logger.debug("bypass.status", "active")
+    } else {
+      logger.warning("bypass.status", "inactive")
+    }
     return
   }
 
