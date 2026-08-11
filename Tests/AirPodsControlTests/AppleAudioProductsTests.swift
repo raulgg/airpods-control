@@ -40,6 +40,20 @@ func testAppleAudioProductsFamilyFromModelIdentifier() {
   check(pro3?.modelName == "AirPods Pro 3", "product ID 0x2027 resolves to AirPods Pro 3")
   check(pro3?.bluetoothProductID == 0x2027, "the decimal product field decodes to hex")
 
+  let pro2Lightning = AppleAudioProducts.product(for: "BTHeadphones76,8212")
+  check(
+    pro2Lightning?.family == .airPods,
+    "product ID 0x2014 resolves to AirPods"
+  )
+  check(
+    pro2Lightning?.modelName == "AirPods Pro 2 (Lightning)",
+    "product ID 0x2014 resolves to AirPods Pro 2 (Lightning)"
+  )
+  check(
+    pro2Lightning?.bluetoothProductID == 0x2014,
+    "AirPods Pro 2 (Lightning) product ID is decoded"
+  )
+
   let fitPro = AppleAudioProducts.product(for: "BTHeadphones76,8210")
   check(
     fitPro?.modelName == "Beats Fit Pro",

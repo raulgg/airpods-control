@@ -185,11 +185,10 @@ of prebuilt binaries. Review the source and the
 
 ## Compatibility
 
-Apple can change or remove this private API in any macOS update. The CLI has
-only been verified with AirPods Pro 3. Other AirPods may work when macOS exposes
-the same capabilities, and Beats reports are welcome, but a report does not by
-itself establish support. See the
-[device and capability matrix](docs/compatibility.md).
+Apple can change or remove this private API in any macOS update. Compatibility
+varies by device, firmware, and macOS version; see the [device and capability
+matrix](docs/compatibility.md) for current results. Reports are welcome, but a
+report does not by itself establish support.
 
 To share compatibility details:
 
