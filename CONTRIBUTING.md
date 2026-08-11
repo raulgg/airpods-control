@@ -78,6 +78,8 @@ device or capability status.
   codes.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in
   C.
+- `version.txt` is the single source for the CLI and release version. The
+  Makefile generates the corresponding Swift constant under `build/`.
 
 The names follow Swift target conventions. The Makefile is still the source of
 truth for builds because release builds combine architectures, sign both
@@ -99,8 +101,8 @@ set.
 - Preserve the script-friendly stdout and exit-code contract.
 - Avoid new runtime dependencies unless they are essential.
 
-Maintainers should follow [RELEASING.md](RELEASING.md) for signed releases and
-Homebrew formula updates.
+Maintainers should follow [RELEASING.md](RELEASING.md) for releases and Homebrew
+formula updates.
 
 By contributing, you agree to license your contribution under the repository's
 [MIT License](LICENSE).

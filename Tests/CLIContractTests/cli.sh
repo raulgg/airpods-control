@@ -3,6 +3,7 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 BUILT_CLI="$ROOT/build/airpods-control"
+VERSION_FILE="$ROOT/version.txt"
 COMPATIBILITY_TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/compatibility-report.yml"
 COMPATIBILITY_DOC="$ROOT/docs/compatibility.md"
 
@@ -41,6 +42,9 @@ expect_failure() {
 }
 
 [ -x "$BUILT_CLI" ] || fail "missing executable: run make first"
+[ -f "$VERSION_FILE" ] || fail "missing version file: $VERSION_FILE"
+VERSION=$(cat "$VERSION_FILE")
+[ -n "$VERSION" ] || fail "empty version file: $VERSION_FILE"
 [ ! -e "$ROOT/build/airpods" ] || fail "legacy build/airpods artifact exists"
 [ -f "$COMPATIBILITY_TEMPLATE" ] || fail "missing compatibility report issue template"
 [ -f "$COMPATIBILITY_DOC" ] || fail "missing device compatibility documentation"
@@ -108,18 +112,18 @@ assert_contains "$("$CLI" support-report --help)" \
 assert_contains "$("$CLI" support-report --help)" \
   '--debug' "support-report debug flag help"
 
-assert_equal '0.2.1' "$("$CLI" --version)" "--version"
-assert_equal '0.2.1' "$("$CLI" -v)" "-v"
-assert_equal '0.2.1' "$("$CLI" version)" "version command"
-assert_equal '{"result":"ok","version":"0.2.1"}' \
+assert_equal "$VERSION" "$("$CLI" --version)" "--version"
+assert_equal "$VERSION" "$("$CLI" -v)" "-v"
+assert_equal "$VERSION" "$("$CLI" version)" "version command"
+assert_equal "{\"result\":\"ok\",\"version\":\"$VERSION\"}" \
   "$("$CLI" --json version)" "JSON version"
 
 "$CLI" --version >"$PROBE_DIR/plain.stdout" 2>"$PROBE_DIR/plain.stderr"
-assert_equal '0.2.1' "$(cat "$PROBE_DIR/plain.stdout")" "plain stdout"
+assert_equal "$VERSION" "$(cat "$PROBE_DIR/plain.stdout")" "plain stdout"
 assert_equal '' "$(cat "$PROBE_DIR/plain.stderr")" "normal command has no diagnostics"
 
 "$CLI" --debug --version >"$PROBE_DIR/debug.stdout" 2>"$PROBE_DIR/debug.stderr"
-assert_equal '0.2.1' "$(cat "$PROBE_DIR/debug.stdout")" "debug preserves stdout"
+assert_equal "$VERSION" "$(cat "$PROBE_DIR/debug.stdout")" "debug preserves stdout"
 assert_contains "$(cat "$PROBE_DIR/debug.stderr")" \
   'debug: cli.command="version"' "debug uses stderr"
 

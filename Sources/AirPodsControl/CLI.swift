@@ -1,7 +1,5 @@
 import Foundation
 
-let VERSION = "0.2.1"
-
 enum CLIResource {
   case listeningMode
   case conversationAwareness

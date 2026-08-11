@@ -14,7 +14,10 @@ BINARY := $(BUILD_DIR)/airpods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
 MANPAGE := docs/man/airpods-control.1
 BUILD_STAMP := $(BUILD_DIR)/.built
+VERSION_FILE := version.txt
+VERSION_SOURCE := $(BUILD_DIR)/Version.swift
 SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
+SWIFT_BUILD_SOURCES := $(SWIFT_SOURCES) $(VERSION_SOURCE)
 SWIFT_LIBRARY_SOURCES := $(filter-out Sources/AirPodsControl/main.swift,$(SWIFT_SOURCES))
 SWIFT_TEST_SOURCES := $(sort $(wildcard Tests/AirPodsControlTests/*.swift))
 AV_BYPASS_SOURCE := Sources/AVBypass/bypass.c
@@ -39,12 +42,23 @@ all: $(BUILD_STAMP)
 		$(MAKE) --no-print-directory _build; \
 	fi
 
-$(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(AV_BYPASS_SOURCE) \
+$(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(VERSION_SOURCE) $(AV_BYPASS_SOURCE) \
 	$(SIGNAL_MONITOR_SOURCE) $(SIGNAL_MONITOR_HEADER) \
 	$(SIGNAL_MONITOR_MODULE_MAP) Makefile
 	@$(MAKE) --no-print-directory _build
 
-_build:
+$(VERSION_SOURCE): $(VERSION_FILE) Makefile
+	@set -eu; \
+	version=$$(cat "$(VERSION_FILE)"); \
+	printf '%s\n' "$$version" | grep -Eq \
+		'^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$$' || { \
+			echo "error: $(VERSION_FILE) must contain one semantic version" >&2; \
+			exit 1; \
+		}; \
+	mkdir -p "$(BUILD_DIR)"; \
+	printf 'let VERSION = "%s"\n' "$$version" >"$(VERSION_SOURCE)"
+
+_build: $(VERSION_SOURCE)
 	@set -eu; \
 	mkdir -p "$(BUILD_DIR)" "$(SWIFT_MODULE_CACHE)"; \
 	tmp=$$(mktemp -d "$${TMPDIR:-/tmp}/airpods-control.XXXXXX"); \
@@ -63,7 +77,7 @@ _build:
 		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
-			-o "$$tmp/airpods-control.$$arch" $(SWIFT_SOURCES) \
+			-o "$$tmp/airpods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
 			"$$tmp/signal-monitor.$$arch.o"; \
 	}; \
 	succeeded=""; failed=""; \
@@ -117,7 +131,7 @@ test: all
 		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 		-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 		-o "$(SWIFT_TEST_BINARY)" \
-		$(SWIFT_LIBRARY_SOURCES) $(SWIFT_TEST_SOURCES) \
+		$(SWIFT_LIBRARY_SOURCES) $(VERSION_SOURCE) $(SWIFT_TEST_SOURCES) \
 		"$(SIGNAL_MONITOR_TEST_OBJECT)"
 	"$(SWIFT_TEST_BINARY)"
 
