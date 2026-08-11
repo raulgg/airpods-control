@@ -1,0 +1,355 @@
+name: Publish Binary Release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing published release tag to package
+        required: true
+        type: string
+      publish:
+        description: Attach the verified assets to the release
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to package
+        required: true
+        type: string
+      publish:
+        description: Attach assets (automatic main-branch calls only)
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binary-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+
+jobs:
+  validate:
+    name: Validate release provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+
+    steps:
+      - name: Validate published release and tag
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .prerelease <<<"$release")" = false
+
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$RELEASE_TAG" != "$latest_tag" ]; then
+            echo "Refusing $RELEASE_TAG: latest stable release is $latest_tag" >&2
+            exit 1
+          fi
+
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          comparison=$(gh api \
+            "repos/$GITHUB_REPOSITORY/compare/$sha...main" --jq .status)
+          case "$comparison" in
+            ahead | identical) ;;
+            *)
+              echo "Refusing $RELEASE_TAG: tag commit is not on main" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$PUBLISH" = true ]; then
+            if [ "$GITHUB_EVENT_NAME" != push ] || \
+              [ "$GITHUB_REF" != refs/heads/main ] || \
+              [ "$sha" != "$GITHUB_SHA" ]; then
+              echo "Automatic publication requires the current protected main commit" >&2
+              exit 1
+            fi
+          fi
+
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          echo "version=${RELEASE_TAG#v}" >>"$GITHUB_OUTPUT"
+
+      - name: Checkout validated release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+
+      - name: Validate version contract
+        run: test "$(cat version.txt)" = "${RELEASE_TAG#v}"
+
+  sign:
+    name: Build, sign, and notarize
+    needs: validate
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: binary-release
+
+    steps:
+      - name: Checkout validated release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+
+      - name: Build universal binaries
+        run: |
+          make clean
+          make
+          lipo build/airpods-control -verify_arch arm64 x86_64
+          lipo build/avbypass.dylib -verify_arch arm64 x86_64
+
+      - name: Import Developer ID certificate
+        id: signing
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_PASSWORD }}
+        run: |
+          test -n "$CERTIFICATE_BASE64"
+          test -n "$CERTIFICATE_PASSWORD"
+          certificate="$RUNNER_TEMP/developer-id.p12"
+          keychain="$RUNNER_TEMP/release-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 32)
+
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode >"$certificate"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$certificate" \
+            -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain"
+
+          identities=$(security find-identity -v -p codesigning "$keychain" |
+            awk '/"Developer ID Application:/ { print $2 }')
+          identity_count=$(printf '%s\n' "$identities" | sed '/^$/d' | wc -l | tr -d ' ')
+          if [ "$identity_count" -ne 1 ]; then
+            echo "Expected exactly one Developer ID Application identity" >&2
+            security find-identity -v -p codesigning "$keychain" >&2
+            exit 1
+          fi
+          identity=$(printf '%s\n' "$identities" | sed -n '1p')
+          printf '%s\n' "$identity" | grep -Eq '^[0-9A-F]{40}$'
+
+          echo "identity=$identity" >>"$GITHUB_OUTPUT"
+          echo "keychain=$keychain" >>"$GITHUB_OUTPUT"
+
+      - name: Sign and package
+        env:
+          CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
+          CODESIGN_KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+          VERIFY_SIGNATURE_POLICY: external
+        run: |
+          ./scripts/sign-release-binaries.sh
+          make verify-package
+
+      - name: Notarize signed contents
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          test -n "$APPLE_API_ISSUER"
+          test -n "$APPLE_API_KEY_ID"
+          test -n "$APPLE_API_PRIVATE_KEY"
+          api_key="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+          notary_dir="$RUNNER_TEMP/notary"
+          archive="dist/airpods-control-${{ needs.validate.outputs.version }}-macos-universal.tar.gz"
+          package="$notary_dir/airpods-control-${{ needs.validate.outputs.version }}-macos-universal"
+          notary_zip="$RUNNER_TEMP/airpods-control-notary.zip"
+
+          printf '%s' "$APPLE_API_PRIVATE_KEY" >"$api_key"
+          chmod 600 "$api_key"
+          mkdir -p "$notary_dir"
+          tar -xzf "$archive" -C "$notary_dir"
+          ditto -c -k --keepParent "$package" "$notary_zip"
+          xcrun notarytool submit "$notary_zip" \
+            --key "$api_key" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait \
+            --timeout 30m
+          spctl --assess --type execute --verbose=4 \
+            "$package/libexec/airpods-control/airpods-control"
+
+      - name: Remove signing material
+        if: always()
+        env:
+          KEYCHAIN: ${{ steps.signing.outputs.keychain }}
+        run: |
+          keychain=${KEYCHAIN:-$RUNNER_TEMP/release-signing.keychain-db}
+          if [ -e "$keychain" ]; then
+            security delete-keychain "$keychain" || true
+          fi
+          rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP"/AuthKey_*.p8
+
+      - name: Upload verified candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: binary-release-${{ needs.validate.outputs.sha }}
+          path: |
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Verify candidate (${{ matrix.architecture }})
+    needs:
+      - validate
+      - sign
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-26
+          - architecture: x86_64
+            runner: macos-15-intel
+
+    steps:
+      - name: Checkout validated release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+
+      - name: Download candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binary-release-${{ needs.validate.outputs.sha }}
+          path: dist
+
+      - name: Verify native runtime, Gatekeeper, and install
+        env:
+          VERIFY_SIGNATURE_POLICY: external
+        run: |
+          test "$(uname -m)" = "${{ matrix.architecture }}"
+          (cd dist && shasum -a 256 -c SHA256SUMS)
+          archive="dist/airpods-control-${{ needs.validate.outputs.version }}-macos-universal.tar.gz"
+          VERIFY_GATEKEEPER=1 ./scripts/verify-binary-package.sh "$archive"
+
+  publish:
+    name: Attest and publish assets
+    if: inputs.publish
+    needs:
+      - validate
+      - verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Download verified candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: binary-release-${{ needs.validate.outputs.sha }}
+          path: dist
+
+      - name: Verify candidate checksum
+        run: (cd dist && shasum -a 256 -c SHA256SUMS)
+
+      - name: Attest release archive
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Upload binary assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          upload_asset() {
+            candidate=$1
+            asset_name=${candidate##*/}
+            release=$(gh api \
+              "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")
+            asset_id=$(jq -r --arg name "$asset_name" '
+              [.assets[] | select(.name == $name)] |
+              if length == 0 then ""
+              elif length == 1 then (.[0].id | tostring)
+              else error("duplicate release assets named \($name)")
+              end
+            ' <<<"$release")
+
+            if [ -n "$asset_id" ]; then
+              existing="$RUNNER_TEMP/existing-$asset_name"
+              gh api \
+                -H "Accept: application/octet-stream" \
+                "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                >"$existing"
+              if ! cmp -s "$candidate" "$existing"; then
+                echo "Refusing to replace existing release asset: $asset_name" >&2
+                exit 1
+              fi
+              echo "Existing release asset is byte-identical: $asset_name"
+              return
+            fi
+
+            gh release upload "$RELEASE_TAG" "$candidate" \
+              --repo "$GITHUB_REPOSITORY"
+          }
+
+          archive="dist/airpods-control-${{ needs.validate.outputs.version }}-macos-universal.tar.gz"
+          upload_asset "$archive"
+          upload_asset dist/SHA256SUMS
+
+  verify-public:
+    name: Verify public provenance
+    needs:
+      - validate
+      - publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Download published assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir dist
+          gh release download "$RELEASE_TAG" \
+            --pattern "airpods-control-${{ needs.validate.outputs.version }}-macos-universal.tar.gz" \
+            --pattern SHA256SUMS \
+            --dir dist \
+            --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify checksum and attestation policy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          (cd dist && shasum -a 256 -c SHA256SUMS)
+          gh attestation verify \
+            "dist/airpods-control-${{ needs.validate.outputs.version }}-macos-universal.tar.gz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/binary-release.yml" \
+            --source-ref refs/heads/main \
+            --source-digest "${{ needs.validate.outputs.sha }}" \
+            --deny-self-hosted-runners

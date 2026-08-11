@@ -4,7 +4,8 @@
 // Compiled with swiftc (no Xcode needed) + a tiny C bypass dylib. On launch it
 // re-execs itself once with avbypass.dylib inserted so the in-process
 // entitlement gate for the shared system audio context is satisfied — the same
-// technique NoiseBuddy uses.
+// technique NoiseBuddy uses. Source builds are ad-hoc signed; release assets
+// sign both files with the same Developer ID team.
 
 import Darwin
 import Foundation
