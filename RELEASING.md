@@ -1,93 +1,73 @@
 # Releasing
 
-`airpods-control` publishes signed source releases from this repository. Its
-Homebrew formula lives in
+`airpods-control` publishes source releases from this repository. Its Homebrew
+formula lives in
 [`raulgg/homebrew-tap`](https://github.com/raulgg/homebrew-tap) and builds each
 release from source. Do not add a second formula to this repository.
 
-## Prepare the release
+## Repository setup
 
-1. Update `version.txt`. The build generates the Swift version constant, and
-   tests and CI derive their expectations from that file.
-2. Run all local checks:
+Release Please needs a fine-grained personal access token stored as the
+`RELEASE_PLEASE_TOKEN` Actions secret. Limit it to this repository with read and
+write access to contents, issues, and pull requests. A pull request created with
+the default `GITHUB_TOKEN` would not start the repository's required workflows.
 
-   ```sh
-   make clean
-   make test
-   lipo -archs build/airpods-control
-   lipo -archs build/avbypass.dylib
-   codesign --verify --verbose=2 build/airpods-control
-   codesign --verify --verbose=2 build/avbypass.dylib
-   ```
+Configure GitHub to:
 
-3. Run `make install` and `make uninstall` with `DESTDIR` set to a temporary
-   staging directory. Confirm the executable, interpose dylib, relative bin
-   symlink, and manpage.
-4. Merge the version change through a pull request. Confirm `main` is clean,
-   matches `origin/main`, and has a successful CI run.
+- allow squash merging and use the pull request title as the default squash
+  commit message;
+- require CI, Quality Checks, and PR Title on `main`;
+- prevent updates and deletions of tags matching `v*`.
 
-## Publish the source release
+The release workflow creates tags, so tag creation must remain allowed. A tag
+points to a commit that passed the protected `main` pull request workflow; tags
+are not moved or reused. Automated tags are not maintainer GPG-signed: protected
+`main` and the protected tag namespace replace that manual trust boundary.
 
-Replace `VERSION` below with the version number without a leading `v`.
+## Version policy
 
-```sh
-git tag -s "vVERSION" -m "airpods-control VERSION"
-git tag -v "vVERSION"
-git push origin "vVERSION"
-gh release create "vVERSION" \
-  --verify-tag \
-  --title "airpods-control VERSION" \
-  --generate-notes
-```
+Pull request titles follow Conventional Commits. While the project is below
+`1.0.0`, Release Please applies these version changes:
 
-Never move, delete, or recreate a published tag. If a release contains the wrong
-source, publish the fix in the next patch version.
+- `fix` creates a patch release;
+- `feat` creates a minor release;
+- a title containing `!` creates a minor release;
+- documentation, chores, CI, builds, refactors, and tests do not initiate a
+  release.
 
-Download the tag archive twice and compare the files byte for byte before
-calculating the formula checksum:
+Release Please updates `version.txt` and `CHANGELOG.md` together. The Makefile
+generates the Swift version constant, and tests and CI derive their expectations
+from `version.txt`.
 
-```sh
-release_archive_dir=$(mktemp -d /tmp/airpods-control-release.XXXXXX)
-curl -L --fail --retry 3 \
-  -o "$release_archive_dir/first.tar.gz" \
-  "https://github.com/raulgg/airpods-control/archive/refs/tags/vVERSION.tar.gz"
-curl -L --fail --retry 3 \
-  -o "$release_archive_dir/second.tar.gz" \
-  "https://github.com/raulgg/airpods-control/archive/refs/tags/vVERSION.tar.gz"
-cmp "$release_archive_dir/first.tar.gz" "$release_archive_dir/second.tar.gz"
-shasum -a 256 "$release_archive_dir/first.tar.gz"
-```
+## Publish a release
+
+1. Merge normal pull requests into `main` using squash merge. Release Please
+   opens or refreshes its release pull request when a releasable change lands.
+2. Review the proposed version and `CHANGELOG.md`. Merging this protected pull
+   request is the release approval boundary.
+3. Release Please creates the protected `vVERSION` tag and GitHub release. The
+   release uses GitHub's automatic source archives; there is no duplicate source
+   asset.
+
+If the workflow fails after the release pull request merges, rerun its failed
+job. Never move, delete, or recreate a published tag. Correct bad source with a
+new patch release.
 
 ## Update the Homebrew tap
 
+Until the automated handoff is enabled, update the tap after the GitHub release
+is public:
+
 1. Create `feat/airpods-control-VERSION` from the tap's current `main`.
-2. Update `Formula/airpods-control.rb` with the tag archive URL and verified
-   SHA-256. Keep the source build, Apple toolchain overrides, exact read-only
-   version test, and absence of a `bottle` block.
-3. Run:
-
-   ```sh
-   brew style --formula raulgg/tap/airpods-control
-   brew audit --strict --online raulgg/tap/airpods-control
-   brew install --build-from-source raulgg/tap/airpods-control
-   brew test raulgg/tap/airpods-control
-   airpods-control --version
-   brew uninstall airpods-control
-   ```
-
-4. Open a tap pull request and merge it with squash only after every required
+2. Download the release's tag archive twice, compare the files byte for byte,
+   and calculate its SHA-256.
+3. Update `Formula/airpods-control.rb` with the new tag URL and checksum. Keep
+   the source build, Apple toolchain overrides, exact read-only version test,
+   and absence of a `bottle` block.
+4. Open a tap pull request. Merge it with squash only after every required
    `brew test-bot` check passes. Do not use `brew pr-pull`; this tap does not
    publish bottles.
-5. Untap the local checkout. From a fresh clone, run the documented public
-   installation:
 
-   ```sh
-   brew install raulgg/tap/airpods-control
-   airpods-control --version
-   brew test raulgg/tap/airpods-control
-   brew uninstall airpods-control
-   ```
-
-Packaging tests must remain read-only and must never change AirPods settings. If
-a broken formula reaches `main`, correct or revert it through another pull
-request after its checks pass. Do not rewrite the tap history.
+Packaging tests must remain read-only and must never change AirPods settings. A
+failed tap update does not roll back or block the upstream GitHub release. Fix
+the formula or rerun its updater instead.
