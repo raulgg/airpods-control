@@ -60,7 +60,7 @@ assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
   'I reviewed this report and confirmed it contains no custom device name' \
   "compatibility form requires a privacy review"
 assert_contains "$(cat "$COMPATIBILITY_DOC")" \
-  '| `support-report` metadata | Pending | Pending | Exploratory |' \
+  '| `support-report` metadata | Pending | Verified | Pending | Exploratory |' \
   "compatibility matrix tracks support-report verification"
 
 # Excluding avbypass.dylib proves these parser-only paths return before the
