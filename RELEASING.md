@@ -7,9 +7,8 @@ release from source. Do not add a second formula to this repository.
 
 ## Prepare the release
 
-1. Update the version in the CLI, contract tests, CI install assertion, and
-   documentation examples. Search for the previous version to catch every
-   reference.
+1. Update `version.txt`. The build generates the Swift version constant, and
+   tests and CI derive their expectations from that file.
 2. Run all local checks:
 
    ```sh

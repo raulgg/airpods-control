@@ -29,8 +29,8 @@ jobs:
       - name: Build
         run: |
           make
-          lipo -archs build/airpods-control
-          lipo -archs build/avbypass.dylib
+          lipo build/airpods-control -verify_arch arm64 x86_64
+          lipo build/avbypass.dylib -verify_arch arm64 x86_64
           codesign --verify --verbose build/airpods-control
           codesign --verify --verbose build/avbypass.dylib
 
@@ -42,11 +42,13 @@ jobs:
       - name: Verify install layout
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
+          expected_version=$(cat version.txt)
           make install DESTDIR="$stage" PREFIX=/usr/local
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
           test -f "$stage/usr/local/share/man/man1/airpods-control.1"
-          test "$("$stage/usr/local/bin/airpods-control" --version)" = "0.2.1"
+          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
+            "$expected_version"
           make uninstall DESTDIR="$stage" PREFIX=/usr/local
           test ! -e "$stage/usr/local/bin/airpods-control"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
