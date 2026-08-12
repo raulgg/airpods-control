@@ -15,12 +15,14 @@ Homebrew formula in
    and description (`PR_TITLE` and `PR_BODY`).
 4. Require CI, Quality Checks, and PR Title on `main`.
 5. For tags matching `v*`, restrict updates and deletions but allow creation.
-6. Store a separate fine-grained personal access token as
-   `HOMEBREW_TAP_DISPATCH_TOKEN` in the `main`-only `tap-dispatch` environment.
-   Limit it to `raulgg/homebrew-tap` with write access to contents.
-7. In the tap repository, store a separate fine-grained personal access token
-   as `HOMEBREW_TAP_TOKEN` in the `main`-only `formula-updater` environment.
-   Grant it write access to contents and pull requests.
+6. Create the `tap-dispatch` environment. Allow deployments only from the
+   selected branch `main`, and disable administrator bypass. Store a separate
+   fine-grained personal access token as `HOMEBREW_TAP_DISPATCH_TOKEN`. Limit it
+   to `raulgg/homebrew-tap` with write access to Actions.
+7. In the tap repository, create the `formula-updater` environment. Allow
+   deployments only from the selected branch `main`, and disable administrator
+   bypass. Store a separate fine-grained personal access token as
+   `HOMEBREW_TAP_TOKEN` with write access to contents and pull requests.
 8. Enable auto-merge in the tap repository and require every `brew test-bot`
    check on `main`. Do not allow the updater to push directly to `main`.
 

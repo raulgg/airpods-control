@@ -54,7 +54,8 @@ jobs:
           test "$(jq -r .draft <<<"$release")" = false
           test "$(jq -r .prerelease <<<"$release")" = false
 
-          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)
+          tag_sha=$(gh api \
+            "repos/$GITHUB_REPOSITORY/commits/refs/tags/$RELEASE_TAG" --jq .sha)
           comparison=$(gh api \
             "repos/$GITHUB_REPOSITORY/compare/$tag_sha...$GITHUB_SHA" --jq .status)
           case "$comparison" in
@@ -70,8 +71,7 @@ jobs:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
           RELEASE_TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh api --method POST \
-            repos/raulgg/homebrew-tap/dispatches \
-            -f event_type=airpods-control-release \
-            -f "client_payload[tag]=$RELEASE_TAG" \
-            -f "client_payload[release_url]=https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
+          gh workflow run update-formula.yml \
+            --repo raulgg/homebrew-tap \
+            --ref main \
+            -f "tag=$RELEASE_TAG"
