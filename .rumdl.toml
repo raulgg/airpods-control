@@ -5,4 +5,5 @@ exclude = [".github/PULL_REQUEST_TEMPLATE.md"]
 reflow = true
 
 [per-file-ignores]
+"CHANGELOG.md" = ["MD012", "MD013"]
 "README.md" = ["MD033"]

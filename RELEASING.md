@@ -6,21 +6,22 @@ Homebrew formula in
 
 ## One-time setup
 
-1. Store a fine-grained personal access token as the `RELEASE_PLEASE_TOKEN`
-   Actions secret. Limit it to this repository with read and write access to
-   contents, issues, and pull requests.
-2. Allow squash merging and use the pull request title as the default squash
-   commit message.
-3. Require CI, Quality Checks, and PR Title on `main`.
-4. Prevent updates and deletions of tags matching `v*`. Allow the release
-   workflow to create tags.
+1. Create the `release-automation` environment. Allow deployments only from the
+   selected branch `main`, and disable administrator bypass.
+2. Create a fine-grained personal access token limited to this repository with
+   read and write access to contents, issues, and pull requests. Store it as the
+   `RELEASE_PLEASE_TOKEN` environment secret in `release-automation`.
+3. Allow squash merging. Set the default squash commit to the pull request title
+   and description (`PR_TITLE` and `PR_BODY`).
+4. Require CI, Quality Checks, and PR Title on `main`.
+5. For tags matching `v*`, restrict updates and deletions but allow creation.
 
 ## Pull request titles
 
 Format pull request titles according to the
 [Conventional Commits 1.0.0 specification](https://www.conventionalcommits.org/en/v1.0.0/).
-Use squash merge so Release Please receives the pull request title as the commit
-message.
+Use squash merge so Release Please receives the pull request title and body as
+the commit message.
 
 ## Publish a release
 
