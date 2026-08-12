@@ -94,6 +94,9 @@ set.
 
 ## Pull requests
 
+- Use a [Conventional Commit](https://www.conventionalcommits.org/) pull request
+  title. The repository squash-merges pull requests, so that title becomes the
+  commit used to generate versions and release notes.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.
 - Update CLI help and the affected user-facing documentation when the interface

@@ -1,93 +1,53 @@
 # Releasing
 
-`airpods-control` publishes signed source releases from this repository. Its
-Homebrew formula lives in
-[`raulgg/homebrew-tap`](https://github.com/raulgg/homebrew-tap) and builds each
-release from source. Do not add a second formula to this repository.
+Publish source releases from this repository. Update the source-building
+Homebrew formula in
+[`raulgg/homebrew-tap`](https://github.com/raulgg/homebrew-tap).
 
-## Prepare the release
+## One-time setup
 
-1. Update `version.txt`. The build generates the Swift version constant, and
-   tests and CI derive their expectations from that file.
-2. Run all local checks:
+1. Create the `release-automation` environment. Allow deployments only from the
+   selected branch `main`, and disable administrator bypass.
+2. Create a fine-grained personal access token limited to this repository with
+   read and write access to contents, issues, and pull requests. Store it as the
+   `RELEASE_PLEASE_TOKEN` environment secret in `release-automation`.
+3. Allow squash merging. Set the default squash commit to the pull request title
+   and description (`PR_TITLE` and `PR_BODY`).
+4. Require CI, Quality Checks, and PR Title on `main`.
+5. For tags matching `v*`, restrict updates and deletions but allow creation.
 
-   ```sh
-   make clean
-   make test
-   lipo -archs build/airpods-control
-   lipo -archs build/avbypass.dylib
-   codesign --verify --verbose=2 build/airpods-control
-   codesign --verify --verbose=2 build/avbypass.dylib
-   ```
+## Pull request titles
 
-3. Run `make install` and `make uninstall` with `DESTDIR` set to a temporary
-   staging directory. Confirm the executable, interpose dylib, relative bin
-   symlink, and manpage.
-4. Merge the version change through a pull request. Confirm `main` is clean,
-   matches `origin/main`, and has a successful CI run.
+Format pull request titles according to the
+[Conventional Commits 1.0.0 specification](https://www.conventionalcommits.org/en/v1.0.0/).
+Use squash merge so Release Please receives the pull request title and body as
+the commit message.
 
-## Publish the source release
+## Publish a release
 
-Replace `VERSION` below with the version number without a leading `v`.
+1. Merge normal pull requests into `main` using squash merge. Release Please
+   opens or refreshes its release pull request when a releasable change lands.
+2. Review the proposed version and `CHANGELOG.md`. Merging this protected pull
+   request approves and publishes the release.
+3. Verify that Release Please created the `vVERSION` tag and public GitHub
+   release. Use GitHub's automatic source archive; do not upload a duplicate
+   source asset.
 
-```sh
-git tag -s "vVERSION" -m "airpods-control VERSION"
-git tag -v "vVERSION"
-git push origin "vVERSION"
-gh release create "vVERSION" \
-  --verify-tag \
-  --title "airpods-control VERSION" \
-  --generate-notes
-```
-
-Never move, delete, or recreate a published tag. If a release contains the wrong
-source, publish the fix in the next patch version.
-
-Download the tag archive twice and compare the files byte for byte before
-calculating the formula checksum:
-
-```sh
-release_archive_dir=$(mktemp -d /tmp/airpods-control-release.XXXXXX)
-curl -L --fail --retry 3 \
-  -o "$release_archive_dir/first.tar.gz" \
-  "https://github.com/raulgg/airpods-control/archive/refs/tags/vVERSION.tar.gz"
-curl -L --fail --retry 3 \
-  -o "$release_archive_dir/second.tar.gz" \
-  "https://github.com/raulgg/airpods-control/archive/refs/tags/vVERSION.tar.gz"
-cmp "$release_archive_dir/first.tar.gz" "$release_archive_dir/second.tar.gz"
-shasum -a 256 "$release_archive_dir/first.tar.gz"
-```
+If the workflow fails after the release pull request merges, rerun its failed
+job. Never move, delete, or recreate a published tag. Correct bad source with a
+new patch release.
 
 ## Update the Homebrew tap
 
-1. Create `feat/airpods-control-VERSION` from the tap's current `main`.
-2. Update `Formula/airpods-control.rb` with the tag archive URL and verified
-   SHA-256. Keep the source build, Apple toolchain overrides, exact read-only
-   version test, and absence of a `bottle` block.
-3. Run:
+Until the automated handoff is enabled:
 
-   ```sh
-   brew style --formula raulgg/tap/airpods-control
-   brew audit --strict --online raulgg/tap/airpods-control
-   brew install --build-from-source raulgg/tap/airpods-control
-   brew test raulgg/tap/airpods-control
-   airpods-control --version
-   brew uninstall airpods-control
-   ```
-
-4. Open a tap pull request and merge it with squash only after every required
+1. Wait until the GitHub release is public.
+2. Create `feat/airpods-control-VERSION` from the tap's current `main`.
+3. Download the release's tag archive twice, compare the files byte for byte,
+   and calculate its SHA-256.
+4. Update `Formula/airpods-control.rb` with the new tag URL and checksum. Keep
+   the source build, Apple toolchain overrides, exact read-only version test,
+   and absence of a `bottle` block.
+5. Open a tap pull request. Merge it with squash only after every required
    `brew test-bot` check passes. Do not use `brew pr-pull`; this tap does not
    publish bottles.
-5. Untap the local checkout. From a fresh clone, run the documented public
-   installation:
-
-   ```sh
-   brew install raulgg/tap/airpods-control
-   airpods-control --version
-   brew test raulgg/tap/airpods-control
-   brew uninstall airpods-control
-   ```
-
-Packaging tests must remain read-only and must never change AirPods settings. If
-a broken formula reaches `main`, correct or revert it through another pull
-request after its checks pass. Do not rewrite the tap history.
