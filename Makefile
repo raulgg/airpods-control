@@ -40,7 +40,7 @@ LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
-.PHONY: all _build test verify-catalog package install uninstall clean
+.PHONY: all _build test verify-catalog package verify-package install uninstall clean
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
@@ -160,6 +160,13 @@ package: all
 		SWIFTC="$(SWIFTC)" \
 		CLANG="$(CLANG)" \
 		./scripts/package-binary.sh
+
+verify-package: package
+	./Tests/PackagingTests/bypass-runtime.sh \
+		"$(abspath $(BINARY))" "$(abspath $(DYLIB))"
+	cd "$(abspath $(DIST_DIR))" && shasum -a 256 -c SHA256SUMS
+	./scripts/verify-binary-package.sh \
+		"$(abspath $(DIST_DIR))/airpods-control-$$(cat "$(abspath $(VERSION_FILE))")-macos-universal.tar.gz"
 
 install: all
 	@set -eu; \

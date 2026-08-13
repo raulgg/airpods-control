@@ -43,6 +43,13 @@ them. It then runs the shell CLI contract tests, the C signal-monitor race test,
 and the Swift unit tests. Tests must not require AirPods or write device
 settings.
 
+For packaging, installer, or runtime-bypass changes, build and verify the
+complete archive:
+
+```sh
+make verify-package
+```
+
 Check the product-name catalog against the pairings macOS itself publishes:
 
 ```sh
