@@ -3,7 +3,8 @@
 `airpods-control` uses a small interpose library to make one private entitlement
 appear present inside its own process. This gives the process access to a
 private Apple audio API without granting privileges outside it. The project
-distributes source instead of prebuilt binaries.
+primarily distributes source and also publishes a short-lived experimental CI
+bundle for testing.
 
 ## What the interpose does
 
@@ -22,6 +23,12 @@ to the real system implementation unchanged.
 executable in the build directory; `make install` copies both files under
 `PREFIX/libexec/airpods-control`. The installed library is not injected into
 other processes, and its code stops running when `airpods-control` exits.
+
+After the re-exec, the executable's
+[`Sources/BypassProbe/bypass_probe.c`](Sources/BypassProbe/bypass_probe.c) asks
+Security for the same entitlement and reports whether interposition is active.
+This confirms that one query was intercepted; it does not establish that a
+shared system audio context or compatible device is available.
 
 ## What it does not do
 
@@ -79,17 +86,24 @@ and submit the issue yourself.
 
 ## Supply chain and trust model
 
-The interpose requires an ad-hoc-signed binary. A notarized binary with the
-hardened runtime enforces library validation and blocks the inserted library.
+The source and experimental build paths use ad-hoc signatures. A normal
+notarized hardened-runtime binary enforces library validation and blocks the
+inserted library.
 
-- You clone the repository and compile it locally with your own Command Line
-  Tools toolchain.
+- A source install compiles locally with your own Command Line Tools toolchain.
+- The Homebrew formula downloads a source tarball and runs the same `make`.
+- The experimental workflow publishes a seven-day universal archive from each
+  native GitHub-hosted runner. It is not Developer ID signed, notarized, or a
+  release asset. Trusting it means trusting the identified repository workflow,
+  checked-out commit, runner, and toolchain rather than compiling the reviewed
+  source yourself. `BUILD.txt` records that identity; `SHA256SUMS` checks
+  integrity within the artifact but does not authenticate its publisher.
 - The runtime source consists of the entitlement interpose in
   [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c), the termination
-  monitor under [`Sources/SignalMonitor`](Sources/SignalMonitor), and the Swift
-  files under [`Sources/AirPodsControl`](Sources/AirPodsControl). Review them
-  before building; the executable comes from the source you compile.
-- The Homebrew formula downloads a source tarball and runs the same `make`.
+  monitor under [`Sources/SignalMonitor`](Sources/SignalMonitor), the direct
+  entitlement probe under [`Sources/BypassProbe`](Sources/BypassProbe), and the
+  Swift files under [`Sources/AirPodsControl`](Sources/AirPodsControl). Review
+  them before building or trusting a corresponding workflow artifact.
 
 To verify the dylib, read `Sources/AVBypass/bypass.c`. It should compare against
 one entitlement string and delegate every other case to

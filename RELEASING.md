@@ -60,6 +60,9 @@ new patch release.
 
 1. Run the `Experimental Binary Bundle` workflow.
 2. Verify that its Apple Silicon and Intel jobs pass.
-3. Download the seven-day Actions artifact if the package needs inspection.
+3. Verify that each artifact name includes the checked-out commit and that its
+   `BUILD.txt` identifies the same commit, native runner, and toolchain.
+4. Download the seven-day Actions artifact if the package needs inspection and
+   verify `SHA256SUMS` before extracting it.
 
 Do not attach the ad-hoc-signed experimental artifact to a GitHub release.

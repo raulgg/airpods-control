@@ -65,8 +65,8 @@ operation and exits without polling in the background or automating the UI.
 brew install raulgg/tap/airpods-control
 ```
 
-The formula downloads the source and compiles it locally. There are no prebuilt
-binaries.
+The formula downloads the source and compiles it locally. It does not consume
+the experimental CI bundle described below.
 
 ### From source
 
@@ -86,6 +86,30 @@ make install PREFIX="$HOME/.local"
 
 The build produces a universal (arm64 + x86_64), ad-hoc-signed executable and
 its companion `avbypass.dylib`. Run `sudo make uninstall` to remove them.
+
+### Experimental binary bundle
+
+The `Experimental Binary Bundle` workflow publishes seven-day artifacts for
+testing. They are not GitHub release assets, Developer ID signed, or notarized;
+prefer Homebrew or a source build for normal installation.
+
+Before using an artifact, confirm that its name and `BUILD.txt` identify the
+commit and native runner from the originating workflow run. Then verify and
+install it into a user-owned prefix:
+
+```sh
+shasum -a 256 -c SHA256SUMS
+tar -xzf airpods-control-x.y.z-macos-universal.tar.gz
+cd airpods-control-x.y.z-macos-universal
+./install.sh "$HOME/.local"
+```
+
+Use `./uninstall.sh "$HOME/.local"` from the same extracted directory to remove
+it. The checksum verifies that the archive matches the manifest in the
+artifact; the originating GitHub workflow run and commit establish who produced
+it. Because the bundle is ad-hoc signed and unnotarized, Gatekeeper may block a
+quarantined download. Do not disable Gatekeeper globally; use Homebrew or build
+from source instead.
 
 ## Quick start
 
@@ -178,10 +202,10 @@ one private entitlement check inside that process and passes every other
 entitlement query through unchanged. It does not elevate privileges or affect
 other processes.
 
-The interpose requires an ad-hoc-signed binary because the hardened runtime's
-library validation blocks it. The project therefore distributes source instead
-of prebuilt binaries. Review the source and the
-[security documentation](SECURITY.md) before building.
+Source builds and experimental CI bundles use ad-hoc signatures because the
+hardened runtime's library validation blocks the inserted library. Homebrew
+remains source-built; the CI bundle is a separate testing trust path. Review the
+[security documentation](SECURITY.md) before choosing an installation path.
 
 ## Compatibility
 

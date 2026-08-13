@@ -43,12 +43,34 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
           expected_version=$(cat version.txt)
+
+          mkdir -p "$stage/usr/local/bin"
+          printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
+          if make install DESTDIR="$stage" PREFIX=/usr/local >/dev/null 2>&1; then
+            echo "make install replaced a command it does not own" >&2
+            exit 1
+          fi
+          test "$(cat "$stage/usr/local/bin/airpods-control")" = foreign-command
+          test ! -e "$stage/usr/local/libexec/airpods-control/airpods-control"
+          rm -f "$stage/usr/local/bin/airpods-control"
+
           make install DESTDIR="$stage" PREFIX=/usr/local
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
           test -f "$stage/usr/local/share/man/man1/airpods-control.1"
           test "$("$stage/usr/local/bin/airpods-control" --version)" = \
             "$expected_version"
+
+          rm -f "$stage/usr/local/bin/airpods-control"
+          printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
+          if make uninstall DESTDIR="$stage" PREFIX=/usr/local >/dev/null 2>&1; then
+            echo "make uninstall removed a command it does not own" >&2
+            exit 1
+          fi
+          test "$(cat "$stage/usr/local/bin/airpods-control")" = foreign-command
+          test -e "$stage/usr/local/libexec/airpods-control/airpods-control"
+          rm -f "$stage/usr/local/bin/airpods-control"
+
           make uninstall DESTDIR="$stage" PREFIX=/usr/local
           test ! -e "$stage/usr/local/bin/airpods-control"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"

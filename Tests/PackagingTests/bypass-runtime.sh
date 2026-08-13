@@ -18,6 +18,16 @@ cp "$DYLIB" "$TMP/avbypass.dylib"
 
 "$ROOT/scripts/verify-binary-runtime.sh" "$TMP/airpods-control"
 
+mkdir "$TMP/hardened"
+cp "$BINARY" "$TMP/hardened/airpods-control"
+cp "$DYLIB" "$TMP/hardened/avbypass.dylib"
+codesign --force --sign - --options runtime "$TMP/hardened/airpods-control"
+if "$ROOT/scripts/verify-binary-runtime.sh" \
+  "$TMP/hardened/airpods-control" >/dev/null 2>&1; then
+  echo "error: runtime verifier accepted a hardened-runtime binary" >&2
+  exit 1
+fi
+
 inputs=
 for arch in arm64 x86_64; do
   clang -O2 -arch "$arch" -mmacosx-version-min=12.0 -dynamiclib \
@@ -33,4 +43,5 @@ if "$ROOT/scripts/verify-binary-runtime.sh" "$TMP/airpods-control" >/dev/null 2>
   exit 1
 fi
 
+echo "Runtime verifier rejected a hardened-runtime binary"
 echo "Runtime verifier rejected a non-interposing dylib"

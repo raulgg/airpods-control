@@ -1,24 +1,21 @@
 #!/bin/sh
 set -eu
 
-PREFIX=${1:-/usr/local}
+PREFIX_INPUT=${1:-/usr/local}
+PACKAGE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PREFIX=$("$PACKAGE_DIR/resolve-prefix.sh" "$PREFIX_INPUT")
+COMMAND="$PREFIX/bin/airpods-control"
+EXPECTED_TARGET=../libexec/airpods-control/airpods-control
 
-case "$PREFIX" in
-  /*) ;;
-  *)
-    echo "error: PREFIX must be an absolute path" >&2
+# Never remove a command unless this package's symlink proves ownership.
+if [ -e "$COMMAND" ] || [ -L "$COMMAND" ]; then
+  if [ ! -L "$COMMAND" ] || [ "$(readlink "$COMMAND")" != "$EXPECTED_TARGET" ]; then
+    echo "error: refusing to remove command not owned by this package: $COMMAND" >&2
     exit 1
-    ;;
-esac
+  fi
+  rm -f "$COMMAND"
+fi
 
-case "$PREFIX" in
-  / | *//* | */./* | */. | */../* | */..)
-    echo "error: PREFIX must not resolve through root, . or ..: $PREFIX" >&2
-    exit 1
-    ;;
-esac
-
-rm -f "$PREFIX/bin/airpods-control"
 rm -f \
   "$PREFIX/libexec/airpods-control/airpods-control" \
   "$PREFIX/libexec/airpods-control/avbypass.dylib"

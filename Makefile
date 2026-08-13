@@ -157,17 +157,42 @@ package: all
 		DIST_DIR="$(abspath $(DIST_DIR))" \
 		VERSION_FILE="$(abspath $(VERSION_FILE))" \
 		MAKE="$(MAKE)" \
+		SWIFTC="$(SWIFTC)" \
+		CLANG="$(CLANG)" \
 		./scripts/package-binary.sh
 
 install: all
+	@set -eu; \
+	command_path="$(BIN_DIR)/airpods-control"; \
+	expected_target=../libexec/airpods-control/airpods-control; \
+	if [ -e "$$command_path" ] || [ -L "$$command_path" ]; then \
+		if [ ! -L "$$command_path" ] || \
+			[ "$$(readlink "$$command_path")" != "$$expected_target" ]; then \
+			echo "error: refusing to replace command not owned by this package: $$command_path" >&2; \
+			exit 1; \
+		fi; \
+	fi
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"
 	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/airpods-control"
 	"$(INSTALL)" -m 755 "$(DYLIB)" "$(LIBEXEC_DIR)/avbypass.dylib"
 	"$(INSTALL)" -m 644 "$(MANPAGE)" "$(MAN_DIR)/airpods-control.1"
-	ln -sfn ../libexec/airpods-control/airpods-control "$(BIN_DIR)/airpods-control"
+	@if [ ! -L "$(BIN_DIR)/airpods-control" ]; then \
+		ln -s ../libexec/airpods-control/airpods-control \
+			"$(BIN_DIR)/airpods-control"; \
+	fi
 
 uninstall:
-	rm -f "$(BIN_DIR)/airpods-control"
+	@set -eu; \
+	command_path="$(BIN_DIR)/airpods-control"; \
+	expected_target=../libexec/airpods-control/airpods-control; \
+	if [ -e "$$command_path" ] || [ -L "$$command_path" ]; then \
+		if [ ! -L "$$command_path" ] || \
+			[ "$$(readlink "$$command_path")" != "$$expected_target" ]; then \
+			echo "error: refusing to remove command not owned by this package: $$command_path" >&2; \
+			exit 1; \
+		fi; \
+		rm -f "$$command_path"; \
+	fi
 	rm -f "$(LIBEXEC_DIR)/airpods-control" "$(LIBEXEC_DIR)/avbypass.dylib"
 	rm -f "$(MAN_DIR)/airpods-control.1"
 	-rmdir "$(LIBEXEC_DIR)"
