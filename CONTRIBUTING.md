@@ -43,6 +43,13 @@ them. It then runs the shell CLI contract tests, the C signal-monitor race test,
 and the Swift unit tests. Tests must not require AirPods or write device
 settings.
 
+For packaging, installer, or runtime-bypass changes, build and verify the
+complete archive:
+
+```sh
+make verify-package
+```
+
 Check the product-name catalog against the pairings macOS itself publishes:
 
 ```sh
@@ -71,6 +78,8 @@ device or capability status.
   restoration interpretation out of the renderers.
 - `Sources/AVBypass` contains the C source for the interpose dylib, which is
   built separately.
+- `Sources/BypassProbe` contains the linked C probe that verifies the interpose
+  after re-execution.
 - `Sources/SignalMonitor` contains the C termination monitor linked into the
   executable and its Clang module header.
 - `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.

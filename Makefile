@@ -1,6 +1,7 @@
 PREFIX ?= /usr/local
 DESTDIR ?=
 BUILD_DIR ?= build
+DIST_DIR ?= dist
 DEPLOYMENT_TARGET ?= 12.0
 ARCHS ?= arm64 x86_64
 
@@ -25,8 +26,12 @@ SIGNAL_MONITOR_SOURCE := Sources/SignalMonitor/signal_monitor.c
 SIGNAL_MONITOR_INCLUDE_DIR := Sources/SignalMonitor/include
 SIGNAL_MONITOR_HEADER := $(SIGNAL_MONITOR_INCLUDE_DIR)/SignalMonitor.h
 SIGNAL_MONITOR_MODULE_MAP := $(SIGNAL_MONITOR_INCLUDE_DIR)/module.modulemap
+BYPASS_PROBE_SOURCE := Sources/BypassProbe/bypass_probe.c
+BYPASS_PROBE_INCLUDE_DIR := Sources/BypassProbe/include
+BYPASS_PROBE_HEADER := $(BYPASS_PROBE_INCLUDE_DIR)/BypassProbe.h
+BYPASS_PROBE_MODULE_MAP := $(BYPASS_PROBE_INCLUDE_DIR)/module.modulemap
 SIGNAL_MONITOR_RACE_TEST_SOURCE := Tests/SignalMonitorTests/signal_monitor_race_test.c
-SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass Sources/SignalMonitor
+SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass Sources/BypassProbe Sources/SignalMonitor
 SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
 SIGNAL_MONITOR_TEST_OBJECT := $(BUILD_DIR)/signal-monitor-tests.o
 SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
@@ -35,7 +40,7 @@ LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
-.PHONY: all _build test verify-catalog install uninstall clean
+.PHONY: all _build test verify-catalog package verify-package install uninstall clean
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
@@ -44,7 +49,8 @@ all: $(BUILD_STAMP)
 
 $(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(VERSION_SOURCE) $(AV_BYPASS_SOURCE) \
 	$(SIGNAL_MONITOR_SOURCE) $(SIGNAL_MONITOR_HEADER) \
-	$(SIGNAL_MONITOR_MODULE_MAP) Makefile
+	$(SIGNAL_MONITOR_MODULE_MAP) $(BYPASS_PROBE_SOURCE) \
+	$(BYPASS_PROBE_HEADER) $(BYPASS_PROBE_MODULE_MAP) Makefile
 	@$(MAKE) --no-print-directory _build
 
 $(VERSION_SOURCE): $(VERSION_FILE) Makefile
@@ -74,11 +80,16 @@ _build: $(VERSION_SOURCE)
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -c \
 			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 			-o "$$tmp/signal-monitor.$$arch.o" "$(SIGNAL_MONITOR_SOURCE)" && \
+		"$(CLANG)" -O2 -arch "$$arch" \
+			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -c \
+			-I"$(BYPASS_PROBE_INCLUDE_DIR)" \
+			-o "$$tmp/bypass-probe.$$arch.o" "$(BYPASS_PROBE_SOURCE)" && \
 		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
-			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
+			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" -I"$(BYPASS_PROBE_INCLUDE_DIR)" \
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 			-o "$$tmp/airpods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
-			"$$tmp/signal-monitor.$$arch.o"; \
+			"$$tmp/signal-monitor.$$arch.o" "$$tmp/bypass-probe.$$arch.o" \
+			-Xlinker -framework -Xlinker Security; \
 	}; \
 	succeeded=""; failed=""; \
 	for arch in $(ARCHS); do \
@@ -141,15 +152,54 @@ test: all
 verify-catalog:
 	./scripts/verify-catalog.sh
 
+package: all
+	BUILD_DIR="$(abspath $(BUILD_DIR))" \
+		DIST_DIR="$(abspath $(DIST_DIR))" \
+		VERSION_FILE="$(abspath $(VERSION_FILE))" \
+		MAKE="$(MAKE)" \
+		SWIFTC="$(SWIFTC)" \
+		CLANG="$(CLANG)" \
+		./scripts/package-binary.sh
+
+verify-package: package
+	./Tests/PackagingTests/bypass-runtime.sh \
+		"$(abspath $(BINARY))" "$(abspath $(DYLIB))"
+	cd "$(abspath $(DIST_DIR))" && shasum -a 256 -c SHA256SUMS
+	./scripts/verify-binary-package.sh \
+		"$(abspath $(DIST_DIR))/airpods-control-$$(cat "$(abspath $(VERSION_FILE))")-macos-universal.tar.gz"
+
 install: all
+	@set -eu; \
+	command_path="$(BIN_DIR)/airpods-control"; \
+	expected_target=../libexec/airpods-control/airpods-control; \
+	if [ -e "$$command_path" ] || [ -L "$$command_path" ]; then \
+		if [ ! -L "$$command_path" ] || \
+			[ "$$(readlink "$$command_path")" != "$$expected_target" ]; then \
+			echo "error: refusing to replace command not owned by this package: $$command_path" >&2; \
+			exit 1; \
+		fi; \
+	fi
 	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"
 	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/airpods-control"
 	"$(INSTALL)" -m 755 "$(DYLIB)" "$(LIBEXEC_DIR)/avbypass.dylib"
 	"$(INSTALL)" -m 644 "$(MANPAGE)" "$(MAN_DIR)/airpods-control.1"
-	ln -sfn ../libexec/airpods-control/airpods-control "$(BIN_DIR)/airpods-control"
+	@if [ ! -L "$(BIN_DIR)/airpods-control" ]; then \
+		ln -s ../libexec/airpods-control/airpods-control \
+			"$(BIN_DIR)/airpods-control"; \
+	fi
 
 uninstall:
-	rm -f "$(BIN_DIR)/airpods-control"
+	@set -eu; \
+	command_path="$(BIN_DIR)/airpods-control"; \
+	expected_target=../libexec/airpods-control/airpods-control; \
+	if [ -e "$$command_path" ] || [ -L "$$command_path" ]; then \
+		if [ ! -L "$$command_path" ] || \
+			[ "$$(readlink "$$command_path")" != "$$expected_target" ]; then \
+			echo "error: refusing to remove command not owned by this package: $$command_path" >&2; \
+			exit 1; \
+		fi; \
+		rm -f "$$command_path"; \
+	fi
 	rm -f "$(LIBEXEC_DIR)/airpods-control" "$(LIBEXEC_DIR)/avbypass.dylib"
 	rm -f "$(MAN_DIR)/airpods-control.1"
 	-rmdir "$(LIBEXEC_DIR)"
