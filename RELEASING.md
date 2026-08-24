@@ -66,3 +66,26 @@ new patch release.
    verify `SHA256SUMS` before extracting it.
 
 Do not attach the ad-hoc-signed experimental artifact to a GitHub release.
+
+## Optional signed binary release
+
+1. Keep the repository variable `PUBLISH_BINARY_RELEASES` set to `false` until
+   the binary-release pull request is approved.
+2. Create a `binary-release` environment restricted to `main` and require the
+   maintainer's approval for each deployment.
+3. Store these secrets in the `binary-release` environment:
+   - `DEVELOPER_ID_APPLICATION_CERTIFICATE`: base64-encoded Developer ID
+     Application `.p12`;
+   - `DEVELOPER_ID_APPLICATION_PASSWORD`: password for the `.p12`;
+   - `APPLE_API_ISSUER`;
+   - `APPLE_API_KEY_ID`;
+   - `APPLE_API_PRIVATE_KEY`.
+4. After a stable release contains this workflow, run `Publish Binary Release`
+   manually from `main` for the latest stable tag. Leave asset publication
+   disabled.
+5. Verify signing, notarization, Apple Silicon, and Intel jobs. Install the
+   archive on a clean machine.
+6. Set `PUBLISH_BINARY_RELEASES` to `true` for subsequent releases.
+
+If binary publication fails, fix it with a new patch release. Never overwrite a
+published asset.

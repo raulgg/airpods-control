@@ -3,8 +3,8 @@
  * private `com.apple.avfoundation.allow-system-wide-context` entitlement check
  * (performed in-process by AVFoundation when acquiring the shared system audio
  * context) reports the entitlement as present. This is what lets an
- * unprivileged, ad-hoc-signed helper reach AVOutputDevice's listening-mode
- * API — the same mechanism NoiseBuddy uses.
+ * unprivileged helper reach AVOutputDevice's listening-mode API — the same
+ * mechanism NoiseBuddy uses.
  *
  * It only ever forges that one entitlement; every other query is passed through
  * to the real implementation unchanged. Ships as a dylib inserted via

@@ -25,9 +25,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build and verify package
+      - name: Build, validate signing, and verify package
         id: package
         run: |
+          make
+          signing_test="$RUNNER_TEMP/signing-test"
+          mkdir "$signing_test"
+          cp build/airpods-control build/avbypass.dylib "$signing_test/"
+          BUILD_DIR="$signing_test" CODESIGN_IDENTITY=- \
+            ./scripts/sign-release-binaries.sh
           make verify-package
           echo "version=$(cat version.txt)" >>"$GITHUB_OUTPUT"
           echo "commit=$(git rev-parse --short=12 HEAD)" >>"$GITHUB_OUTPUT"

@@ -54,8 +54,9 @@ operation and exits without polling in the background or automating the UI.
 - A compatible AirPods or Beats device connected over Bluetooth. Individual
   resource commands and `support-report` also require the private output-device
   interface described in [device compatibility](docs/compatibility.md).
-- Command Line Tools (`clang` and `swiftc`) to build from source. Install them
-  with `xcode-select --install`; full Xcode is not required.
+- Command Line Tools (`clang` and `swiftc`) for Homebrew or source installs.
+  Install them with `xcode-select --install`; full Xcode is not required. The
+  optional signed binary archive does not require a compiler.
 
 ## Install
 
@@ -65,8 +66,50 @@ operation and exits without polling in the background or automating the UI.
 brew install raulgg/tap/airpods-control
 ```
 
-The formula downloads the source and compiles it locally. It does not consume
-the experimental CI bundle described below.
+The formula downloads the source and compiles the native architecture locally.
+It does not consume either binary bundle described below and remains the
+recommended installation path.
+
+### Signed binary archive
+
+Each GitHub release can also include an optional universal macOS archive for a
+faster install without Command Line Tools. Download the archive and
+`SHA256SUMS` from the release. GitHub CLI authentication is required to verify
+who built the archive before extracting or installing it:
+
+```sh
+(
+set -eu
+VERSION=x.y.z
+curl -fLO "https://github.com/raulgg/airpods-control/releases/download/v$VERSION/airpods-control-$VERSION-macos-universal.tar.gz"
+curl -fLO "https://github.com/raulgg/airpods-control/releases/download/v$VERSION/SHA256SUMS"
+shasum -a 256 -c SHA256SUMS
+SOURCE_DIGEST=$(gh api \
+  "repos/raulgg/airpods-control/commits/refs/tags/v$VERSION" \
+  --jq .sha)
+gh attestation verify \
+  "airpods-control-$VERSION-macos-universal.tar.gz" \
+  --repo raulgg/airpods-control \
+  --signer-workflow \
+    raulgg/airpods-control/.github/workflows/binary-release.yml \
+  --source-ref refs/heads/main \
+  --source-digest "$SOURCE_DIGEST" \
+  --deny-self-hosted-runners
+tar -xzf "airpods-control-$VERSION-macos-universal.tar.gz"
+sudo "./airpods-control-$VERSION-macos-universal/install.sh"
+)
+```
+
+The executable and its companion dylib are signed with the same Developer ID,
+submitted to Apple's notarization service, and covered by a GitHub artifact
+attestation. The checksum detects download corruption; the required attestation
+check authenticates the producing repository, workflow, protected source ref,
+exact tagged source commit, and use of GitHub-hosted runners. Do not run
+`install.sh` if either check fails.
+
+Run `sudo ./uninstall.sh` from the extracted archive to remove this install.
+See the [security and trust model](SECURITY.md) before choosing between a local
+source build and a published binary.
 
 ### From source
 
@@ -202,9 +245,11 @@ one private entitlement check inside that process and passes every other
 entitlement query through unchanged. It does not elevate privileges or affect
 other processes.
 
-Source builds and experimental CI bundles use ad-hoc signatures because the
-hardened runtime's library validation blocks the inserted library. Homebrew
-remains source-built; the CI bundle is a separate testing trust path. Review the
+Source builds and experimental CI bundles use ad-hoc signatures. Optional
+release archives instead sign the executable and dylib with the same Developer
+ID and grant only the narrow hardened-runtime entitlement needed to read DYLD
+environment variables. Library validation remains enabled and accepts the
+same-team companion library. Review the
 [security documentation](SECURITY.md) before choosing an installation path.
 
 ## Compatibility

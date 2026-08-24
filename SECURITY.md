@@ -3,8 +3,8 @@
 `airpods-control` uses a small interpose library to make one private entitlement
 appear present inside its own process. This gives the process access to a
 private Apple audio API without granting privileges outside it. The project
-primarily distributes source and also publishes a short-lived experimental CI
-bundle for testing.
+supports local source builds, a short-lived experimental CI bundle, and, when
+enabled for a release, a signed binary archive.
 
 ## What the interpose does
 
@@ -86,24 +86,54 @@ and submit the issue yourself.
 
 ## Supply chain and trust model
 
-The source and experimental build paths use ad-hoc signatures. A normal
-notarized hardened-runtime binary enforces library validation and blocks the
-inserted library.
+The installation paths use three trust models: local compilation, a short-lived
+experimental artifact, or a published signed artifact.
 
-- A source install compiles locally with your own Command Line Tools toolchain.
-- The Homebrew formula downloads a source tarball and runs the same `make`.
+- A source install compiles locally with your Command Line Tools toolchain and
+  ad-hoc signs the executable and companion dylib.
+- Homebrew downloads the tagged source archive and performs the same local
+  build for the machine's native architecture.
 - The experimental workflow publishes a seven-day universal archive from each
-  native GitHub-hosted runner. It is not Developer ID signed, notarized, or a
+  native GitHub-hosted runner. It is ad-hoc signed, not notarized, and not a
   release asset. Trusting it means trusting the identified repository workflow,
-  checked-out commit, runner, and toolchain rather than compiling the reviewed
-  source yourself. `BUILD.txt` records that identity; `SHA256SUMS` checks
-  integrity within the artifact but does not authenticate its publisher.
+  checked-out commit, runner, and toolchain. `BUILD.txt` records that identity;
+  `SHA256SUMS` checks integrity within the artifact but does not authenticate
+  its publisher.
+- An optional binary archive contains a universal executable and dylib. Both
+  are signed with the same Developer ID under the hardened runtime and the
+  signed contents are submitted to Apple's notarization service.
+
+The release executable has
+`com.apple.security.cs.allow-dyld-environment-variables` so dyld honors the
+single-process `DYLD_INSERT_LIBRARIES` re-exec. It does **not** have
+`com.apple.security.cs.disable-library-validation`: normal library validation
+remains active, and the companion dylib is accepted because it carries the same
+Developer ID team signature. CI exercises the re-exec and requires debug
+evidence from a direct Security entitlement probe that the interpose became
+active before publishing; a forged environment marker is not sufficient.
+
+For every binary release, the workflow first validates that the latest stable
+tag is reachable from protected `main`. Signing credentials live behind a
+maintainer-approved environment. Before publication, separate GitHub-hosted
+Apple silicon and Intel runners download the internal candidate, apply a
+quarantine attribute, ask Gatekeeper to assess it, exercise the real interpose,
+and test install and uninstall. Only then does the workflow publish the archive,
+SHA-256 checksum, and artifact attestation. Users should enforce the documented
+repository, signer-workflow, source-ref, and hosted-runner attestation policy
+before extraction. This means trusting the protected release workflow and
+signing credentials rather than compiling the reviewed source yourself.
+
+Across all three paths:
+
 - The runtime source consists of the entitlement interpose in
   [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c), the termination
   monitor under [`Sources/SignalMonitor`](Sources/SignalMonitor), the direct
   entitlement probe under [`Sources/BypassProbe`](Sources/BypassProbe), and the
   Swift files under [`Sources/AirPodsControl`](Sources/AirPodsControl). Review
   them before building or trusting a corresponding workflow artifact.
+- The dylib still loads only into `airpods-control`; signing and notarization do
+  not expand its runtime scope or grant the forged private entitlement to other
+  processes.
 
 To verify the dylib, read `Sources/AVBypass/bypass.c`. It should compare against
 one entitlement string and delegate every other case to
