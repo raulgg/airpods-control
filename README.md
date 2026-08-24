@@ -205,10 +205,12 @@ write verification, and exit codes. After installation, you can also run
 
 ## How it works
 
-Conversation Awareness uses the private `AVOutputDevice` API in
-`AVRouting.framework`. Listening-mode commands use that same provider when a
+Conversation Awareness uses the private `AVOutputDevice` control object in
+`AVRouting.framework`. This object is macOS's per-endpoint audio control
+surface. Listening-mode commands use that same provider when a
 command-ready AirPods endpoint is selected, and the mapped BTAudio HAL
-`lstm`/`lsms` properties when the device is unselected. Provider selection and
+(Core Audio's hardware abstraction layer) exposes `lstm`/`lsms` properties
+when the device is unselected. Provider selection and
 all pre-write state, capability, setter, and bounded readback operations are
 sticky for one command. The CLI never changes the default route or starts an
 audio stream. `status` remains a separate read-only Core Audio adapter.

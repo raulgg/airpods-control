@@ -40,7 +40,8 @@ command's compatible devices. It never falls back to another device. For
 listening-mode commands, multiple exact matches produce `ambiguous-device`;
 the user must give connected devices distinct names. Without `--device`, a
 selected AirPods output remains the automatic listening-mode target, and a
-single eligible HAL device is selected automatically. If several HAL devices
+single eligible HAL (Core Audio's hardware abstraction layer) device is
+selected automatically. If several HAL devices
 remain, an interactive terminal displays them in discovery order and asks for
 a displayed number. The chooser is used only when standard input and standard
 error are terminals and `--json` is absent. Blank input, `q`, or end of input
@@ -73,10 +74,11 @@ $ airpods-control listening-mode set noise-cancellation
 ok
 ```
 
-Setters are idempotent. If the requested mode is already active, the command
-prints `ok`, exits `0`, and does not issue a write. If the change cannot be
-verified within the bounded readback window, the command prints `no-op` and
-exits `3`:
+Setters are idempotent, meaning that repeating a request for the current state
+does not issue another write. If the requested mode is already active, the
+command prints `ok`, exits `0`, and does not issue a write. If the change
+cannot be verified within the bounded readback window, the command prints
+`no-op` and exits `3`:
 
 ```console
 $ airpods-control lm set noise-cancellation
@@ -406,8 +408,9 @@ write.
 ### Consented write tests
 
 When at least one write test can be planned safely, an interactive
-`support-report` captures the initial settings and advertised capabilities,
-displays that plan, and asks for consent. The default answer is no. Declining
+`support-report` run (standard input connected to a terminal, or TTY) captures
+the initial settings and advertised capabilities, displays that plan, and asks
+for consent. The default answer is no. Declining
 produces the read-only report, marked `Write tests: not run`. The captured plan
 does not change after it is disclosed. If a setting changes while consent is
 pending, that setting is skipped rather than replaced with a different write.
@@ -632,8 +635,9 @@ such as `mapped`, `composite`, and `unresolved`. It does not log Core Audio
 handles, raw HAL values, addresses, UIDs, or private route IDs. The enrichment
 probe also keeps `associatedAudioDeviceID`, its translated handle, and the
 private endpoint `deviceID` out of the log. Operational HAL diagnostics may
-include bounded numeric property values and OSStatus codes, but never the Core
-Audio device ID, UID, Bluetooth address, serial, or object description.
+include bounded numeric property values and OSStatus codes (numeric status
+codes returned by macOS), but never the Core Audio device ID, UID, Bluetooth
+address, serial, or object description.
 Operational diagnostics may include the displayed device name, but names are
 not used as identity. `--debug` does not change stdout, JSON, or the exit code.
 
