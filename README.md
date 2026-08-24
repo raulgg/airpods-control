@@ -85,7 +85,7 @@ curl -fLO "https://github.com/raulgg/airpods-control/releases/download/v$VERSION
 curl -fLO "https://github.com/raulgg/airpods-control/releases/download/v$VERSION/SHA256SUMS"
 shasum -a 256 -c SHA256SUMS
 SOURCE_DIGEST=$(gh api \
-  "repos/raulgg/airpods-control/commits/v$VERSION" \
+  "repos/raulgg/airpods-control/commits/refs/tags/v$VERSION" \
   --jq .sha)
 gh attestation verify \
   "airpods-control-$VERSION-macos-universal.tar.gz" \
