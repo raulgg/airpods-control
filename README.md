@@ -186,8 +186,10 @@ AirPods or Beats record derived from the currently available Core Audio device
 list, even when it is not the selected audio output. The individual resource
 commands retain their documented adapters. Listening-mode commands prefer the
 selected output, use a unique eligible HAL device when unselected, and prompt in
-a fully interactive terminal if several HAL targets remain. Automated HAL
-ambiguity fails closed; leftover AV records do not enter the HAL chooser. On
+a fully interactive terminal when no selected HAL target exists and several HAL
+targets remain.
+Multiple selected HAL targets fail closed; leftover AV records do not enter the
+HAL chooser. On
 systems where HAL control is entirely unavailable, the prior AV-only behavior
 continues to use the first compatible AV output. Run
 `airpods-control --help` for built-in help. The
@@ -210,7 +212,10 @@ Conversation Awareness uses the private `AVOutputDevice` control object in
 surface. Listening-mode commands use that same provider when a
 command-ready AirPods endpoint is selected, and the mapped BTAudio HAL
 (Core Audio's hardware abstraction layer) exposes `lstm`/`lsms` properties
-when the device is unselected. Provider selection and
+when the device is unselected. For a Bluetooth device group with several Core
+Audio outputs, the HAL provider targets an output that exposes `lstm`; that
+control endpoint may differ from the named sibling used for display. Provider
+selection and
 all pre-write state, capability, setter, and bounded readback operations are
 sticky for one command. The CLI never changes the default route or starts an
 audio stream. `status` remains a separate read-only Core Audio adapter.

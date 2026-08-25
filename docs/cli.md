@@ -41,10 +41,12 @@ listening-mode commands, multiple exact matches produce `ambiguous-device`;
 the user must give connected devices distinct names. Without `--device`, a
 selected AirPods output remains the automatic listening-mode target, and a
 single eligible HAL (Core Audio's hardware abstraction layer) device is
-selected automatically. If several HAL devices
-remain, an interactive terminal displays them in discovery order and asks for
-a displayed number. The chooser is used only when standard input and standard
-error are terminals and `--json` is absent. Blank input, `q`, or end of input
+selected automatically. If no selected HAL target exists and several HAL
+devices remain, an interactive terminal displays them in discovery order and
+asks for a displayed number. The chooser is used only when standard input
+and standard error are terminals and `--json` is absent. Multiple selected HAL
+targets fail closed as `ambiguous-device`; the chooser is not used for that
+case. Blank input, `q`, or end of input
 prints `cancelled` and exits `1`; automated or JSON ambiguity returns
 `ambiguous-device` and exits `1`. Conversation Awareness retains its existing
 first compatible AV output behavior. If listening-mode HAL control is entirely
@@ -498,9 +500,10 @@ interrupted run.
 ## Target a device
 
 Without `--device`, listening-mode commands automatically use the selected
-AirPods output or one unique eligible HAL target. When multiple unselected HAL
-targets remain, a fully interactive terminal presents a numbered chooser;
-automated and JSON invocations fail with `ambiguous-device`. Conversation
+AirPods output or one unique eligible HAL target. When no selected HAL target
+exists and multiple HAL targets remain, a fully interactive terminal presents a
+numbered chooser; multiple selected HAL targets fail closed. Automated and JSON
+invocations fail with `ambiguous-device`. Conversation
 Awareness retains the first compatible AV output behavior. `status` reports
 every eligible canonical device derived from the currently available Core Audio
 endpoint list, regardless of which device is the selected output. To select one

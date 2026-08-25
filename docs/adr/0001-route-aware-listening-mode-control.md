@@ -35,11 +35,13 @@ The target and transport chooser follows these rules:
   transport. If that optional enrichment probe is unavailable, one selected
   HAL target and one singular active AV endpoint are also treated as one
   logical target and use AV first; names are never used for that correlation.
-  If multiple HAL targets remain, an interactive chooser is permitted only
-  when standard input and standard error are TTYs and JSON output was not
-  requested. Other HAL-backed ambiguity fails with `ambiguous-device`;
-  discovery order never selects one of those devices. A named AV-only target
-  remains reachable when it has no HAL match. When HAL is entirely unavailable,
+  If no selected HAL target exists and multiple HAL targets remain, an
+  interactive chooser is permitted only when standard input and standard error
+  are TTYs and JSON output was not requested. The chooser lists candidates in
+  discovery order but never selects one implicitly. Multiple selected HAL
+  targets fail closed without opening the chooser. Other HAL-backed ambiguity
+  fails with `ambiguous-device`. A named AV-only target remains reachable when
+  it has no HAL match. When HAL is entirely unavailable,
   the established AV-only behavior of choosing the first compatible AV output
   is retained for older macOS versions.
 - Once preflight chooses a transport, it is sticky for the command. Capability

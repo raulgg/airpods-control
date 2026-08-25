@@ -184,7 +184,13 @@ An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to C
 .IP
 The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
 .SS LISTENING MODE
-For each command, a command-ready selected AirPods output uses the private AV provider; an eligible device proven unselected uses its mapped Core Audio HAL output endpoint. Unknown routing tries AV before a pre-write HAL fallback. Once a setter is attempted, the provider is sticky and the command never retries through the other provider. No command changes the audio route.
+For each command, a command-ready selected AirPods output uses the private AV
+provider; an eligible device proven unselected uses its mapped Core Audio HAL
+output endpoint that exposes the lstm property. In a group with several Core
+Audio outputs, this control endpoint can differ from the named display endpoint.
+Unknown routing tries AV before a pre-write HAL fallback. Once a setter is
+attempted, the provider is sticky and the command never retries through the
+other provider. No command changes the audio route.
 .TP
 .BR "listening-mode get" ", " "lm get"
 Print the current listening mode.
@@ -320,7 +326,7 @@ other missing or ambiguous matches retain
 .IP
 The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
 .IP
-Without this option, listening-mode commands automatically use the selected output or a unique eligible HAL target. Multiple HAL targets prompt only when standard input and standard error are terminals and JSON is absent; otherwise they fail with
+Without this option, listening-mode commands automatically use the selected output or a unique eligible HAL target. If no selected HAL target exists and multiple HAL targets remain, they prompt only when standard input and standard error are terminals and JSON is absent; multiple selected HAL targets never open the chooser. All other ambiguity fails with
 .BR ambiguous-device .
 HAL target selection does not add leftover AV records to the chooser. A unique selected HAL target and unique singular active AV endpoint form one logical target even when optional status enrichment cannot join them; names are never used for that correlation. If HAL listening-mode control is entirely unavailable, the established AV-only behavior continues to use the first compatible AV output.
 Blank input,
