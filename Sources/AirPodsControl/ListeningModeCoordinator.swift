@@ -172,28 +172,48 @@ enum ListeningModeCandidateRoute: Equatable {
   case unknown
 }
 
+enum ListeningModeCommand {
+  case get
+  case list
+  case set(ListeningMode)
+  case cycle([ListeningMode]?)
+
+  init?(_ command: CLICommand) {
+    switch command {
+    case .listeningModeGet:
+      self = .get
+    case .listeningModeList:
+      self = .list
+    case .listeningModeSet(let target):
+      self = .set(target)
+    case .listeningModeCycle(let requested):
+      self = .cycle(requested)
+    case .version, .status, .supportReport,
+      .conversationAwarenessGet, .conversationAwarenessSet:
+      return nil
+    }
+  }
+}
+
 struct ListeningModeCandidate {
   let displayName: String
   let selectableNames: [String]
   let avTransport: (any ListeningModeTransport)?
   let halTransport: (any ListeningModeTransport)?
   let route: ListeningModeCandidateRoute
-  let avIdentifiesActiveOutput: Bool
 
   init(
     displayName: String,
     selectableNames: [String],
     avTransport: (any ListeningModeTransport)?,
     halTransport: (any ListeningModeTransport)?,
-    route: ListeningModeCandidateRoute,
-    avIdentifiesActiveOutput: Bool = false
+    route: ListeningModeCandidateRoute
   ) {
     self.displayName = displayName
     self.selectableNames = selectableNames
     self.avTransport = avTransport
     self.halTransport = halTransport
     self.route = route
-    self.avIdentifiesActiveOutput = avIdentifiesActiveOutput
   }
 }
 
@@ -203,180 +223,163 @@ enum ListeningModeAmbiguousChoice {
   case unavailable
 }
 
-private struct ListeningModeTransportSnapshot {
+struct ListeningModeSession {
+  let name: String?
   let transport: any ListeningModeTransport
   let availableModes: [ListeningMode]
   let currentMode: ListeningMode?
   let canSet: Bool
 }
 
-final class ListeningModeCommandDevice: CompatibleAudioDevice {
-  let name: String?
-  private let snapshot: ListeningModeTransportSnapshot
-
-  fileprivate init(snapshot: ListeningModeTransportSnapshot) {
-    self.snapshot = snapshot
-    name = snapshot.transport.name
-  }
-
-  func supportReportMetadata() -> SupportReportDeviceMetadata {
-    SupportReportDeviceMetadata(
-      family: nil,
-      modelIdentifier: nil,
-      unrecognizedListeningModes: [],
-      listeningModeQueryAnswered: snapshot.currentMode != nil
-    )
-  }
-
-  func availableListeningModes() -> [ListeningMode] {
-    snapshot.availableModes
-  }
-
-  func currentListeningMode() -> ListeningMode? {
-    snapshot.currentMode
-  }
-
-  func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
-    snapshot.currentMode.map(DeviceStatusField.value) ?? .unresolved
-  }
-
-  func canSetListeningMode() -> Bool {
-    snapshot.canSet
-  }
-
-  func setListeningModeAndReadBack(
-    _ target: ListeningMode
-  ) -> DeviceWriteObservation<ListeningMode> {
-    snapshot.transport.setListeningModeAndReadBack(target)
-  }
-
-  func supportsConversationAwareness() -> Bool? { nil }
-  func conversationAwarenessState() -> Bool? { nil }
-  func readConversationAwarenessStatus() -> DeviceStatusField<Bool> { .unresolved }
-  func canSetConversationAwareness() -> Bool { false }
-
-  func setConversationAwarenessAndReadBack(
-    _ target: Bool
-  ) -> DeviceWriteObservation<Bool> {
-    DeviceWriteObservation(setterAccepted: false, observed: nil)
-  }
-
-  func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation {
-    .unresolved
-  }
-
-  func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation {
-    .unresolved
-  }
-
-  func settle(for interval: TimeInterval) {
-    snapshot.transport.settle(for: interval)
-  }
+enum ListeningModeResolution {
+  case session(ListeningModeSession)
+  case noDevice
+  case ambiguousDevice
+  case cancelled
 }
 
 final class ListeningModeCoordinator {
-  private let candidates: [ListeningModeCandidate]
+  private let avCandidates: [ListeningModeCandidate]
+  private let halCandidates: [ListeningModeCandidate]
   private let logger: DebugLogger
 
-  init(candidates: [ListeningModeCandidate], logger: DebugLogger) {
-    self.candidates = candidates
-    self.logger = logger
-  }
-
-  static func candidates(
+  init(
     avDevices: [PrivateAudioDevice],
-    halCandidates: [ListeningModeCandidate]
-  ) -> [ListeningModeCandidate] {
-    let joinedAVObjects = halCandidates.compactMap {
-      ($0.avTransport as? PrivateAudioDevice)?.object
-    }
-    let joinedAVIdentifiers = Set(
-      joinedAVObjects.compactMap {
-        PrivateAudioDiscovery.deviceIdentifier(for: $0)
-      })
-    let standaloneAVCandidates = avDevices.compactMap {
-      device -> ListeningModeCandidate? in
-      let identifier = PrivateAudioDiscovery.deviceIdentifier(for: device.object)
-      guard !joinedAVObjects.contains(where: { $0 === device.object }),
-        identifier.map({ !joinedAVIdentifiers.contains($0) }) ?? true,
-        let name = device.name
-      else { return nil }
+    halCandidates: [ListeningModeCandidate],
+    logger: DebugLogger
+  ) {
+    avCandidates = avDevices.compactMap { device in
+      guard let name = device.name else { return nil }
       return ListeningModeCandidate(
         displayName: name,
         selectableNames: [name],
         avTransport: device,
         halTransport: nil,
-        route: .unknown,
-        avIdentifiesActiveOutput: device.isActiveOperationalEndpoint
+        route: device.isActiveOperationalEndpoint ? .selected : .unknown
       )
     }
-    return halCandidates + standaloneAVCandidates
+    self.halCandidates = halCandidates
+    self.logger = logger
+  }
+
+  init(candidates: [ListeningModeCandidate], logger: DebugLogger) {
+    avCandidates = candidates.filter { $0.halTransport == nil }
+    halCandidates = candidates.filter { $0.halTransport != nil }
+    self.logger = logger
   }
 
   func resolve(
-    command: CLICommand,
+    command: ListeningModeCommand,
     named requestedName: String?,
     chooseAmbiguous: ([String]) -> ListeningModeAmbiguousChoice
-  ) -> CompatibleDeviceResolution {
+  ) -> ListeningModeResolution {
     let selectedCandidate: ListeningModeCandidate
 
-    if let requestedName {
-      let matches = candidates.filter { candidate in
-        candidate.selectableNames.contains {
-          $0.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
+    if halCandidates.isEmpty {
+      guard !avCandidates.isEmpty else { return .noDevice }
+      if let requestedName {
+        let matches = matching(requestedName, in: avCandidates)
+        guard matches.count == 1, let match = matches.first else {
+          logger.warning(
+            "device_selection",
+            matches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
+          )
+          return matches.isEmpty ? .noDevice : .ambiguousDevice
         }
+        selectedCandidate = match
+      } else {
+        selectedCandidate = avCandidates[0]
       }
-      guard matches.count == 1, let match = matches.first else {
-        logger.warning(
-          "device_selection",
-          matches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
-        )
-        return matches.isEmpty ? .noDevice : .ambiguousDevice
+    } else if let requestedName {
+      let halMatches = matching(requestedName, in: halCandidates)
+      if halMatches.count > 1 {
+        logger.warning("device_selection", "ambiguous-device-name")
+        return .ambiguousDevice
       }
-      selectedCandidate = match
+      if let halMatch = halMatches.first {
+        selectedCandidate = attachUniqueActiveAV(to: halMatch)
+      } else {
+        let avMatches = matching(requestedName, in: avCandidates)
+        guard avMatches.count == 1, let avMatch = avMatches.first else {
+          logger.warning(
+            "device_selection",
+            avMatches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
+          )
+          return avMatches.isEmpty ? .noDevice : .ambiguousDevice
+        }
+        selectedCandidate = avMatch
+      }
     } else {
-      guard !candidates.isEmpty else { return .noDevice }
-
-      let activeCandidates = candidates.filter {
-        $0.route == .selected || $0.avIdentifiesActiveOutput
-      }
-      if activeCandidates.count == 1, let active = activeCandidates.first {
-        selectedCandidate = active
-      } else if activeCandidates.count > 1 {
+      let selectedHALCandidates = halCandidates.filter { $0.route == .selected }
+      if selectedHALCandidates.count == 1, let selected = selectedHALCandidates.first {
+        selectedCandidate = attachUniqueActiveAV(to: selected)
+      } else if selectedHALCandidates.count > 1 {
         logger.warning("device_selection", "ambiguous-active-device")
         return .ambiguousDevice
-      } else if candidates.count == 1 {
-        selectedCandidate = candidates[0]
-      } else if candidates.allSatisfy({ $0.halTransport == nil }) {
-        // When HAL is absent, retain the established AV-only first-device
-        // behavior on older systems.
-        selectedCandidate = candidates[0]
-      } else if candidates.allSatisfy({ $0.halTransport != nil }) {
-        switch chooseAmbiguous(candidates.map(\.displayName)) {
-        case .selected(let index) where candidates.indices.contains(index):
-          selectedCandidate = candidates[index]
+      } else if halCandidates.count == 1 {
+        selectedCandidate = halCandidates[0]
+      } else {
+        switch chooseAmbiguous(halCandidates.map(\.displayName)) {
+        case .selected(let index) where halCandidates.indices.contains(index):
+          selectedCandidate = halCandidates[index]
         case .selected, .unavailable:
           return .ambiguousDevice
         case .cancelled:
           return .cancelled
         }
-      } else {
-        logger.warning("device_selection", "ambiguous-device-inventory")
-        return .ambiguousDevice
       }
     }
 
-    guard let snapshot = selectTransport(for: selectedCandidate, command: command) else {
+    guard let session = selectTransport(for: selectedCandidate, command: command) else {
       return .noDevice
     }
-    logger.info("listening_mode.transport", snapshot.transport.listeningModeTransportKind.rawValue)
-    return .devices([ListeningModeCommandDevice(snapshot: snapshot)])
+    logger.info("listening_mode.transport", session.transport.listeningModeTransportKind.rawValue)
+    return .session(session)
+  }
+
+  private func matching(
+    _ requestedName: String,
+    in candidates: [ListeningModeCandidate]
+  ) -> [ListeningModeCandidate] {
+    candidates.filter { candidate in
+      candidate.selectableNames.contains {
+        $0.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
+      }
+    }
+  }
+
+  private func attachUniqueActiveAV(
+    to candidate: ListeningModeCandidate
+  ) -> ListeningModeCandidate {
+    guard candidate.route == .selected, candidate.avTransport == nil else {
+      return candidate
+    }
+    let activeAV = avCandidates.filter { $0.route == .selected }
+    guard activeAV.count == 1, let avCandidate = activeAV.first,
+          let avTransport = avCandidate.avTransport
+    else {
+      return candidate
+    }
+    let names = (candidate.selectableNames + avCandidate.selectableNames)
+      .reduce(into: [String]()) { result, name in
+        guard !result.contains(where: {
+          $0.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }) else { return }
+        result.append(name)
+      }
+    return ListeningModeCandidate(
+      displayName: candidate.displayName,
+      selectableNames: names,
+      avTransport: avTransport,
+      halTransport: candidate.halTransport,
+      route: candidate.route
+    )
   }
 
   private func selectTransport(
     for candidate: ListeningModeCandidate,
-    command: CLICommand
-  ) -> ListeningModeTransportSnapshot? {
+    command: ListeningModeCommand
+  ) -> ListeningModeSession? {
     let transports: [any ListeningModeTransport]
     switch candidate.route {
     case .selected:
@@ -388,63 +391,45 @@ final class ListeningModeCoordinator {
     }
     guard !transports.isEmpty else { return nil }
 
-    var snapshots: [ListeningModeTransportSnapshot] = []
+    var sessions: [ListeningModeSession] = []
     for transport in transports {
-      let captured = snapshot(for: transport, command: command)
-      snapshots.append(captured)
+      let captured = session(for: transport, command: command)
+      sessions.append(captured)
       if isReady(captured, for: command) {
         return captured
       }
     }
 
-    // Keeping the preferred provider lets CommandExecution preserve its
-    // established unknown/unsupported result when the logical device exists
-    // but the command-specific preflight cannot proceed.
-    guard let preferred = snapshots.first else { return nil }
-    switch command {
-    case .listeningModeSet, .listeningModeCycle:
-      return ListeningModeTransportSnapshot(
-        transport: preferred.transport,
-        availableModes: preferred.availableModes,
-        currentMode: preferred.currentMode,
-        canSet: false
-      )
-    case .version, .status, .supportReport,
-      .listeningModeGet, .listeningModeList,
-      .conversationAwarenessGet, .conversationAwarenessSet:
-      return preferred
-    }
+    // The preferred provider preserves the established unknown/unsupported
+    // result when the logical device exists but preflight cannot proceed.
+    return sessions.first
   }
 
-  private func snapshot(
+  private func session(
     for transport: any ListeningModeTransport,
-    command: CLICommand
-  ) -> ListeningModeTransportSnapshot {
+    command: ListeningModeCommand
+  ) -> ListeningModeSession {
     let availableModes: [ListeningMode]
     let currentMode: ListeningMode?
     let canSet: Bool
 
     switch command {
-    case .listeningModeGet:
+    case .get:
       availableModes = []
       currentMode = transport.currentListeningMode()
       canSet = false
-    case .listeningModeList:
+    case .list:
       currentMode = transport.currentListeningMode()
       availableModes = normalizedModes(from: transport)
       canSet = false
-    case .listeningModeSet, .listeningModeCycle:
+    case .set, .cycle:
       currentMode = transport.currentListeningMode()
       availableModes = normalizedModes(from: transport)
       canSet = transport.canSetListeningMode()
-    case .version, .status, .supportReport,
-      .conversationAwarenessGet, .conversationAwarenessSet:
-      availableModes = []
-      currentMode = nil
-      canSet = false
     }
 
-    return ListeningModeTransportSnapshot(
+    return ListeningModeSession(
+      name: transport.name,
       transport: transport,
       availableModes: availableModes,
       currentMode: currentMode,
@@ -460,31 +445,28 @@ final class ListeningModeCoordinator {
   }
 
   private func isReady(
-    _ snapshot: ListeningModeTransportSnapshot,
-    for command: CLICommand
+    _ session: ListeningModeSession,
+    for command: ListeningModeCommand
   ) -> Bool {
     switch command {
-    case .listeningModeGet:
-      return snapshot.currentMode != nil
-    case .listeningModeList:
-      return !snapshot.availableModes.isEmpty
-    case .listeningModeSet(let target):
+    case .get:
+      return session.currentMode != nil
+    case .list:
+      return !session.availableModes.isEmpty
+    case .set(let target):
       let stateIsSafe =
-        snapshot.transport.listeningModeTransportKind == .av
-        || snapshot.currentMode != nil
+        session.transport.listeningModeTransportKind == .av
+        || session.currentMode != nil
       return stateIsSafe
-        && snapshot.availableModes.contains(target)
-        && snapshot.canSet
-    case .listeningModeCycle(let requested):
+        && session.availableModes.contains(target)
+        && session.canSet
+    case .cycle(let requested):
       let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
-      let supported = base.filter { snapshot.availableModes.contains($0) }
+      let supported = base.filter { session.availableModes.contains($0) }
       let stateIsSafe =
-        snapshot.transport.listeningModeTransportKind == .av
-        || snapshot.currentMode != nil
-      return stateIsSafe && supported.count >= 2 && snapshot.canSet
-    case .version, .status, .supportReport,
-      .conversationAwarenessGet, .conversationAwarenessSet:
-      return false
+        session.transport.listeningModeTransportKind == .av
+        || session.currentMode != nil
+      return stateIsSafe && supported.count >= 2 && session.canSet
     }
   }
 }

@@ -130,10 +130,11 @@ func bootstrapAndResolveAudioDevices(
   }
 }
 
-func bootstrapAndResolveListeningModeDevice(
+func bootstrapAndResolveListeningMode(
+  command: ListeningModeCommand,
   invocation: CLIInvocation,
   logger: DebugLogger
-) -> CompatibleDeviceResolution {
+) -> ListeningModeResolution {
   ensureBypass(logger: logger)
 
   let outputContext = PrivateAudioDiscovery.systemStatusOutputContext(logger: logger)
@@ -154,14 +155,14 @@ func bootstrapAndResolveListeningModeDevice(
     activeOutputContext: outputContext,
     readStatusListeningMode: false
   )?.listeningModeCandidates() ?? []
-  let candidates = ListeningModeCoordinator.candidates(
+  let coordinator = ListeningModeCoordinator(
     avDevices: avDevices,
-    halCandidates: halCandidates
+    halCandidates: halCandidates,
+    logger: logger
   )
-  let coordinator = ListeningModeCoordinator(candidates: candidates, logger: logger)
 
   return coordinator.resolve(
-    command: invocation.command,
+    command: command,
     named: invocation.requestedDeviceName,
     chooseAmbiguous: { names in
       let inputIsTerminal = isatty(STDIN_FILENO) == 1
@@ -220,56 +221,57 @@ do {
   )
 }
 
-let outcome = CommandExecution.execute(
-  invocation,
-  resolveDeviceResolution: { requestedName, policy, logger in
-    switch invocation.command {
-    case .listeningModeGet, .listeningModeSet,
-         .listeningModeList, .listeningModeCycle:
-      return bootstrapAndResolveListeningModeDevice(
+let supportReport = SupportReportCommand(
+  requestWriteTestConsent: { plan in
+    SupportReportInteraction.requestWriteTestConsent(plan: plan)
+  },
+  runWriteTests: { plan, device in
+    let progress = SupportReportProgressDisplay(
+      plan: plan,
+      debugEnabled: invocation.debugEnabled
+    )
+    return SupportReportWriteTester.runInterruptibly(
+      plan: plan,
+      device: device,
+      progress: { progress?.receive($0) }
+    )
+  }
+)
+
+let outcome: CommandOutcome
+if ListeningModeCommand(invocation.command) != nil {
+  outcome = CommandExecution.executeListeningMode(
+    invocation,
+    resolveSession: { command, _, logger in
+      bootstrapAndResolveListeningMode(
+        command: command,
         invocation: invocation,
         logger: logger
       )
-    case .version:
-      preconditionFailure("version does not resolve devices")
-    case .status, .supportReport,
-         .conversationAwarenessGet, .conversationAwarenessSet:
-      break
-    }
-
-    let accessPolicy: PrivateAudioAccessPolicy
-    if case .supportReport = invocation.command {
-      accessPolicy = .supportReport
-    } else if case .status = invocation.command {
-      accessPolicy = .status
-    } else {
-      accessPolicy = .operational
-    }
-    guard let devices = bootstrapAndResolveAudioDevices(
-      named: requestedName,
-      policy: policy,
-      logger: logger,
-      accessPolicy: accessPolicy
-    ), !devices.isEmpty else { return .noDevice }
-    return .devices(devices)
-  },
-  supportReport: SupportReportCommand(
-    requestWriteTestConsent: { plan in
-      SupportReportInteraction.requestWriteTestConsent(plan: plan)
-    },
-    runWriteTests: { plan, device in
-      let progress = SupportReportProgressDisplay(
-        plan: plan,
-        debugEnabled: invocation.debugEnabled
-      )
-      return SupportReportWriteTester.runInterruptibly(
-        plan: plan,
-        device: device,
-        progress: { progress?.receive($0) }
-      )
     }
   )
-)
+} else {
+  outcome = CommandExecution.execute(
+    invocation,
+    resolveDevices: { requestedName, policy, logger in
+      let accessPolicy: PrivateAudioAccessPolicy
+      if case .supportReport = invocation.command {
+        accessPolicy = .supportReport
+      } else if case .status = invocation.command {
+        accessPolicy = .status
+      } else {
+        accessPolicy = .operational
+      }
+      return bootstrapAndResolveAudioDevices(
+        named: requestedName,
+        policy: policy,
+        logger: logger,
+        accessPolicy: accessPolicy
+      )
+    },
+    supportReport: supportReport
+  )
+}
 if case .supportReport = invocation.command {
   exit(SupportReportInteraction.present(outcome: outcome))
 }

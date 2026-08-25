@@ -401,12 +401,9 @@ func testDeviceSelectionAndCapabilities() {
     ["--device", "My AirPods Pro", "ca", "set", "on"],
   ] {
     let invocation = try! parseInvocation(arguments)
-    let outcome = CommandExecution.execute(
-      invocation,
-      resolveDevices: { name, policy, _ in
-        ambiguous.selectDevices(named: name, policy: policy)
-      }
-    )
+    let outcome = CommandExecution.execute(invocation) { name, _ in
+      ambiguous.selectDevice(named: name)
+    }
     check(outcome.exitCode == 1, "ambiguous named setter fails as no-device")
   }
   check(

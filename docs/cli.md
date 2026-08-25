@@ -49,7 +49,11 @@ prints `cancelled` and exits `1`; automated or JSON ambiguity returns
 `ambiguous-device` and exits `1`. Conversation Awareness retains its existing
 first compatible AV output behavior. If listening-mode HAL control is entirely
 unavailable, the older AV-only behavior likewise keeps the first compatible AV
-output. Mixed AV/HAL ambiguity fails closed instead of opening the HAL chooser.
+output. HAL target selection does not add leftover AV records to its chooser.
+A unique selected HAL target and unique singular active AV endpoint form one
+logical target even when optional status enrichment cannot join them; this
+pairing is based on selected-route evidence, never a matching name. A named
+AV-only target remains reachable when no HAL name matches.
 `status` reports every eligible compatible record it can derive from currently
 available Core Audio endpoints, independently of the selected output.
 
@@ -87,8 +91,10 @@ no-op
 
 The provider is selected before any write. A command-ready selected AV endpoint
 uses the existing AV control surface; an unselected device uses its mapped Core
-Audio HAL output endpoint. Unknown routing tries AV first and may fall back to
-HAL only if AV preflight fails before a setter call. Once a setter is attempted,
+Audio HAL output endpoint that exposes `lstm`. In a group with multiple Core
+Audio outputs, that control endpoint can differ from the named display endpoint.
+Unknown routing tries AV first and may fall back to HAL only if AV preflight
+fails before a setter call. Once a setter is attempted,
 the command never retries through the other provider. No listening-mode command
 changes the default output or starts an audio stream.
 

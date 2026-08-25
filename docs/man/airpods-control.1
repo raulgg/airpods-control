@@ -322,7 +322,7 @@ The supplied name must not begin with a hyphen, so an option token cannot be con
 .IP
 Without this option, listening-mode commands automatically use the selected output or a unique eligible HAL target. Multiple HAL targets prompt only when standard input and standard error are terminals and JSON is absent; otherwise they fail with
 .BR ambiguous-device .
-If HAL listening-mode control is entirely unavailable, the established AV-only behavior continues to use the first compatible AV output. Mixed AV/HAL ambiguity fails closed instead of opening the chooser.
+HAL target selection does not add leftover AV records to the chooser. A unique selected HAL target and unique singular active AV endpoint form one logical target even when optional status enrichment cannot join them; names are never used for that correlation. If HAL listening-mode control is entirely unavailable, the established AV-only behavior continues to use the first compatible AV output.
 Blank input,
 .BR q ,
 or end of input cancels the chooser. Conversation Awareness retains the first compatible AV output behavior.

@@ -9,6 +9,8 @@ struct TestRunner {
     runListeningModeCoordinatorTests()
     runCommandExecutionTests()
     runPrivateAudioDiscoveryTests()
+    runCoreAudioListeningModePropertyTests()
+    runHALListeningModeCandidateTests()
     runAudioRoutingTests()
     runStatusCommandTests()
     runPrivateAudioTests()

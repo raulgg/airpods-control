@@ -609,8 +609,13 @@ final class IOBluetoothStatusController {
       let outputEndpoints = group.endpoints.filter {
         $0.appleAudioAdmission == .positive && $0.hasOutput
       }
-      guard let outputEndpoint = outputEndpoints.first,
-            let namedEndpoint = outputEndpoints.first(where: { $0.name != nil }),
+      let controlEndpoints = outputEndpoints.filter {
+        routingBackend.hasBluetoothListeningMode(for: $0.audioDeviceID)
+      }
+      guard let namedEndpoint = outputEndpoints.first(where: { $0.name != nil }),
+            let outputEndpoint =
+              controlEndpoints.first(where: { $0.name != nil })
+              ?? controlEndpoints.first,
             let name = namedEndpoint.name
       else { return nil }
       return IOBluetoothListeningModeBinding(
@@ -658,8 +663,7 @@ final class IOBluetoothStatusController {
         selectableNames: names,
         avTransport: avTransport,
         halTransport: transport,
-        route: route,
-        avIdentifiesActiveOutput: avTransport != nil
+        route: route
       )
     }
   }

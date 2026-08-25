@@ -19,14 +19,120 @@ struct CommandOutcome {
   }
 }
 
-enum CompatibleDeviceResolution {
-  case devices([any CompatibleAudioDevice])
-  case noDevice
-  case ambiguousDevice
-  case cancelled
-}
-
 enum CommandExecution {
+  static func executeListeningMode(
+    _ invocation: CLIInvocation,
+    resolveSession: (
+      _ command: ListeningModeCommand,
+      _ requestedName: String?,
+      _ logger: DebugLogger
+    ) -> ListeningModeResolution
+  ) -> CommandOutcome {
+    guard let command = ListeningModeCommand(invocation.command) else {
+      preconditionFailure("executeListeningMode requires a listening-mode command")
+    }
+    let logger = DebugLogger(enabled: invocation.debugEnabled)
+    logger.debug("cli.command", invocation.command.debugName)
+    logger.debug("cli.json", invocation.jsonOutput)
+    logger.debug("cli.requested_device", invocation.requestedDeviceName)
+
+    let resolution = resolveSession(command, invocation.requestedDeviceName, logger)
+    let session: ListeningModeSession
+    switch resolution {
+    case .session(let resolved):
+      session = resolved
+    case .noDevice:
+      return deviceResolutionFailureOutcome(
+        for: invocation.command,
+        plain: "no-device",
+        error: "no-device"
+      )
+    case .ambiguousDevice:
+      return deviceResolutionFailureOutcome(
+        for: invocation.command,
+        plain: "ambiguous-device",
+        error: "ambiguous-device"
+      )
+    case .cancelled:
+      return deviceResolutionFailureOutcome(
+        for: invocation.command,
+        plain: "cancelled",
+        error: "cancelled"
+      )
+    }
+
+    switch command {
+    case .get:
+      let mode = session.currentMode
+      return resourceOutcome(
+        resource: .listeningMode,
+        deviceName: session.name,
+        plain: mode?.rawValue ?? "unknown",
+        result: "ok",
+        state: mode?.rawValue
+      )
+
+    case .list:
+      let tokens = session.availableModes.map(\.rawValue)
+      return resourceOutcome(
+        resource: .listeningMode,
+        deviceName: session.name,
+        plain: tokens.joined(separator: ","),
+        result: "ok",
+        state: session.currentMode?.rawValue,
+        extra: ["supportedListeningModes": tokens]
+      )
+
+    case .set(let target):
+      let stateIsSafe =
+        session.transport.listeningModeTransportKind == .av
+        || session.currentMode != nil
+      guard stateIsSafe,
+            session.availableModes.contains(target),
+            session.canSet
+      else {
+        return unsupportedListeningModeOutcome(session: session)
+      }
+
+      if session.currentMode == target {
+        return resourceOutcome(
+          resource: .listeningMode,
+          deviceName: session.name,
+          plain: "ok",
+          result: "ok",
+          state: target.rawValue
+        )
+      }
+
+      return listeningModeWriteOutcome(
+        target: target,
+        successPlain: "ok",
+        session: session,
+        logger: logger
+      )
+
+    case .cycle(let requested):
+      let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
+      let cycleModes = base.filter { session.availableModes.contains($0) }
+      let stateIsSafe =
+        session.transport.listeningModeTransportKind == .av
+        || session.currentMode != nil
+      guard stateIsSafe, cycleModes.count >= 2, session.canSet else {
+        return unsupportedListeningModeOutcome(session: session)
+      }
+
+      let target = ListeningMode.next(current: session.currentMode, within: cycleModes)
+      logger.debug("cycle.set", cycleModes.map(\.rawValue).joined(separator: ","))
+      logger.debug("cycle.target", target.rawValue)
+      return listeningModeWriteOutcome(
+        target: target,
+        successPlain: target.rawValue,
+        session: session,
+        logger: logger
+      )
+    }
+  }
+
   static func execute(
     _ invocation: CLIInvocation,
     resolveDevices: (
@@ -34,27 +140,6 @@ enum CommandExecution {
       _ policy: DeviceSelectionPolicy,
       _ logger: DebugLogger
     ) -> [any CompatibleAudioDevice]?,
-    supportReport: SupportReportCommand = SupportReportCommand()
-  ) -> CommandOutcome {
-    execute(
-      invocation,
-      resolveDeviceResolution: { requestedName, policy, logger in
-        guard let devices = resolveDevices(requestedName, policy, logger),
-              !devices.isEmpty
-        else { return .noDevice }
-        return .devices(devices)
-      },
-      supportReport: supportReport
-    )
-  }
-
-  static func execute(
-    _ invocation: CLIInvocation,
-    resolveDeviceResolution: (
-      _ requestedName: String?,
-      _ policy: DeviceSelectionPolicy,
-      _ logger: DebugLogger
-    ) -> CompatibleDeviceResolution,
     supportReport: SupportReportCommand = SupportReportCommand()
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
@@ -76,32 +161,16 @@ enum CommandExecution {
       selectionPolicy = .firstOrExact
     }
 
-    let resolution = resolveDeviceResolution(
+    guard let devices = resolveDevices(
       invocation.requestedDeviceName,
       selectionPolicy,
       logger
-    )
-    let devices: [any CompatibleAudioDevice]
-    switch resolution {
-    case let .devices(resolvedDevices) where !resolvedDevices.isEmpty:
-      devices = resolvedDevices
-    case .devices, .noDevice:
+    ), !devices.isEmpty
+    else {
       return deviceResolutionFailureOutcome(
         for: invocation.command,
         plain: "no-device",
         error: "no-device"
-      )
-    case .ambiguousDevice:
-      return deviceResolutionFailureOutcome(
-        for: invocation.command,
-        plain: "ambiguous-device",
-        error: "ambiguous-device"
-      )
-    case .cancelled:
-      return deviceResolutionFailureOutcome(
-        for: invocation.command,
-        plain: "cancelled",
-        error: "cancelled"
       )
     }
 
@@ -121,135 +190,9 @@ enum CommandExecution {
     case let .supportReport(writeTestsPreference):
       return supportReport.outcome(writeTests: writeTestsPreference, device: device)
 
-    case .listeningModeGet:
-      let mode = device.currentListeningMode()
-      return resourceOutcome(
-        resource: .listeningMode,
-        deviceName: device.name,
-        plain: mode?.rawValue ?? "unknown",
-        result: "ok",
-        state: mode?.rawValue
-      )
-
-    case .listeningModeList:
-      let current = device.currentListeningMode()
-      let availableModes = Set(device.availableListeningModes())
-      let modes = ListeningMode.allCases.filter { availableModes.contains($0) }
-      let tokens = modes.map(\.rawValue)
-      return resourceOutcome(
-        resource: .listeningMode,
-        deviceName: device.name,
-        plain: tokens.joined(separator: ","),
-        result: "ok",
-        state: current?.rawValue,
-        extra: ["supportedListeningModes": tokens]
-      )
-
-    case let .listeningModeSet(mode):
-      let current = device.currentListeningMode()
-      let availableModes = Set(device.availableListeningModes())
-
-      guard availableModes.contains(mode), device.canSetListeningMode() else {
-        return resourceOutcome(
-          resource: .listeningMode,
-          deviceName: device.name,
-          plain: "unsupported",
-          exitCode: 4,
-          result: "error",
-          state: current?.rawValue,
-          error: "unsupported"
-        )
-      }
-
-      if current == mode {
-        return resourceOutcome(
-          resource: .listeningMode,
-          deviceName: device.name,
-          plain: "ok",
-          result: "ok",
-          state: mode.rawValue
-        )
-      }
-
-      let observation = device.setListeningModeAndReadBack(mode)
-      let resolution = resolveListeningModeWrite(
-        requested: mode,
-        setterAccepted: observation.setterAccepted,
-        observed: observation.observed,
-        transparencySupported: availableModes.contains(.transparency)
-      )
-      if resolution.inferredOffFallback {
-        logger.debug("verify.listening_mode.inferred_off_fallback", true)
-      }
-
-      if resolution.verified {
-        return resourceOutcome(
-          resource: .listeningMode,
-          deviceName: device.name,
-          plain: "ok",
-          result: "ok",
-          state: resolution.state?.rawValue
-        )
-      }
-      return resourceOutcome(
-        resource: .listeningMode,
-        deviceName: device.name,
-        plain: "no-op",
-        exitCode: 3,
-        result: "no-op",
-        state: resolution.state?.rawValue
-      )
-
-    case let .listeningModeCycle(requested):
-      let current = device.currentListeningMode()
-      let availableModes = Set(device.availableListeningModes())
-      let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
-      let cycleModes = base.filter { availableModes.contains($0) }
-
-      guard cycleModes.count >= 2, device.canSetListeningMode() else {
-        return resourceOutcome(
-          resource: .listeningMode,
-          deviceName: device.name,
-          plain: "unsupported",
-          exitCode: 4,
-          result: "error",
-          state: current?.rawValue,
-          error: "unsupported"
-        )
-      }
-
-      let target = ListeningMode.next(current: current, within: cycleModes)
-      logger.debug("cycle.set", cycleModes.map(\.rawValue).joined(separator: ","))
-      logger.debug("cycle.target", target.rawValue)
-
-      let observation = device.setListeningModeAndReadBack(target)
-      let resolution = resolveListeningModeWrite(
-        requested: target,
-        setterAccepted: observation.setterAccepted,
-        observed: observation.observed,
-        transparencySupported: availableModes.contains(.transparency)
-      )
-      if resolution.inferredOffFallback {
-        logger.debug("verify.listening_mode.inferred_off_fallback", true)
-      }
-
-      if resolution.verified {
-        return resourceOutcome(
-          resource: .listeningMode,
-          deviceName: device.name,
-          plain: target.rawValue,
-          result: "ok",
-          state: resolution.state?.rawValue
-        )
-      }
-      return resourceOutcome(
-        resource: .listeningMode,
-        deviceName: device.name,
-        plain: "no-op",
-        exitCode: 3,
-        result: "no-op",
-        state: resolution.state?.rawValue
-      )
+    case .listeningModeGet, .listeningModeList,
+      .listeningModeSet, .listeningModeCycle:
+      preconditionFailure("listening-mode commands use executeListeningMode")
 
     case .conversationAwarenessGet:
       guard device.supportsConversationAwareness() == true,
@@ -321,6 +264,56 @@ enum CommandExecution {
         state: observed
       )
     }
+  }
+
+  private static func unsupportedListeningModeOutcome(
+    session: ListeningModeSession
+  ) -> CommandOutcome {
+    resourceOutcome(
+      resource: .listeningMode,
+      deviceName: session.name,
+      plain: "unsupported",
+      exitCode: 4,
+      result: "error",
+      state: session.currentMode?.rawValue,
+      error: "unsupported"
+    )
+  }
+
+  private static func listeningModeWriteOutcome(
+    target: ListeningMode,
+    successPlain: String,
+    session: ListeningModeSession,
+    logger: DebugLogger
+  ) -> CommandOutcome {
+    let observation = session.transport.setListeningModeAndReadBack(target)
+    let resolution = resolveListeningModeWrite(
+      requested: target,
+      setterAccepted: observation.setterAccepted,
+      observed: observation.observed,
+      transparencySupported: session.availableModes.contains(.transparency)
+    )
+    if resolution.inferredOffFallback {
+      logger.debug("verify.listening_mode.inferred_off_fallback", true)
+    }
+
+    if resolution.verified {
+      return resourceOutcome(
+        resource: .listeningMode,
+        deviceName: session.name,
+        plain: successPlain,
+        result: "ok",
+        state: resolution.state?.rawValue
+      )
+    }
+    return resourceOutcome(
+      resource: .listeningMode,
+      deviceName: session.name,
+      plain: "no-op",
+      exitCode: 3,
+      result: "no-op",
+      state: resolution.state?.rawValue
+    )
   }
 
   private static func deviceResolutionFailureOutcome(

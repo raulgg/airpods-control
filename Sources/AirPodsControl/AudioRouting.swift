@@ -153,6 +153,9 @@ protocol AudioRoutingBackend {
   func readBluetoothListeningMode(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32>
+  func hasBluetoothListeningMode(
+    for deviceID: AudioDeviceID
+  ) -> Bool
   func readBluetoothListeningModeSupport(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32>
@@ -366,6 +369,13 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
       from: deviceID,
       scope: kAudioObjectPropertyScopeGlobal
     )
+  }
+
+  func hasBluetoothListeningMode(
+    for deviceID: AudioDeviceID
+  ) -> Bool {
+    var address = bluetoothListeningModeAddress
+    return propertyAccess.hasProperty(deviceID, address: &address)
   }
 
   func readBluetoothListeningModeSupport(

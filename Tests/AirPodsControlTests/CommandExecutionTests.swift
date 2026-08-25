@@ -18,12 +18,20 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   var capturedName: String?
   var capturedLoggerEnabled = true
   resolverCallCount = 0
-  let noDevice = CommandExecution.execute(namedInvocation) { name, logger in
+  let noDevice = CommandExecution.executeListeningMode(
+    namedInvocation,
+    resolveSession: { command, name, logger in
     resolverCallCount += 1
     capturedName = name
     capturedLoggerEnabled = logger.enabled
-    return nil
-  }
+      if case .get = command {
+        check(true, "listening-mode execution passes the narrow get command")
+      } else {
+        check(false, "listening-mode execution must pass get")
+      }
+      return .noDevice
+    }
+  )
   check(resolverCallCount == 1, "resource command resolves a device exactly once")
   check(capturedName == "Studio AirPods", "execution forwards the requested device name")
   check(!capturedLoggerEnabled, "execution forwards its configured logger")
@@ -36,7 +44,9 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   check(noDevice.payload["error"] as? String == "no-device", "missing device has error")
 
   let listInvocation = try! parseInvocation(["lm", "list"])
-  let noDeviceList = CommandExecution.execute(listInvocation) { _, _ in nil }
+  let noDeviceList = CommandExecution.executeListeningMode(listInvocation) { _, _, _ in
+    .noDevice
+  }
   check(noDeviceList.payload.count == 5, "missing-device list has the exact payload shape")
   check(
     noDeviceList.payload["supportedListeningModes"] as? [String] == [],
@@ -305,12 +315,8 @@ func testConversationAwarenessCommandExecution() {
   check(unchanged.payload["error"] == nil, "Conversation Awareness no-op omits error")
 }
 
-func testEveryOperationalCommandUsesSharedNamedSelection() {
+func testConversationAwarenessUsesSharedNamedSelection() {
   let cases: [([String], String, Bool)] = [
-    (["--device", "Studio AirPods", "lm", "get"], "listeningMode", false),
-    (["lm", "set", "adaptive", "--device", "Studio AirPods"], "listeningMode", false),
-    (["lm", "--device", "Studio AirPods", "list"], "listeningMode", true),
-    (["--device", "Studio AirPods", "lm", "cycle"], "listeningMode", false),
     (["ca", "--device", "Studio AirPods", "get"], "conversationAwareness", false),
     (["ca", "set", "on", "--device", "Studio AirPods"], "conversationAwareness", false),
   ]
@@ -358,5 +364,5 @@ func runCommandExecutionTests() {
   testListeningModeCommandExecution()
   testListeningModeCycleCommandExecution()
   testConversationAwarenessCommandExecution()
-  testEveryOperationalCommandUsesSharedNamedSelection()
+  testConversationAwarenessUsesSharedNamedSelection()
 }

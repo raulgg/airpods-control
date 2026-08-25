@@ -30,13 +30,18 @@ The target and transport chooser follows these rules:
   as unselected.
 - `--device` remains a case-insensitive whole-name targeting aid, not device
   identity. A match must resolve to one logical target before any operation.
-- An unnamed, unique selected AV target remains the preferred operational
-  target. If multiple HAL targets remain, an interactive chooser is permitted
-  only when standard input and standard error are TTYs and JSON output was not
-  requested. Every other mixed or HAL-backed ambiguous case fails with
-  `ambiguous-device`; discovery order never selects one of those devices. When
-  HAL is entirely unavailable, the established AV-only behavior of choosing
-  the first compatible AV output is retained for older macOS versions.
+- HAL target selection never concatenates uncorrelated AV records into its
+  candidate list. An exact Core Audio/AV join attaches the selected AV
+  transport. If that optional enrichment probe is unavailable, one selected
+  HAL target and one singular active AV endpoint are also treated as one
+  logical target and use AV first; names are never used for that correlation.
+  If multiple HAL targets remain, an interactive chooser is permitted only
+  when standard input and standard error are TTYs and JSON output was not
+  requested. Other HAL-backed ambiguity fails with `ambiguous-device`;
+  discovery order never selects one of those devices. A named AV-only target
+  remains reachable when it has no HAL match. When HAL is entirely unavailable,
+  the established AV-only behavior of choosing the first compatible AV output
+  is retained for older macOS versions.
 - Once preflight chooses a transport, it is sticky for the command. Capability
   reads, current-state reads, any setter call, and bounded readback all use that
   same transport. A disappearing property, route change, or failed read does not
@@ -67,6 +72,10 @@ properties:
 | --- | --- | --- |
 | `lstm` (`0x6c73746d`) | Four-byte `UInt32`; readable and settable | Current listening mode. Raw `0` is unresolved, `1` is Off, `2` is Noise Cancellation, `3` is Transparency, and `4` is Adaptive. Unknown values fail closed. |
 | `lsms` (`0x6c736d73`) | Four-byte read-only `UInt32` | Supported non-Off modes. Bit 0 is Noise Cancellation, bit 1 is Transparency, and bit 2 is Adaptive. Recognized bits remain usable when future unknown bits are also set; unknown bits are never interpreted as modes. |
+
+For a Bluetooth device group with several Core Audio outputs, the HAL provider
+targets an output that exposes `lstm`; that control endpoint may differ from the
+named sibling used for display.
 
 `lsms` is a bitmask, not a Boolean, and it does not describe whether Off is
 enabled for the device. `lstm` may report raw `1` and is translated to the

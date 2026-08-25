@@ -186,10 +186,10 @@ AirPods or Beats record derived from the currently available Core Audio device
 list, even when it is not the selected audio output. The individual resource
 commands retain their documented adapters. Listening-mode commands prefer the
 selected output, use a unique eligible HAL device when unselected, and prompt in
-a fully interactive terminal if several HAL targets remain. Automated and
-mixed-provider ambiguity fails closed. On systems where HAL control is entirely
-unavailable, the prior AV-only behavior continues to use the first compatible
-AV output. Run
+a fully interactive terminal if several HAL targets remain. Automated HAL
+ambiguity fails closed; leftover AV records do not enter the HAL chooser. On
+systems where HAL control is entirely unavailable, the prior AV-only behavior
+continues to use the first compatible AV output. Run
 `airpods-control --help` for built-in help. The
 [complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics,
 write verification, and exit codes. After installation, you can also run

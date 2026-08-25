@@ -92,6 +92,9 @@ private final class FakeHALRoutingBackend: AudioRoutingBackend {
   func readBluetoothListeningMode(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32> { rawModeRead }
+  func hasBluetoothListeningMode(
+    for deviceID: AudioDeviceID
+  ) -> Bool { true }
   func readBluetoothListeningModeSupport(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32> { supportRead }
@@ -120,11 +123,11 @@ private func coordinatorOutcome(
     candidates: candidates,
     logger: DebugLogger(enabled: false)
   )
-  return CommandExecution.execute(
+  return CommandExecution.executeListeningMode(
     invocation,
-    resolveDeviceResolution: { name, _, _ in
+    resolveSession: { command, name, _ in
       coordinator.resolve(
-        command: invocation.command,
+        command: command,
         named: name,
         chooseAmbiguous: { _ in choice }
       )
@@ -136,16 +139,14 @@ private func candidate(
   name: String = "Desk AirPods",
   av: FakeListeningModeTransport? = nil,
   hal: FakeListeningModeTransport? = nil,
-  route: ListeningModeCandidateRoute,
-  activeAV: Bool = false
+  route: ListeningModeCandidateRoute
 ) -> ListeningModeCandidate {
   ListeningModeCandidate(
     displayName: name,
     selectableNames: [name],
     avTransport: av,
     halTransport: hal,
-    route: route,
-    avIdentifiesActiveOutput: activeAV
+    route: route
   )
 }
 
@@ -215,8 +216,7 @@ func testListeningModeCoordinatorRouteAndPreflightSelection() {
         name: "Fallback AirPods",
         av: incompleteAV,
         hal: fallbackHAL,
-        route: .unknown,
-        activeAV: true
+        route: .unknown
       )
     ]
   )
@@ -351,61 +351,81 @@ func testListeningModeCoordinatorAmbiguityAndCancellation() {
   check(duplicate.plain == "ambiguous-device", "duplicate exact names never prompt or select")
 }
 
-func testListeningModeCandidateMergeAvoidsPluralAVDuplicates() {
+func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
   let logger = DebugLogger(enabled: false)
-  let pluralRaw = FakeRawDevice(name: "Desk AirPods", deviceIdentifier: "same-device")
+  let activeRaw = FakeRawDevice(name: "Desk AirPods")
+  let activeAV = PrivateAudioDevice.compatible(
+    object: activeRaw,
+    sources: [.contextSingular],
+    index: 0,
+    logger: logger
+  )!
+  let selectedHAL = FakeListeningModeTransport(name: "Desk AirPods", kind: .hal)
+  let selectedCandidate = candidate(
+    name: "Desk AirPods",
+    hal: selectedHAL,
+    route: .selected
+  )
+  let selectedCoordinator = ListeningModeCoordinator(
+    avDevices: [activeAV],
+    halCandidates: [selectedCandidate],
+    logger: logger
+  )
+  let unnamedSelected = selectedCoordinator.resolve(
+    command: .get,
+    named: nil,
+    chooseAmbiguous: { _ in .unavailable }
+  )
+  if case .session(let session) = unnamedSelected {
+    check(
+      session.transport.listeningModeTransportKind == .av,
+      "a unique selected HAL target pairs with the unique active AV endpoint"
+    )
+  } else {
+    check(false, "a unique selected pair must resolve without ambiguity")
+  }
+  let namedSelected = selectedCoordinator.resolve(
+    command: .get,
+    named: "desk airpods",
+    chooseAmbiguous: { _ in .unavailable }
+  )
+  if case .session(let session) = namedSelected {
+    check(
+      session.transport.listeningModeTransportKind == .av,
+      "an exact HAL name still pairs the unique selected AV endpoint"
+    )
+  } else {
+    check(false, "a shared AV/HAL name identifies one selected logical target")
+  }
+
+  let pluralRaw = FakeRawDevice(name: "Desk AirPods")
   let pluralAV = PrivateAudioDevice.compatible(
     object: pluralRaw,
     sources: [.contextPlural],
-    index: 0,
-    logger: logger
-  )!
-  let hal = FakeListeningModeTransport(name: "Desk AirPods", kind: .hal)
-  let halCandidate = candidate(name: "Desk AirPods", hal: hal, route: .notSelected)
-  let merged = ListeningModeCoordinator.candidates(
-    avDevices: [pluralAV],
-    halCandidates: [halCandidate]
-  )
-  check(merged.count == 2, "unjoined AV inventory is never name-merged into HAL")
-  let unresolvedDuplicate = coordinatorOutcome(
-    ["--device", "Desk AirPods", "lm", "get"],
-    candidates: merged
-  )
-  check(
-    unresolvedDuplicate.plain == "ambiguous-device",
-    "an unproven AV/HAL correlation fails closed instead of choosing by name"
-  )
-
-  let joinedRaw = FakeRawDevice(name: "Desk AirPods", deviceIdentifier: "joined-device")
-  let joinedAV = PrivateAudioDevice.compatible(
-    object: joinedRaw,
-    sources: [.contextSingular],
-    index: 0,
-    logger: logger
-  )!
-  let proxyRaw = FakeRawDevice(name: "Desk AirPods", deviceIdentifier: "joined-device")
-  let proxyAV = PrivateAudioDevice.compatible(
-    object: proxyRaw,
-    sources: [.contextSingular],
     index: 1,
     logger: logger
   )!
-  let joinedCandidate = ListeningModeCandidate(
-    displayName: "Desk AirPods",
-    selectableNames: ["Desk AirPods"],
-    avTransport: joinedAV,
-    halTransport: hal,
-    route: .selected,
-    avIdentifiesActiveOutput: true
+  let unselectedHAL = FakeListeningModeTransport(name: "Desk AirPods", kind: .hal)
+  let unselectedCoordinator = ListeningModeCoordinator(
+    avDevices: [pluralAV],
+    halCandidates: [
+      candidate(name: "Desk AirPods", hal: unselectedHAL, route: .notSelected)
+    ],
+    logger: logger
   )
-  let deduplicated = ListeningModeCoordinator.candidates(
-    avDevices: [proxyAV],
-    halCandidates: [joinedCandidate]
+  let namedUnselected = unselectedCoordinator.resolve(
+    command: .get,
+    named: "Desk AirPods",
+    chooseAmbiguous: { _ in .unavailable }
   )
-  check(
-    deduplicated.count == 1,
-    "distinct AV wrappers with the same ephemeral endpoint identifier deduplicate"
-  )
+  if case .session(let session) = namedUnselected {
+    check(
+      session.transport.listeningModeTransportKind == .hal,
+      "an unselected HAL target never name-joins a leftover AV endpoint"
+    )
+  } else {
+    check(false, "the unique unselected HAL name resolves without ambiguity")
+  }
 
   let otherRaw = FakeRawDevice(name: "Travel AirPods")
   let otherAV = PrivateAudioDevice.compatible(
@@ -414,49 +434,61 @@ func testListeningModeCandidateMergeAvoidsPluralAVDuplicates() {
     index: 2,
     logger: logger
   )!
-  let avOnly = ListeningModeCoordinator.candidates(
-    avDevices: [pluralAV, otherAV],
-    halCandidates: []
-  )
-  check(avOnly.count == 2, "HAL absence preserves the complete legacy AV inventory")
-  let avOnlyOutcome = coordinatorOutcome(["lm", "get"], candidates: avOnly)
-  check(
-    avOnlyOutcome.payload["device"] as? String == "Desk AirPods",
-    "HAL absence preserves legacy first-AV selection"
-  )
-
-  let mixed = ListeningModeCoordinator.candidates(
-    avDevices: [otherAV],
-    halCandidates: [halCandidate]
-  )
-  let namedOther = coordinatorOutcome(
-    ["--device", "Travel AirPods", "lm", "get"],
-    candidates: mixed
-  )
-  check(
-    namedOther.payload["device"] as? String == "Travel AirPods",
-    "an unrelated HAL candidate does not hide a named AV-only device"
-  )
-  var mixedChooserCalled = false
   let mixedCoordinator = ListeningModeCoordinator(
-    candidates: mixed,
-    logger: DebugLogger(enabled: false)
+    avDevices: [otherAV],
+    halCandidates: [
+      candidate(name: "Desk AirPods", hal: unselectedHAL, route: .notSelected)
+    ],
+    logger: logger
   )
-  let mixedInvocation = try! parseInvocation(["lm", "get"])
-  let mixedResolution = mixedCoordinator.resolve(
-    command: mixedInvocation.command,
+  let namedOther = mixedCoordinator.resolve(
+    command: .get,
+    named: "Travel AirPods",
+    chooseAmbiguous: { _ in .unavailable }
+  )
+  if case .session(let session) = namedOther {
+    check(
+      session.transport.listeningModeTransportKind == .av,
+      "a named AV-only sibling remains reachable when HAL exists"
+    )
+  } else {
+    check(false, "a unique AV-only name remains reachable")
+  }
+
+  var chooserCalled = false
+  let unnamedMixed = mixedCoordinator.resolve(
+    command: .get,
     named: nil,
     chooseAmbiguous: { _ in
-      mixedChooserCalled = true
-      return .selected(index: 0)
+      chooserCalled = true
+      return .unavailable
     }
   )
-  if case .ambiguousDevice = mixedResolution {
-    check(true, "mixed AV/HAL ambiguity fails closed")
+  if case .session(let session) = unnamedMixed {
+    check(
+      session.transport.listeningModeTransportKind == .hal,
+      "unnamed selection ignores leftover AV rows when HAL exists"
+    )
   } else {
-    check(false, "mixed AV/HAL ambiguity must not select a device")
+    check(false, "one HAL target remains uniquely selectable")
   }
-  check(!mixedChooserCalled, "mixed AV/HAL ambiguity never opens the HAL chooser")
+  check(!chooserCalled, "leftover AV rows never enter the HAL chooser")
+
+  let avOnlyCoordinator = ListeningModeCoordinator(
+    avDevices: [pluralAV, otherAV],
+    halCandidates: [],
+    logger: logger
+  )
+  let avOnly = avOnlyCoordinator.resolve(
+    command: .get,
+    named: nil,
+    chooseAmbiguous: { _ in .unavailable }
+  )
+  if case .session(let session) = avOnly {
+    check(session.name == "Desk AirPods", "HAL absence preserves first-AV selection")
+  } else {
+    check(false, "HAL absence keeps legacy AV-only selection")
+  }
 }
 
 func testHALListeningModeTranslationAndOffLimitation() {
@@ -518,6 +550,6 @@ func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorReadsOnlyCommandRequirements()
   testListeningModeCoordinatorNeverFallsBackAfterASetter()
   testListeningModeCoordinatorAmbiguityAndCancellation()
-  testListeningModeCandidateMergeAvoidsPluralAVDuplicates()
+  testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames()
   testHALListeningModeTranslationAndOffLimitation()
 }
