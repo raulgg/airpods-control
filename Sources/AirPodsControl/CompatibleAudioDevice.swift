@@ -51,8 +51,6 @@ protocol CompatibleAudioDevice {
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode>
-  func allowsInferredListeningModeOffFallback() -> Bool
-  func allowOffCacheEvidence() -> CachedAllowOffEvidence?
 
   func supportsConversationAwareness() -> Bool?
   func conversationAwarenessState() -> Bool?
@@ -69,9 +67,4 @@ protocol CompatibleAudioDevice {
   // adapter must keep pumping the main run loop while it waits. How long to
   // wait is the caller's policy, not the device's.
   func settle(for interval: TimeInterval)
-}
-
-extension CompatibleAudioDevice {
-  func allowsInferredListeningModeOffFallback() -> Bool { true }
-  func allowOffCacheEvidence() -> CachedAllowOffEvidence? { nil }
 }
