@@ -171,14 +171,6 @@ protocol AudioRoutingBackend {
   ) -> AudioRoutingWrite
 }
 
-extension AudioRoutingBackend {
-  func readDeviceUID(
-    for deviceID: AudioDeviceID
-  ) -> AudioRoutingRead<String?> {
-    .unavailable
-  }
-}
-
 struct CoreAudioRoutingBackend: AudioRoutingBackend {
   private let maximumAudioDeviceCount = 1_024
   private let propertyAccess: any CoreAudioPropertyAccess
