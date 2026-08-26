@@ -83,6 +83,45 @@ private final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
   func settle(for interval: TimeInterval) {}
 }
 
+private final class OrdinaryHALListeningModeTransport: ListeningModeTransport {
+  private let wrapped: FakeListeningModeTransport
+
+  init(wrapped: FakeListeningModeTransport) {
+    self.wrapped = wrapped
+  }
+
+  var name: String? { wrapped.name }
+  var listeningModeTransportKind: ListeningModeTransportKind {
+    wrapped.listeningModeTransportKind
+  }
+
+  func availableListeningModes() -> [ListeningMode] {
+    wrapped.availableListeningModes()
+  }
+
+  func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
+    wrapped.listeningModeAvailabilityObservation()
+  }
+
+  func currentListeningMode() -> ListeningMode? {
+    wrapped.currentListeningMode()
+  }
+
+  func canSetListeningMode() -> Bool {
+    wrapped.canSetListeningMode()
+  }
+
+  func setListeningModeAndReadBack(
+    _ target: ListeningMode
+  ) -> DeviceWriteObservation<ListeningMode> {
+    wrapped.setListeningModeAndReadBack(target)
+  }
+
+  func settle(for interval: TimeInterval) {
+    wrapped.settle(for: interval)
+  }
+}
+
 private final class FakeHALRoutingBackend: AudioRoutingBackend {
   var rawModeRead: AudioRoutingRead<UInt32> = .value(3)
   var supportRead: AudioRoutingRead<UInt32> = .value(0b111)
@@ -916,6 +955,24 @@ func testListeningModeWritePlanOwnsHALAllowOffPolicy() {
   )
   check(avOutcome.plain == "ok", "live AV Off remains writable")
   check(av.allowOffWrites == [false], "AV writes do not consume HAL authorization")
+
+  let ordinaryHAL = OrdinaryHALListeningModeTransport(
+    wrapped: FakeListeningModeTransport(
+      name: "Ordinary HAL AirPods",
+      kind: .hal,
+      modes: [.off],
+      current: .noiseCancellation
+    )
+  )
+  let ordinaryPlan = ListeningModeWritePlan(
+    transport: ordinaryHAL,
+    availableModes: [.off],
+    allowOffAuthorization: .live(cache: nil, record: nil)
+  )
+  check(
+    !ordinaryPlan.canWrite(.off),
+    "a HAL write plan requires the explicit Allow Off capability"
+  )
 }
 
 func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
