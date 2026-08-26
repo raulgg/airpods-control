@@ -422,6 +422,91 @@ func runListeningModeAllowOffCacheTests() {
   }
 
   withTemporaryAllowOffCache { fileURL in
+    let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_000_000))
+    var failTemporaryBackup = false
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt },
+      markExcludedFromBackup: { url in
+        if failTemporaryBackup && url.pathExtension == "tmp" {
+          throw AllowOffCacheTestError.unavailable
+        }
+      }
+    )
+    let rawUID = "failed-negative-write-uid"
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "failed negative write test seeds positive evidence"
+    )
+    failTemporaryBackup = true
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: clock.value
+      ) == .applied,
+      "failed negative persistence purges stale positive evidence"
+    )
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "failed negative persistence cannot leave a reusable positive"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let observedAt = Date(timeIntervalSince1970: 1_732_000_000)
+    let clock = AllowOffCacheTestClock(observedAt)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "contended-negative-uid"
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: observedAt
+      ) == .applied,
+      "lock-timeout test seeds positive evidence"
+    )
+    let negativeObservedAt = observedAt.addingTimeInterval(1)
+    withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+      check(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: negativeObservedAt
+        ) == .applied,
+        "negative lock timeout writes a deny marker"
+      )
+    }
+    clock.value = negativeObservedAt
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "a deny marker blocks stale positive evidence after lock contention"
+    )
+    clock.value = negativeObservedAt.addingTimeInterval(1)
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "newer positive evidence can supersede a deny marker"
+    )
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "newer positive evidence remains usable after a denied write"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
     let cache = PersistentListeningModeAllowOffCache(
       fileURL: fileURL,
       saltGenerator: { allowOffCacheTestSalt }

@@ -61,6 +61,9 @@ private let allowOffCacheFilePermissions: mode_t = 0o600
 private let allowOffCacheProcessMutationLock = NSLock()
 private let allowOffCacheLockTimeoutNanoseconds: UInt64 = 250_000_000
 private let allowOffCacheLockRetryMicroseconds: useconds_t = 10_000
+private let allowOffCacheDenyMarkerPrefix = "allow-off-v1-deny-"
+private let allowOffCacheDenyMarkerSuffix = ".jsonl"
+private let allowOffCacheDenyMarkerMaximumByteCount = 4_096
 
 private struct PersistedAllowOffCache: Codable {
   let schemaVersion: Int
@@ -129,8 +132,18 @@ private struct PersistedAllowOffEvidence: Codable, Equatable {
   let observedAt: Date
 }
 
+private struct PersistedAllowOffDenyMarker: Codable, Equatable {
+  let observedAt: Date
+}
+
 private enum PersistedAllowOffCacheRead {
   case value(PersistedAllowOffCache)
+  case missing
+  case invalid
+}
+
+private enum AllowOffDenyMarkerRead {
+  case value(Date)
   case missing
   case invalid
 }
@@ -200,6 +213,10 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       observation.allowsOff,
       let evidence = usableEvidence(observedAt: observation.observedAt)
     else { return .miss }
+    guard !denyMarkerBlocks(
+      key: key,
+      positiveObservedAt: observation.observedAt
+    ) else { return .miss }
     return .hit(AllowOffCacheRecord(evidence: evidence, key: key))
   }
 
@@ -211,44 +228,70 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard validTTL, isValidRawDeviceUID(rawDeviceUID),
       observedAt.timeIntervalSince1970.isFinite
     else { return .unavailable }
-    return withExclusiveMutationLock {
-      let document: PersistedAllowOffCache
-      switch readPersistedCache() {
-      case .value(let value):
-        document = value
-      case .missing:
-        guard let created = makeEmptyCache() else { return .unavailable }
-        document = created
-      case .invalid:
-        guard purgeCacheFile() else { return .unavailable }
-        guard let created = makeEmptyCache() else { return .unavailable }
-        document = created
+    return withExclusiveMutationLock(
+      body: {
+        let document: PersistedAllowOffCache
+        switch readPersistedCache() {
+        case .value(let value):
+          document = value
+        case .missing:
+          guard let created = makeEmptyCache() else { return .unavailable }
+          document = created
+        case .invalid:
+          guard purgeCacheFile() else { return .unavailable }
+          guard let created = makeEmptyCache() else { return .unavailable }
+          document = created
+        }
+
+        guard let key = digestKey(
+          salt: document.salt,
+          rawDeviceUID: rawDeviceUID
+        )
+        else { return .unavailable }
+
+        let candidate = AllowOffObservation(
+          allowsOff: allowsOff,
+          observedAt: observedAt
+        )
+        var observations = document.observations
+        let effectiveCandidate = candidate
+        if effectiveCandidate.allowsOff {
+          switch readDenyMarker(for: key) {
+          case .missing:
+            break
+          case .invalid:
+            return .unavailable
+          case .value(let deniedAt):
+            guard effectiveCandidate.observedAt > deniedAt else {
+              return .unchanged
+            }
+          }
+        }
+        guard shouldReplaceAllowOffObservation(
+          existing: observations[key],
+          with: effectiveCandidate
+        )
+        else { return .unchanged }
+        observations[key] = effectiveCandidate
+        let updated = PersistedAllowOffCache(
+          schemaVersion: document.schemaVersion,
+          salt: document.salt,
+          observations: observations
+        )
+        guard write(updated) else {
+          guard !effectiveCandidate.allowsOff else { return .unavailable }
+          return purgeCacheFile() ? .applied : .unavailable
+        }
+        return .applied
+      },
+      onLockUnavailable: {
+        guard !allowsOff else { return .unavailable }
+        return persistDenyMarker(
+          rawDeviceUID: rawDeviceUID,
+          observedAt: observedAt
+        )
       }
-
-      guard let key = digestKey(
-        salt: document.salt,
-        rawDeviceUID: rawDeviceUID
-      )
-      else { return .unavailable }
-
-      let candidate = AllowOffObservation(
-        allowsOff: allowsOff,
-        observedAt: observedAt
-      )
-      var observations = document.observations
-      guard shouldReplaceAllowOffObservation(
-        existing: observations[key],
-        with: candidate
-      )
-      else { return .unchanged }
-      observations[key] = candidate
-      let updated = PersistedAllowOffCache(
-        schemaVersion: document.schemaVersion,
-        salt: document.salt,
-        observations: observations
-      )
-      return write(updated) ? .applied : .unavailable
-    }
+    )
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
@@ -270,6 +313,13 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
   private var lockFileURL: URL {
     directoryURL.appendingPathComponent("allow-off-v1.lock", isDirectory: false)
+  }
+
+  private func denyMarkerURL(for key: String) -> URL {
+    directoryURL.appendingPathComponent(
+      "\(allowOffCacheDenyMarkerPrefix)\(key)\(allowOffCacheDenyMarkerSuffix)",
+      isDirectory: false
+    )
   }
 
   private var validTTL: Bool {
@@ -301,6 +351,26 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     )
   }
 
+  private func persistDenyMarker(
+    rawDeviceUID: String,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    guard case .value(let document) = readPersistedCache(),
+      let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID)
+    else { return .unavailable }
+    let candidate = AllowOffObservation(allowsOff: false, observedAt: observedAt)
+    switch readDenyMarker(for: key) {
+    case .invalid:
+      return .unchanged
+    case .value(let existing) where existing >= candidate.observedAt:
+      return .unchanged
+    case .missing, .value:
+      return appendDenyMarker(for: key, observedAt: candidate.observedAt)
+        ? .applied
+        : .unavailable
+    }
+  }
+
   private func readPersistedCache() -> PersistedAllowOffCacheRead {
     switch secureRead(fileURL) {
     case .missing:
@@ -312,6 +382,83 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         validate(document)
       else { return .invalid }
       return .value(document)
+    }
+  }
+
+  private func denyMarkerBlocks(
+    key: String,
+    positiveObservedAt: Date
+  ) -> Bool {
+    switch readDenyMarker(for: key) {
+    case .missing:
+      return false
+    case .invalid:
+      return true
+    case .value(let deniedAt):
+      return deniedAt >= positiveObservedAt
+    }
+  }
+
+  private func readDenyMarker(for key: String) -> AllowOffDenyMarkerRead {
+    switch secureRead(denyMarkerURL(for: key)) {
+    case .missing:
+      return .missing
+    case .invalid:
+      return .invalid
+    case .value(let data):
+      var newest: Date?
+      for line in data.split(separator: 0x0A) {
+        guard let marker = try? decoder.decode(
+          PersistedAllowOffDenyMarker.self,
+          from: Data(line)
+        ),
+          marker.observedAt.timeIntervalSince1970.isFinite
+        else { return .invalid }
+        if newest == nil || marker.observedAt > newest! {
+          newest = marker.observedAt
+        }
+      }
+      guard let newest else { return .invalid }
+      return .value(newest)
+    }
+  }
+
+  private func appendDenyMarker(for key: String, observedAt: Date) -> Bool {
+    guard let encoded = try? encoder.encode(
+      PersistedAllowOffDenyMarker(observedAt: observedAt)
+    ) else { return false }
+    var line = encoded
+    line.append(0x0A)
+    guard line.count <= allowOffCacheDenyMarkerMaximumByteCount else {
+      return false
+    }
+
+    let url = denyMarkerURL(for: key)
+    let descriptor = openFile(
+      url,
+      flags: O_CREAT | O_APPEND | O_WRONLY | O_CLOEXEC | O_NOFOLLOW,
+      permissions: allowOffCacheFilePermissions
+    )
+    guard descriptor >= 0 else { return false }
+    defer { Darwin.close(descriptor) }
+
+    var value = stat()
+    guard fstat(descriptor, &value) == 0,
+      isRegularFile(value),
+      value.st_uid == geteuid(),
+      value.st_nlink == 1,
+      value.st_size >= 0,
+      UInt64(value.st_size) + UInt64(line.count)
+        <= UInt64(allowOffCacheDenyMarkerMaximumByteCount),
+      fchmod(descriptor, allowOffCacheFilePermissions) == 0,
+      writeAll(line, to: descriptor),
+      fsync(descriptor) == 0
+    else { return false }
+    do {
+      try markExcludedFromBackup(url)
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -366,7 +513,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   }
 
   private func withExclusiveMutationLock(
-    _ body: () -> AllowOffCacheMutation
+    body: () -> AllowOffCacheMutation,
+    onLockUnavailable: () -> AllowOffCacheMutation = { .unavailable }
   ) -> AllowOffCacheMutation {
     allowOffCacheProcessMutationLock.lock()
     defer { allowOffCacheProcessMutationLock.unlock() }
@@ -374,7 +522,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return .unavailable
     }
     defer { Darwin.close(descriptor) }
-    guard acquireFileLock(descriptor) else { return .unavailable }
+    guard acquireFileLock(descriptor) else { return onLockUnavailable() }
     defer { _ = Darwin.lockf(descriptor, F_ULOCK, 0) }
     return body()
   }
