@@ -254,7 +254,10 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
           observedAt: observedAt
         )
         var observations = document.observations
-        let effectiveCandidate = candidate
+        let effectiveCandidate = effectiveObservation(
+          candidate,
+          existing: observations[key]
+        )
         if effectiveCandidate.allowsOff {
           switch readDenyMarker(for: key) {
           case .missing:
@@ -351,6 +354,26 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     )
   }
 
+  private func effectiveObservation(
+    _ candidate: AllowOffObservation,
+    existing: AllowOffObservation?
+  ) -> AllowOffObservation {
+    guard !candidate.allowsOff,
+      let existing,
+      existing.allowsOff
+    else { return candidate }
+    let current = now()
+    guard current.timeIntervalSince1970.isFinite,
+      current >= existing.observedAt
+    else {
+      return AllowOffObservation(
+        allowsOff: false,
+        observedAt: existing.observedAt
+      )
+    }
+    return candidate
+  }
+
   private func persistDenyMarker(
     rawDeviceUID: String,
     observedAt: Date
@@ -358,7 +381,10 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard case .value(let document) = readPersistedCache(),
       let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID)
     else { return .unavailable }
-    let candidate = AllowOffObservation(allowsOff: false, observedAt: observedAt)
+    let candidate = effectiveObservation(
+      AllowOffObservation(allowsOff: false, observedAt: observedAt),
+      existing: document.observations[key]
+    )
     switch readDenyMarker(for: key) {
     case .invalid:
       return .unchanged
