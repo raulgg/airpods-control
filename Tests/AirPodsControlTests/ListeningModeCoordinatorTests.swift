@@ -461,5 +461,6 @@ func runListeningModeCoordinatorTests() {
   testListeningModeAllowOffLiveFallback()
   testListeningModeAllowOffFreshNegativeEvidence()
   testListeningModeAllowOffStalePositiveAuthorization()
+  testInMemoryAllowOffCachePreservesObservationOrdering()
   testListeningModeCoordinatorOrdersDelayedAVObservations()
 }
