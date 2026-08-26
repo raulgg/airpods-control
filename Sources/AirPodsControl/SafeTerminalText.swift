@@ -20,6 +20,17 @@ enum SafeTerminalText {
     }.joined()
   }
 
+  static func escapedChooserLabel(_ value: String) -> String {
+    value.unicodeScalars.map { scalar in
+      switch scalar.value {
+      case 0x061C, 0x200E...0x200F, 0x202A...0x202E, 0x2066...0x2069:
+        return unicodeEscape(scalar.value)
+      default:
+        return escaped(String(scalar))
+      }
+    }.joined()
+  }
+
   private static func unicodeEscape(_ value: UInt32) -> String {
     let raw = String(value, radix: 16, uppercase: true)
     let padded = String(repeating: "0", count: max(0, 4 - raw.count)) + raw

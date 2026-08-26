@@ -319,7 +319,15 @@ final class ListeningModeCoordinator {
         logger.warning("device_selection", "ambiguous-active-device")
         return .ambiguousDevice
       } else if halCandidates.count == 1 {
-        selectedCandidate = halCandidates[0]
+        let selectedAVCandidates = avCandidates.filter { $0.route == .selected }
+        if selectedAVCandidates.count == 1, let selected = selectedAVCandidates.first {
+          selectedCandidate = selected
+        } else if selectedAVCandidates.count > 1 {
+          logger.warning("device_selection", "ambiguous-active-device")
+          return .ambiguousDevice
+        } else {
+          selectedCandidate = halCandidates[0]
+        }
       } else {
         switch chooseAmbiguous(halCandidates.map(\.displayName)) {
         case .selected(let index) where halCandidates.indices.contains(index):

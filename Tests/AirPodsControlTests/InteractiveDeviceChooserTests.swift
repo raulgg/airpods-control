@@ -90,6 +90,30 @@ func testInteractiveDeviceChooserEscapesUnsafeDeviceNames() {
   check(outcome == .selected(index: 1), "escaping does not change the selected candidate index")
 }
 
+func testInteractiveDeviceChooserEscapesBidirectionalControls() {
+  let eligibility = InteractiveDeviceChooser.Eligibility(
+    inputIsTerminal: true,
+    errorIsTerminal: true,
+    jsonOutput: false
+  )
+  let unsafeName =
+    "AirPods\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}"
+    + "\u{2066}\u{2067}\u{2068}\u{2069} Pro"
+  var output = ""
+  let outcome = InteractiveDeviceChooser.choose(
+    deviceNames: ["Desk AirPods", unsafeName],
+    eligibility: eligibility,
+    readResponse: { "2" },
+    writeError: { output += $0 }
+  )
+
+  let expectedName =
+    "AirPods\\u{061C}\\u{200E}\\u{200F}\\u{202A}\\u{202B}\\u{202C}\\u{202D}\\u{202E}"
+    + "\\u{2066}\\u{2067}\\u{2068}\\u{2069} Pro"
+  check(output.contains("  2. \(expectedName)\n"), "chooser escapes bidirectional controls")
+  check(outcome == .selected(index: 1), "escaping preserves the selected candidate index")
+}
+
 func testInteractiveDeviceChooserRepromptsForOnlyDisplayedNumbers() {
   let eligibility = InteractiveDeviceChooser.Eligibility(
     inputIsTerminal: true,
@@ -167,6 +191,7 @@ func runInteractiveDeviceChooserTests() {
   testInteractiveDeviceChooserEligibility()
   testInteractiveDeviceChooserPreservesDiscoveryOrder()
   testInteractiveDeviceChooserEscapesUnsafeDeviceNames()
+  testInteractiveDeviceChooserEscapesBidirectionalControls()
   testInteractiveDeviceChooserRepromptsForOnlyDisplayedNumbers()
   testInteractiveDeviceChooserCancellation()
   testInteractiveDeviceChooserRequiresAmbiguity()

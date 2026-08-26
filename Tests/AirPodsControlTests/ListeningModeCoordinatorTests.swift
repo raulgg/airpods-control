@@ -351,6 +351,37 @@ func testListeningModeCoordinatorAmbiguityAndCancellation() {
   check(duplicate.plain == "ambiguous-device", "duplicate exact names never prompt or select")
 }
 
+func testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL() {
+  let selectedAV = FakeListeningModeTransport(name: "Selected AirPods", kind: .av)
+  let inactiveHAL = FakeListeningModeTransport(name: "Inactive AirPods", kind: .hal)
+  let candidates = [
+    candidate(name: "Selected AirPods", av: selectedAV, route: .selected),
+    candidate(name: "Inactive AirPods", hal: inactiveHAL, route: .notSelected),
+  ]
+
+  let outcome = coordinatorOutcome(
+    ["lm", "set", "adaptive"],
+    candidates: candidates
+  )
+
+  check(outcome.plain == "ok", "the selected AV target resolves")
+  check(selectedAV.setterTargets == [.adaptive], "the selected AV target receives the setter")
+  check(inactiveHAL.setterTargets.isEmpty, "the inactive HAL target remains untouched")
+
+  let otherSelectedAV = FakeListeningModeTransport(name: "Other AirPods", kind: .av)
+  let ambiguousOutcome = coordinatorOutcome(
+    ["lm", "set", "adaptive"],
+    candidates: candidates + [
+      candidate(name: "Other AirPods", av: otherSelectedAV, route: .selected)
+    ]
+  )
+
+  check(ambiguousOutcome.plain == "ambiguous-device", "multiple selected AV targets fail closed")
+  check(selectedAV.setterTargets == [.adaptive], "ambiguous resolution does not write again")
+  check(otherSelectedAV.setterTargets.isEmpty, "an ambiguous selected AV target is not written")
+  check(inactiveHAL.setterTargets.isEmpty, "ambiguous resolution does not write the HAL target")
+}
+
 func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
   let logger = DebugLogger(enabled: false)
   let activeRaw = FakeRawDevice(name: "Desk AirPods")
@@ -568,6 +599,7 @@ func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorReadsOnlyCommandRequirements()
   testListeningModeCoordinatorNeverFallsBackAfterASetter()
   testListeningModeCoordinatorAmbiguityAndCancellation()
+  testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL()
   testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames()
   testHALListeningModeTranslationAndOffLimitation()
 }
