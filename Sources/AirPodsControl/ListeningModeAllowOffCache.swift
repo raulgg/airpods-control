@@ -1,5 +1,6 @@
 import CryptoKit
 import Darwin
+import Dispatch
 import Foundation
 import Security
 
@@ -39,6 +40,8 @@ private let allowOffCacheMaximumRawUIDByteCount = 4_096
 private let allowOffCacheDirectoryPermissions: mode_t = 0o700
 private let allowOffCacheFilePermissions: mode_t = 0o600
 private let allowOffCacheProcessMutationLock = NSLock()
+private let allowOffCacheLockTimeoutNanoseconds: UInt64 = 250_000_000
+private let allowOffCacheLockRetryMicroseconds: useconds_t = 10_000
 
 private struct PersistedAllowOffCache: Codable {
   let schemaVersion: Int
@@ -281,9 +284,29 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return .unavailable
     }
     defer { Darwin.close(descriptor) }
-    guard Darwin.lockf(descriptor, F_LOCK, 0) == 0 else { return .unavailable }
+    guard acquireFileLock(descriptor) else { return .unavailable }
     defer { _ = Darwin.lockf(descriptor, F_ULOCK, 0) }
     return body()
+  }
+
+  private func acquireFileLock(_ descriptor: Int32) -> Bool {
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    while true {
+      if Darwin.lockf(descriptor, F_TLOCK, 0) == 0 { return true }
+      guard errno == EACCES || errno == EAGAIN || errno == EINTR else {
+        return false
+      }
+
+      let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
+      guard elapsed < allowOffCacheLockTimeoutNanoseconds else { return false }
+      let remainingMicroseconds =
+        (allowOffCacheLockTimeoutNanoseconds - elapsed) / 1_000
+      _ = Darwin.usleep(
+        useconds_t(
+          min(UInt64(allowOffCacheLockRetryMicroseconds), remainingMicroseconds)
+        )
+      )
+    }
   }
 
   private func ensureCacheDirectory() -> Bool {

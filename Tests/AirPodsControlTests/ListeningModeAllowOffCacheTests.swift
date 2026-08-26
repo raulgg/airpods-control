@@ -1,4 +1,5 @@
 import Darwin
+import Dispatch
 import Foundation
 
 private final class AllowOffCacheTestClock {
@@ -65,6 +66,47 @@ private func allowOffCachePermissions(at url: URL) -> Int? {
     let permissions = attributes[.posixPermissions] as? NSNumber
   else { return nil }
   return permissions.intValue
+}
+
+private func withHeldAllowOffCacheFileLock(
+  fileURL: URL,
+  _ body: () -> Void
+) {
+  let lockURL = fileURL.deletingLastPathComponent()
+    .appendingPathComponent("allow-off-v1.lock")
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/lockf")
+  process.arguments = ["-t", "0", lockURL.path, "/bin/sleep", "2"]
+  do {
+    try process.run()
+  } catch {
+    check(false, "lock contention test starts a lock holder")
+    return
+  }
+  defer {
+    if process.isRunning { process.terminate() }
+    process.waitUntilExit()
+  }
+
+  let descriptor = Darwin.open(lockURL.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+  guard descriptor >= 0 else {
+    check(false, "lock contention test opens the cache lock file")
+    return
+  }
+  defer { Darwin.close(descriptor) }
+
+  let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+  while DispatchTime.now().uptimeNanoseconds < deadline {
+    if Darwin.lockf(descriptor, F_TLOCK, 0) == -1,
+      errno == EACCES || errno == EAGAIN
+    {
+      body()
+      return
+    }
+    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+    _ = Darwin.usleep(1_000)
+  }
+  check(false, "lock contention fixture acquires the cache lock")
 }
 
 func runListeningModeAllowOffCacheTests() {
@@ -353,6 +395,33 @@ func runListeningModeAllowOffCacheTests() {
     check(
       !FileManager.default.fileExists(atPath: fileURL.path),
       "invalid generated salt never writes a cache document"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    _ = cache.storePositiveObservation(rawDeviceUID: "existing")
+
+    withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+      let startedAt = DispatchTime.now().uptimeNanoseconds
+      let result = cache.storePositiveObservation(rawDeviceUID: "contended")
+      let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
+      check(result == .unavailable, "contended cache mutation fails soft")
+      check(
+        elapsed < 1_000_000_000,
+        "contended cache mutation stops waiting within a bounded time"
+      )
+    }
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: "existing")) != nil,
+      "lock contention preserves existing cache evidence"
+    )
+    check(
+      cache.lookup(rawDeviceUID: "contended") == .miss,
+      "failed-soft lock contention does not mutate the cache"
     )
   }
 
