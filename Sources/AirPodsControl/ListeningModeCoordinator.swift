@@ -288,8 +288,9 @@ final class ListeningModeAllowOffCorrelation {
       return nil
     case .value(let modes) where modes.contains(.off):
       var storedRecord: AllowOffCacheRecord?
+      var mutation: AllowOffCacheMutation = .unavailable
       withUnambiguousRawUID { rawDeviceUID in
-        _ = cache.applyObservation(
+        mutation = cache.applyObservation(
           rawDeviceUID: rawDeviceUID,
           allowsOff: true,
           observedAt: observedAt
@@ -297,6 +298,9 @@ final class ListeningModeAllowOffCorrelation {
         if case .hit(let record) = cache.lookup(rawDeviceUID: rawDeviceUID) {
           storedRecord = record
         }
+      }
+      if mutation == .unchanged, storedRecord == nil {
+        return nil
       }
       // Fresh AV evidence can authorize this invocation even when the
       // disposable cache cannot be correlated or written.

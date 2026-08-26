@@ -233,7 +233,7 @@ The CLI can reuse a recent positive AV observation of Allow Off for an exact HAL
 An AV available-mode read updates the cache only when already needed for
 .BR list ,
 .BR "set off" ,
-or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes the positive observation; a successful eligible read omitting Off deletes it. An AV-backed
+or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes the positive observation; a successful eligible read omitting Off removes the positive observation and writes a negative tombstone. An AV-backed
 .B listening-mode get
 also refreshes the positive observation when it returns Off. A successful eligible availability read that omits Off removes the positive observation and writes a negative tombstone. The latest observation time wins, and a negative observation wins equal timestamps, so an older in-flight positive read cannot restore stale evidence. A non-Off current-mode result is not an availability observation, and incidental current-mode reads made by other operations do not warm the cache. Selector failures, unavailable endpoints, and failed reads leave the cache unchanged. The CLI does not perform an extra AV read to warm the cache, and HAL observations never refresh it.
 .PP

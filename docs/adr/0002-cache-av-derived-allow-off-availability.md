@@ -40,13 +40,13 @@ observation time wins, and a negative observation wins ties so an older
 in-flight positive read cannot restore stale evidence. A selector failure, read
 failure, or unavailable AV endpoint leaves the record unchanged.
 
-An AV-backed `listening-mode get` may also write or refresh the record when its
-result is Off. A non-Off result is not negative evidence and does not delete
-the record. Incidental current-mode reads made by other operations do not warm
-the cache. The coordinator never performs an extra AV read solely to warm or
-refresh it, and a HAL current-mode observation never updates it. Fresh,
-successful AV evidence takes precedence over cached evidence in the same
-command.
+An AV-backed `listening-mode get` may also write or refresh the positive record
+when its result is Off. A non-Off current-mode result is not an availability
+observation and does not delete the record. Incidental current-mode reads made
+by other operations do not warm the cache. The coordinator never performs an
+extra AV read solely to warm or refresh it, and a HAL current-mode observation
+never updates it. Fresh, successful AV evidence takes precedence over cached
+evidence in the same command.
 
 ### Correlation and privacy
 

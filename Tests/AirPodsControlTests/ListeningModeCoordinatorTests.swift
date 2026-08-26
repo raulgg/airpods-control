@@ -179,6 +179,24 @@ private final class FailingRemovalAllowOffCache: ListeningModeAllowOffCaching {
   }
 }
 
+private final class StalePositiveAllowOffCache: ListeningModeAllowOffCaching {
+  func lookup(rawDeviceUID: String) -> AllowOffCacheLookup {
+    .miss
+  }
+
+  func applyObservation(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    allowsOff ? .unchanged : .unavailable
+  }
+
+  func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
+    .unchanged
+  }
+}
+
 private func coordinatorOutcome(
   _ arguments: [String],
   candidates: [ListeningModeCandidate],
@@ -1189,6 +1207,54 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
   check(
     staleBackend.writtenValues.isEmpty,
     "failed negative-evidence persistence never reauthorizes HAL Off in the same command"
+  )
+
+  let stalePositiveBackend = FakeHALRoutingBackend()
+  stalePositiveBackend.rawModeRead = .value(2)
+  stalePositiveBackend.deviceUIDs[72] = .value("uid-72")
+  let stalePositiveCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 72,
+    collisionAudioDeviceIDs: [72],
+    backend: stalePositiveBackend,
+    cache: StalePositiveAllowOffCache(),
+    logger: DebugLogger(enabled: false),
+    now: { clock }
+  )
+  let stalePositiveAV = FakeListeningModeTransport(
+    name: "Stale Positive AirPods",
+    kind: .av,
+    modes: ListeningMode.allCases,
+    current: .noiseCancellation,
+    settable: false
+  )
+  let stalePositiveHAL = HALListeningModeTransport(
+    name: "Stale Positive AirPods",
+    audioDeviceID: 72,
+    bluetoothDevice: NSObject(),
+    backend: stalePositiveBackend,
+    logger: DebugLogger(enabled: false),
+    wait: { _ in }
+  )
+  let stalePositiveOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [
+      ListeningModeCandidate(
+        displayName: "Stale Positive AirPods",
+        selectableNames: ["Stale Positive AirPods"],
+        avTransport: stalePositiveAV,
+        halTransport: stalePositiveHAL,
+        route: .unknown,
+        allowOffCorrelation: stalePositiveCorrelation
+      )
+    ]
+  )
+  check(
+    stalePositiveOutcome.plain == "unsupported",
+    "a stale positive AV observation cannot authorize HAL Off"
+  )
+  check(
+    stalePositiveBackend.writtenValues.isEmpty,
+    "a rejected stale positive observation never reaches the HAL setter"
   )
 }
 
