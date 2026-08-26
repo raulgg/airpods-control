@@ -69,7 +69,7 @@ struct PrivateAudioContextEndpoints {
 enum PrivateAudioDiscovery {
   static let contextSelectors = ["sharedSystemAudioContext", "sharedSystemAudio"]
 
-  fileprivate static func deviceIdentifier(for object: AnyObject) -> String? {
+  static func deviceIdentifier(for object: AnyObject) -> String? {
     guard object.responds(to: deviceIDSelector),
           let value = object.perform(deviceIDSelector)?.takeUnretainedValue()
     else { return nil }
@@ -192,6 +192,10 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
   fileprivate(set) var sources: Set<PrivateAudioDiscoverySource>
   let name: String?
   private let logger: DebugLogger
+
+  var isActiveOperationalEndpoint: Bool {
+    sources.contains(.contextSingular)
+  }
 
   private init(
     object: AnyObject,

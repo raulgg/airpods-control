@@ -73,6 +73,7 @@ PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/airpods-control-test.XXXXXX")
 trap 'rm -rf "$PROBE_DIR"' EXIT HUP INT TERM
 cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
 CLI="$PROBE_DIR/airpods-control"
+MISSING_DEVICE='__airpods_control_cli_contract_missing__'
 
 global_help=$("$CLI")
 assert_contains "$global_help" \
@@ -183,53 +184,44 @@ assert_equal bad-args "$duplicate_debug_output" "duplicate debug output"
 assert_contains "$(cat "$PROBE_DIR/duplicate-debug.stderr")" \
   'warning: cli.parse="bad-args"' "duplicate debug diagnostics"
 
-for alias in anc nc trans automatic auto; do
-  expect_failure 1 no-device "$CLI" lm set "$alias"
-done
+# Valid mutating invocations are exercised with injected devices in the Swift
+# suite. This black-box contract suite never runs one against production device
+# discovery, even with an improbable sentinel name.
 
-expect_failure 1 no-device "$CLI" lm cycle
-expect_failure 1 no-device "$CLI" lm cycle --modes off,trans,anc
-expect_failure 1 \
-  '{"device":null,"error":"no-device","listeningMode":null,"result":"error"}' \
-  "$CLI" lm cycle --json
-
-expect_failure 1 no-device "$CLI" lm --device 'Missing AirPods' get
-expect_failure 1 no-device "$CLI" --device 'Missing AirPods' ca get
+expect_failure 1 no-device "$CLI" lm --device "$MISSING_DEVICE" get
+expect_failure 1 no-device "$CLI" --device "$MISSING_DEVICE" ca get
 
 for invocation in \
   'lm get' \
-  'lm set adaptive' \
   'lm list' \
-  'lm cycle' \
-  'ca get' \
-  'ca set on'
+  'ca get'
 do
   # Word splitting is intentional: these fixed invocations contain no quoted
   # arguments, while the requested device remains one separately quoted arg.
   # shellcheck disable=SC2086
-  expect_failure 1 no-device "$CLI" $invocation --device 'Missing AirPods'
+  expect_failure 1 no-device "$CLI" $invocation --device "$MISSING_DEVICE"
 done
 
 expect_failure 1 'No compatible AirPods or Beats device is connected.' \
-  "$CLI" status
+  "$CLI" --device "$MISSING_DEVICE" status
 expect_failure 1 'No compatible AirPods or Beats device is connected.' \
-  "$CLI" status --device 'Missing AirPods'
+  "$CLI" status --device "$MISSING_DEVICE"
 expect_failure 1 \
   '{"devices":[],"error":"no-device","result":"error"}' \
-  "$CLI" status --json
+  "$CLI" --device "$MISSING_DEVICE" status --json
 expect_failure 1 \
   '{"devices":[],"error":"no-device","result":"error"}' \
-  "$CLI" --device 'Missing AirPods' --json status
+  "$CLI" --device "$MISSING_DEVICE" --json status
 
 expect_failure 1 \
   '{"device":null,"error":"no-device","listeningMode":null,"result":"error"}' \
-  "$CLI" lm get --json
+  "$CLI" --device "$MISSING_DEVICE" lm get --json
 expect_failure 1 \
   '{"device":null,"error":"no-device","listeningMode":null,"result":"error","supportedListeningModes":[]}' \
-  "$CLI" --json lm list
+  "$CLI" --device "$MISSING_DEVICE" --json lm list
 expect_failure 1 \
   '{"conversationAwareness":null,"device":null,"error":"no-device","result":"error"}' \
-  "$CLI" ca get --json
+  "$CLI" --device "$MISSING_DEVICE" ca get --json
 
 set +e
 support_report_output=$("$CLI" support-report 2>"$PROBE_DIR/support-report.stderr")
@@ -257,33 +249,9 @@ assert_contains "$support_report_debug_output" \
 assert_contains "$(cat "$PROBE_DIR/support-report-debug.stderr")" \
   'debug: cli.command="support-report"' "support-report accepts --debug"
 
-# Safety guard for the consented invocation below: --with-write-tests
-# authorizes real device writes without prompting, and CONTRIBUTING.md
-# promises that tests never write device settings. The probe copy excludes
-# avbypass.dylib, so the entitlement gate must block device discovery. Prove
-# that here, immediately before the consented flag, so the guard travels with
-# this test instead of depending on earlier tests or file ordering. If this
-# assertion ever fails, the consented invocation could switch listening modes
-# on a contributor's connected AirPods.
-expect_failure 1 no-device "$CLI" lm get
-
 set +e
-support_report_writes_output=$(
-  "$CLI" support-report --with-write-tests \
-    2>"$PROBE_DIR/support-report-writes.stderr"
-)
-support_report_writes_status=$?
-set -e
-assert_equal 1 "$support_report_writes_status" \
-  "consented support-report no-device exit status"
-assert_contains "$support_report_writes_output" \
-  'Connect exactly one compatible AirPods or Beats device' \
-  "consented support-report unique-device guidance"
-assert_equal '' "$(cat "$PROBE_DIR/support-report-writes.stderr")" \
-  "no device means no consent prompt and no writes"
-
-set +e
-"$CLI" --debug lm get >"$PROBE_DIR/operation.stdout" 2>"$PROBE_DIR/operation.stderr"
+"$CLI" --device "$MISSING_DEVICE" --debug lm get \
+  >"$PROBE_DIR/operation.stdout" 2>"$PROBE_DIR/operation.stderr"
 operation_status=$?
 set -e
 assert_equal 1 "$operation_status" "debug operational exit status"
