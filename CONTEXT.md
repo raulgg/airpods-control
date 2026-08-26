@@ -173,6 +173,11 @@
   newest observation wins, and a negative observation wins equal timestamps, so
   an older in-flight positive read cannot restore stale evidence. A selector or
   read failure is not an observation and leaves the cache unchanged.
+  If a negative update cannot obtain the bounded shared mutation lock, a
+  digest-keyed deny marker is written beside the cache and honored by later
+  lookups until newer positive evidence supersedes it. A failed negative write
+  under the lock removes the disposable cache instead of retaining stale
+  positive evidence.
   On a HAL-only path, a usable positive adds Off to listed availability and may
   authorize `set off` or a cycle whose explicit mode set contains Off. It never
   adds Off to the default cycle.

@@ -205,7 +205,11 @@ exact, case-sensitive public Core Audio UID. The cache persists the salt,
 digest, and observation time. The raw UID is held only transiently and is never
 persisted; the raw UID, digest, and salt are never printed or logged.
 `support-report` does not access the cache or include its data. Deleting the
-cache file safely restores the pre-cache HAL behavior.
+cache file safely restores the pre-cache HAL behavior. If a negative update
+cannot obtain the bounded shared mutation lock, the cache writes a digest-keyed
+deny marker beside the file and later lookups honor it before using positive
+evidence. If a negative write fails after taking the lock, the disposable cache
+is removed so stale positive evidence cannot remain reusable.
 
 This evidence may be stale if Allow Off changes before another eligible AV read
 or a HAL write disproves it. Observation timestamps prevent delayed older reads

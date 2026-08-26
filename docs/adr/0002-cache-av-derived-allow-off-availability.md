@@ -80,7 +80,10 @@ malformed cache data is a miss. The file is disposable cache data and should be
 excluded from backups; deleting it safely restores the pre-cache behavior. The
 cache directory and files are restricted to the current user, and updates use
 atomic replacement so an interrupted write becomes a miss rather than partial
-trusted evidence.
+trusted evidence. If a negative update cannot obtain the bounded shared mutation
+lock, it appends a digest-keyed deny marker beside the cache; lookups honor that
+marker before using positive evidence. A failed negative write while holding the
+lock removes the disposable cache instead of retaining stale positive evidence.
 
 ### HAL behavior
 
