@@ -30,7 +30,7 @@ enum InteractiveDeviceChooser {
 
     var menu = "Multiple compatible devices are connected:\n"
     for (displayIndex, deviceName) in deviceNames.enumerated() {
-      menu += "  \(displayIndex + 1). \(deviceName)\n"
+      menu += "  \(displayIndex + 1). \(SafeTerminalText.escaped(deviceName))\n"
     }
     writeError(menu)
 

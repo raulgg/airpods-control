@@ -63,6 +63,33 @@ func testInteractiveDeviceChooserPreservesDiscoveryOrder() {
   check(outcome == .selected(index: 1), "displayed number maps directly to discovery index")
 }
 
+func testInteractiveDeviceChooserEscapesUnsafeDeviceNames() {
+  let eligibility = InteractiveDeviceChooser.Eligibility(
+    inputIsTerminal: true,
+    errorIsTerminal: true,
+    jsonOutput: false
+  )
+  let unsafeName = "Café 🎧\n\r\t\\\u{001B}\u{007F}\u{2028}\u{2029}"
+  var output = ""
+  let outcome = InteractiveDeviceChooser.choose(
+    deviceNames: ["Desk AirPods", unsafeName],
+    eligibility: eligibility,
+    readResponse: { "2" },
+    writeError: { output += $0 }
+  )
+
+  let expectedOutput =
+    "Multiple compatible devices are connected:\n"
+    + "  1. Desk AirPods\n"
+    + "  2. Café 🎧\\n\\r\\t\\\\\\u{001B}\\u{007F}\\u{2028}\\u{2029}\n"
+    + "Select a device [1-2] (blank or q cancels): "
+  check(
+    output == expectedOutput,
+    "chooser escapes record-breaking and terminal control characters"
+  )
+  check(outcome == .selected(index: 1), "escaping does not change the selected candidate index")
+}
+
 func testInteractiveDeviceChooserRepromptsForOnlyDisplayedNumbers() {
   let eligibility = InteractiveDeviceChooser.Eligibility(
     inputIsTerminal: true,
@@ -139,6 +166,7 @@ func testInteractiveDeviceChooserRequiresAmbiguity() {
 func runInteractiveDeviceChooserTests() {
   testInteractiveDeviceChooserEligibility()
   testInteractiveDeviceChooserPreservesDiscoveryOrder()
+  testInteractiveDeviceChooserEscapesUnsafeDeviceNames()
   testInteractiveDeviceChooserRepromptsForOnlyDisplayedNumbers()
   testInteractiveDeviceChooserCancellation()
   testInteractiveDeviceChooserRequiresAmbiguity()
