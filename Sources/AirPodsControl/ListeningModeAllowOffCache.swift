@@ -25,6 +25,22 @@ enum AllowOffCacheMutation: Equatable {
   case unavailable
 }
 
+private struct AllowOffObservation: Equatable {
+  let allowsOff: Bool
+  let observedAt: Date
+}
+
+private func shouldReplaceAllowOffObservation(
+  existing: AllowOffObservation?,
+  with candidate: AllowOffObservation
+) -> Bool {
+  guard let existing else { return true }
+  if candidate.observedAt != existing.observedAt {
+    return candidate.observedAt > existing.observedAt
+  }
+  return !candidate.allowsOff && existing.allowsOff
+}
+
 protocol ListeningModeAllowOffCaching: AnyObject {
   func lookup(rawDeviceUID: String) -> AllowOffCacheLookup
   func applyObservation(
@@ -62,13 +78,20 @@ private struct PersistedAllowOffCache: Codable {
   init(
     schemaVersion: Int,
     salt: Data,
-    positiveEvidence: [String: PersistedAllowOffEvidence],
-    negativeEvidence: [String: PersistedAllowOffEvidence]
+    observations: [String: AllowOffObservation]
   ) {
     self.schemaVersion = schemaVersion
     self.salt = salt
-    self.positiveEvidence = positiveEvidence
-    self.negativeEvidence = negativeEvidence
+    positiveEvidence = observations.compactMapValues { observation in
+      observation.allowsOff
+        ? PersistedAllowOffEvidence(observedAt: observation.observedAt)
+        : nil
+    }
+    negativeEvidence = observations.compactMapValues { observation in
+      observation.allowsOff
+        ? nil
+        : PersistedAllowOffEvidence(observedAt: observation.observedAt)
+    }
   }
 
   init(from decoder: Decoder) throws {
@@ -83,6 +106,22 @@ private struct PersistedAllowOffCache: Codable {
       [String: PersistedAllowOffEvidence].self,
       forKey: .negativeEvidence
     ) ?? [:]
+  }
+
+  var observations: [String: AllowOffObservation] {
+    var result = positiveEvidence.mapValues {
+      AllowOffObservation(allowsOff: true, observedAt: $0.observedAt)
+    }
+    for (key, evidence) in negativeEvidence {
+      let candidate = AllowOffObservation(
+        allowsOff: false,
+        observedAt: evidence.observedAt
+      )
+      if shouldReplaceAllowOffObservation(existing: result[key], with: candidate) {
+        result[key] = candidate
+      }
+    }
+    return result
   }
 }
 
@@ -157,9 +196,9 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard validTTL,
       case .value(let document) = readPersistedCache(),
       let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID),
-      let entry = document.positiveEvidence[key],
-      document.negativeEvidence[key]?.observedAt ?? .distantPast < entry.observedAt,
-      let evidence = usableEvidence(observedAt: entry.observedAt)
+      let observation = document.observations[key],
+      observation.allowsOff,
+      let evidence = usableEvidence(observedAt: observation.observedAt)
     else { return .miss }
     return .hit(AllowOffCacheRecord(evidence: evidence, key: key))
   }
@@ -192,30 +231,22 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       )
       else { return .unavailable }
 
-      let existingPositive = document.positiveEvidence[key]
-      let existingNegative = document.negativeEvidence[key]
-      if allowsOff {
-        guard existingNegative?.observedAt ?? .distantPast < observedAt,
-          existingPositive?.observedAt ?? .distantPast <= observedAt
-        else { return .unchanged }
-      } else {
-        guard existingPositive?.observedAt ?? .distantPast <= observedAt,
-          existingNegative?.observedAt ?? .distantPast < observedAt
-        else { return .unchanged }
-      }
-
-      var updated = document
-      if allowsOff {
-        updated.negativeEvidence.removeValue(forKey: key)
-        updated.positiveEvidence[key] = PersistedAllowOffEvidence(
-          observedAt: observedAt
-        )
-      } else {
-        updated.positiveEvidence.removeValue(forKey: key)
-        updated.negativeEvidence[key] = PersistedAllowOffEvidence(
-          observedAt: observedAt
-        )
-      }
+      let candidate = AllowOffObservation(
+        allowsOff: allowsOff,
+        observedAt: observedAt
+      )
+      var observations = document.observations
+      guard shouldReplaceAllowOffObservation(
+        existing: observations[key],
+        with: candidate
+      )
+      else { return .unchanged }
+      observations[key] = candidate
+      let updated = PersistedAllowOffCache(
+        schemaVersion: document.schemaVersion,
+        salt: document.salt,
+        observations: observations
+      )
       return write(updated) ? .applied : .unavailable
     }
   }
@@ -266,8 +297,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     return PersistedAllowOffCache(
       schemaVersion: allowOffCacheSchemaVersion,
       salt: salt,
-      positiveEvidence: [:],
-      negativeEvidence: [:]
+      observations: [:]
     )
   }
 
@@ -288,8 +318,9 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   private func validate(_ document: PersistedAllowOffCache) -> Bool {
     guard document.schemaVersion == allowOffCacheSchemaVersion,
       document.salt.count == allowOffCacheSaltByteCount,
-      document.positiveEvidence.count + document.negativeEvidence.count
-        <= allowOffCacheMaximumEntryCount
+      Set(document.positiveEvidence.keys)
+        .union(document.negativeEvidence.keys)
+        .count <= allowOffCacheMaximumEntryCount
     else {
       return false
     }
@@ -305,11 +336,18 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     observedAt: Date,
     from document: PersistedAllowOffCache
   ) -> AllowOffCacheMutation {
-    guard let existing = document.positiveEvidence[key] else { return .unchanged }
-    guard existing.observedAt == observedAt else { return .unchanged }
+    guard let existing = document.observations[key],
+      existing.allowsOff,
+      existing.observedAt == observedAt
+    else { return .unchanged }
 
-    var updated = document
-    updated.positiveEvidence.removeValue(forKey: key)
+    var observations = document.observations
+    observations.removeValue(forKey: key)
+    let updated = PersistedAllowOffCache(
+      schemaVersion: document.schemaVersion,
+      salt: document.salt,
+      observations: observations
+    )
     if write(updated) { return .applied }
 
     // A failed invalidation must not leave stale positive evidence behind.
@@ -551,8 +589,7 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   private let ttl: TimeInterval
   private let now: () -> Date
   private let lock = NSLock()
-  private var positiveEvidence: [String: Date] = [:]
-  private var negativeEvidence: [String: Date] = [:]
+  private var observations: [String: AllowOffObservation] = [:]
 
   init?(
     salt: Data,
@@ -572,12 +609,11 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return .miss
     }
     lock.lock()
-    let observedAt = positiveEvidence[key]
-    let negativeObservedAt = negativeEvidence[key]
+    let observation = observations[key]
     lock.unlock()
-    guard let observedAt,
-      negativeObservedAt ?? .distantPast < observedAt,
-      let evidence = usableEvidence(observedAt: observedAt)
+    guard let observation,
+      observation.allowsOff,
+      let evidence = usableEvidence(observedAt: observation.observedAt)
     else { return .miss }
     return .hit(AllowOffCacheRecord(evidence: evidence, key: key))
   }
@@ -593,31 +629,27 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard observedAt.timeIntervalSince1970.isFinite else { return .unavailable }
     lock.lock()
     defer { lock.unlock() }
-    let existingPositive = positiveEvidence[key]
-    let existingNegative = negativeEvidence[key]
-    if allowsOff {
-      guard existingNegative ?? .distantPast < observedAt,
-        existingPositive ?? .distantPast <= observedAt
-      else { return .unchanged }
-      negativeEvidence.removeValue(forKey: key)
-      positiveEvidence[key] = observedAt
-    } else {
-      guard existingPositive ?? .distantPast <= observedAt,
-        existingNegative ?? .distantPast < observedAt
-      else { return .unchanged }
-      positiveEvidence.removeValue(forKey: key)
-      negativeEvidence[key] = observedAt
-    }
+    let candidate = AllowOffObservation(
+      allowsOff: allowsOff,
+      observedAt: observedAt
+    )
+    guard shouldReplaceAllowOffObservation(
+      existing: observations[key],
+      with: candidate
+    )
+    else { return .unchanged }
+    observations[key] = candidate
     return .applied
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
     lock.lock()
     defer { lock.unlock() }
-    guard let observedAt = positiveEvidence[record.key],
-      observedAt == record.evidence.observedAt
+    guard let observation = observations[record.key],
+      observation.allowsOff,
+      observation.observedAt == record.evidence.observedAt
     else { return .unchanged }
-    positiveEvidence.removeValue(forKey: record.key)
+    observations.removeValue(forKey: record.key)
     return .applied
   }
 
