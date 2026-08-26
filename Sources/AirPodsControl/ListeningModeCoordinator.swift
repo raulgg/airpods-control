@@ -22,12 +22,23 @@ protocol ListeningModeTransport: AnyObject {
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode>
+  func setListeningModeAndReadBack(
+    _ target: ListeningMode,
+    allowOff: Bool
+  ) -> DeviceWriteObservation<ListeningMode>
   func settle(for interval: TimeInterval)
 }
 
 extension ListeningModeTransport {
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
     .value(availableListeningModes())
+  }
+
+  func setListeningModeAndReadBack(
+    _ target: ListeningMode,
+    allowOff: Bool
+  ) -> DeviceWriteObservation<ListeningMode> {
+    setListeningModeAndReadBack(target)
   }
 }
 
@@ -401,9 +412,60 @@ struct ListeningModeSession {
   let transport: any ListeningModeTransport
   let availableModes: [ListeningMode]
   let currentMode: ListeningMode?
-  let canSet: Bool
+  let writePlan: ListeningModeWritePlan?
   let allowOffAuthorization: ListeningModeAllowOffAuthorization?
   let blocksCachedAllowOff: Bool
+
+  var cachedAllowOffEvidence: CachedAllowOffEvidence? {
+    allowOffAuthorization?.cachedEvidence
+  }
+}
+
+struct ListeningModeWritePlan {
+  private let transport: any ListeningModeTransport
+  private let availableModes: [ListeningMode]
+  private let allowOffAuthorization: ListeningModeAllowOffAuthorization?
+  private let authorizesHALOff: Bool
+
+  init(
+    transport: any ListeningModeTransport,
+    availableModes: [ListeningMode],
+    allowOffAuthorization: ListeningModeAllowOffAuthorization?
+  ) {
+    self.transport = transport
+    self.availableModes = availableModes
+    self.allowOffAuthorization = allowOffAuthorization
+    authorizesHALOff = transport.listeningModeTransportKind == .hal
+      && allowOffAuthorization != nil
+  }
+
+  func canWrite(_ target: ListeningMode) -> Bool {
+    availableModes.contains(target)
+  }
+
+  func execute(_ target: ListeningMode) -> ListeningModeWriteResolution {
+    precondition(canWrite(target), "write plan cannot execute an unavailable mode")
+    let observation = transport.setListeningModeAndReadBack(
+      target,
+      allowOff: authorizesHALOff
+    )
+    if target == .off,
+      authorizesHALOff,
+      allowOffAuthorization?.cachedEvidence != nil,
+      observation.setterAccepted,
+      let observed = observation.observed,
+      observed != .off
+    {
+      allowOffAuthorization?.invalidate()
+    }
+    return resolveListeningModeWrite(
+      requested: target,
+      setterAccepted: observation.setterAccepted,
+      observed: observation.observed,
+      transparencySupported: availableModes.contains(.transparency)
+        && !authorizesHALOff
+    )
+  }
 }
 
 enum ListeningModeResolution {
@@ -699,12 +761,22 @@ final class ListeningModeCoordinator {
       effectiveModes = availableModes
     }
 
+    let stateIsSafe = transport.listeningModeTransportKind == .av
+      || currentMode != nil
+    let writePlan = canSet && stateIsSafe
+      ? ListeningModeWritePlan(
+        transport: transport,
+        availableModes: effectiveModes,
+        allowOffAuthorization: allowOffAuthorization
+      )
+      : nil
+
     return ListeningModeSession(
       name: transport.name,
       transport: transport,
       availableModes: effectiveModes,
       currentMode: currentMode,
-      canSet: canSet,
+      writePlan: writePlan,
       allowOffAuthorization: allowOffAuthorization,
       blocksCachedAllowOff: freshAVBlocksCachedAllowOff
     )
@@ -777,19 +849,11 @@ final class ListeningModeCoordinator {
     case .list:
       return !session.availableModes.isEmpty
     case .set(let target):
-      let stateIsSafe =
-        session.transport.listeningModeTransportKind == .av
-        || session.currentMode != nil
-      return stateIsSafe
-        && session.availableModes.contains(target)
-        && session.canSet
+      return session.writePlan?.canWrite(target) == true
     case .cycle(let requested):
       let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
       let supported = base.filter { session.availableModes.contains($0) }
-      let stateIsSafe =
-        session.transport.listeningModeTransportKind == .av
-        || session.currentMode != nil
-      return stateIsSafe && supported.count >= 2 && session.canSet
+      return supported.count >= 2 && session.writePlan != nil
     }
   }
 }

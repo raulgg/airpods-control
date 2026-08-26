@@ -88,12 +88,8 @@ enum CommandExecution {
       )
 
     case .set(let target):
-      let stateIsSafe =
-        session.transport.listeningModeTransportKind == .av
-        || session.currentMode != nil
-      guard stateIsSafe,
-            session.availableModes.contains(target),
-            session.canSet
+      guard let writePlan = session.writePlan,
+            writePlan.canWrite(target)
       else {
         return unsupportedListeningModeOutcome(session: session)
       }
@@ -113,16 +109,14 @@ enum CommandExecution {
         target: target,
         successPlain: "ok",
         session: session,
+        writePlan: writePlan,
         logger: logger
       )
 
     case .cycle(let requested):
       let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
       let cycleModes = base.filter { session.availableModes.contains($0) }
-      let stateIsSafe =
-        session.transport.listeningModeTransportKind == .av
-        || session.currentMode != nil
-      guard stateIsSafe, cycleModes.count >= 2, session.canSet else {
+      guard cycleModes.count >= 2, let writePlan = session.writePlan else {
         return unsupportedListeningModeOutcome(session: session)
       }
 
@@ -133,6 +127,7 @@ enum CommandExecution {
         target: target,
         successPlain: target.rawValue,
         session: session,
+        writePlan: writePlan,
         logger: logger
       )
     }
@@ -290,36 +285,10 @@ enum CommandExecution {
     target: ListeningMode,
     successPlain: String,
     session: ListeningModeSession,
+    writePlan: ListeningModeWritePlan,
     logger: DebugLogger
   ) -> CommandOutcome {
-    let observation: DeviceWriteObservation<ListeningMode>
-    if let hal = session.transport as? HALListeningModeTransport {
-      observation = hal.setListeningModeAndReadBack(
-        target,
-        allowOff: session.allowOffAuthorization != nil
-      )
-    } else {
-      observation = session.transport.setListeningModeAndReadBack(target)
-    }
-    if target == .off,
-      session.transport.listeningModeTransportKind == .hal,
-      session.allowOffAuthorization?.cachedEvidence != nil,
-      observation.setterAccepted,
-      let observed = observation.observed,
-      observed != .off
-    {
-      session.allowOffAuthorization?.invalidate()
-    }
-    let allowsInferredOffFallback =
-      !(session.transport.listeningModeTransportKind == .hal
-        && session.allowOffAuthorization != nil)
-    let resolution = resolveListeningModeWrite(
-      requested: target,
-      setterAccepted: observation.setterAccepted,
-      observed: observation.observed,
-      transparencySupported: session.availableModes.contains(.transparency)
-        && allowsInferredOffFallback
-    )
+    let resolution = writePlan.execute(target)
     if resolution.inferredOffFallback {
       logger.debug("verify.listening_mode.inferred_off_fallback", true)
     }
@@ -406,7 +375,7 @@ enum CommandExecution {
     adding extra: [String: Any] = [:]
   ) -> [String: Any] {
     var result = extra
-    guard let evidence = session.allowOffAuthorization?.cachedEvidence else {
+    guard let evidence = session.cachedAllowOffEvidence else {
       return result
     }
     let formatter = ISO8601DateFormatter()

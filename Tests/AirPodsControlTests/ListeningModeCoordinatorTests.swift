@@ -9,10 +9,12 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
   var settable: Bool
   var appliesWrites: Bool
   var availabilityObservation: ListeningModeAvailabilityObservation?
+  var dropsWriteReadback = false
   private(set) var readModesCount = 0
   private(set) var readCurrentCount = 0
   private(set) var canSetCount = 0
   private(set) var setterTargets: [ListeningMode] = []
+  private(set) var allowOffWrites: [Bool] = []
 
   init(
     name: String,
@@ -53,9 +55,26 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode> {
+    applyWrite(target)
+  }
+
+  func setListeningModeAndReadBack(
+    _ target: ListeningMode,
+    allowOff: Bool
+  ) -> DeviceWriteObservation<ListeningMode> {
+    allowOffWrites.append(allowOff)
+    return applyWrite(target)
+  }
+
+  private func applyWrite(
+    _ target: ListeningMode
+  ) -> DeviceWriteObservation<ListeningMode> {
     setterTargets.append(target)
     if appliesWrites { current = target }
-    return DeviceWriteObservation(setterAccepted: settable, observed: current)
+    return DeviceWriteObservation(
+      setterAccepted: settable,
+      observed: dropsWriteReadback ? nil : current
+    )
   }
 
   func settle(for interval: TimeInterval) {}
@@ -805,6 +824,60 @@ func testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly() {
   check(backend.writtenValues == [1], "explicit Off cycle writes raw mode one")
 }
 
+func testListeningModeWritePlanOwnsHALAllowOffPolicy() {
+  let clock = Date(timeIntervalSince1970: 2_000_000_150)
+  let backend = FakeHALRoutingBackend()
+  let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  let hal = FakeListeningModeTransport(
+    name: "Planned AirPods",
+    kind: .hal,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation
+  )
+  let halCandidate = candidate(
+    name: "Planned AirPods",
+    hal: hal,
+    route: .notSelected,
+    allowOffCorrelation: fixture.correlation
+  )
+
+  let accepted = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [halCandidate]
+  )
+  check(accepted.plain == "ok", "the write plan authorizes HAL Off")
+  check(
+    hal.allowOffWrites == [true],
+    "HAL authorization reaches a non-concrete transport without an executor cast"
+  )
+
+  hal.current = .noiseCancellation
+  hal.appliesWrites = false
+  hal.dropsWriteReadback = true
+  let unknownReadback = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [halCandidate]
+  )
+  check(unknownReadback.plain == "no-op", "authorized HAL Off needs a verified readback")
+  check(
+    unknownReadback.payload["listeningMode"] is NSNull,
+    "authorized HAL Off never invents a Transparency fallback"
+  )
+
+  let av = FakeListeningModeTransport(
+    name: "Planned AirPods",
+    kind: .av,
+    current: .noiseCancellation
+  )
+  let avOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [candidate(name: "Planned AirPods", av: av, route: .selected)]
+  )
+  check(avOutcome.plain == "ok", "live AV Off remains writable")
+  check(av.allowOffWrites == [false], "AV writes do not consume HAL authorization")
+}
+
 func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
   let clock = Date(timeIntervalSince1970: 2_000_000_200)
   let backend = FakeHALRoutingBackend()
@@ -1081,6 +1154,7 @@ func runListeningModeCoordinatorTests() {
   testHALListeningModeTranslationAndOffLimitation()
   testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata()
   testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly()
+  testListeningModeWritePlanOwnsHALAllowOffPolicy()
   testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence()
   testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity()
 }
