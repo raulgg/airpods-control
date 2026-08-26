@@ -35,7 +35,6 @@ private func allowOffCacheFixture(
   )
   return (cache, correlation, transport)
 }
-
 func testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata() {
   var clock = Date(timeIntervalSince1970: 2_000_000_000)
   let backend = FakeHALRoutingBackend()
