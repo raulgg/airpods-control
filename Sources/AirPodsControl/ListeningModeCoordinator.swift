@@ -296,23 +296,21 @@ final class ListeningModeCoordinator {
       }
     } else if let requestedName {
       let halMatches = matching(requestedName, in: halCandidates)
-      if halMatches.count > 1 {
-        logger.warning("device_selection", "ambiguous-device-name")
-        return .ambiguousDevice
-      }
-      if let halMatch = halMatches.first {
-        selectedCandidate = attachUniqueActiveAV(to: halMatch)
-      } else {
-        let avMatches = matching(requestedName, in: avCandidates)
-        guard avMatches.count == 1, let avMatch = avMatches.first else {
-          logger.warning(
-            "device_selection",
-            avMatches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
-          )
-          return avMatches.isEmpty ? .noDevice : .ambiguousDevice
+        .map(attachUniqueActiveAV)
+      let avMatches = matching(requestedName, in: avCandidates).filter { avCandidate in
+        !halMatches.contains { halCandidate in
+          representsJoinedAVTarget(avCandidate, in: halCandidate)
         }
-        selectedCandidate = avMatch
       }
+      let matchCount = halMatches.count + avMatches.count
+      guard matchCount == 1 else {
+        logger.warning(
+          "device_selection",
+          matchCount == 0 ? "no-exact-name-match" : "ambiguous-device-name"
+        )
+        return matchCount == 0 ? .noDevice : .ambiguousDevice
+      }
+      selectedCandidate = halMatches.first ?? avMatches[0]
     } else {
       let selectedHALCandidates = halCandidates.filter { $0.route == .selected }
       if selectedHALCandidates.count == 1, let selected = selectedHALCandidates.first {
@@ -380,6 +378,29 @@ final class ListeningModeCoordinator {
       route: candidate.route,
       avJoinEvidence: .matched
     )
+  }
+
+  private func representsJoinedAVTarget(
+    _ avCandidate: ListeningModeCandidate,
+    in halCandidate: ListeningModeCandidate
+  ) -> Bool {
+    guard halCandidate.avJoinEvidence == .matched,
+          let avTransport = avCandidate.avTransport,
+          let joinedTransport = halCandidate.avTransport
+    else { return false }
+    if avTransport === joinedTransport { return true }
+
+    guard let avDevice = avTransport as? PrivateAudioDevice,
+          let joinedDevice = joinedTransport as? PrivateAudioDevice
+    else { return false }
+    if avDevice.object === joinedDevice.object { return true }
+
+    guard let avIdentifier = PrivateAudioDiscovery.deviceIdentifier(for: avDevice.object),
+          let joinedIdentifier = PrivateAudioDiscovery.deviceIdentifier(
+            for: joinedDevice.object
+          )
+    else { return false }
+    return avIdentifier == joinedIdentifier
   }
 
   private func selectTransport(

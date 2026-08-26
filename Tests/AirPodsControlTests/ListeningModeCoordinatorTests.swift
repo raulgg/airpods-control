@@ -398,7 +398,7 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
     check(false, "a shared AV/HAL name identifies one selected logical target")
   }
 
-  let pluralRaw = FakeRawDevice(name: "Desk AirPods")
+  let pluralRaw = FakeRawDevice(name: "Nearby AirPods")
   let pluralAV = PrivateAudioDevice.compatible(
     object: pluralRaw,
     sources: [.contextPlural],
@@ -421,11 +421,29 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
   if case .session(let session) = namedUnselected {
     check(
       session.transport.listeningModeTransportKind == .hal,
-      "an unselected HAL target never name-joins a leftover AV endpoint"
+      "an unselected HAL target remains reachable beside a differently named AV target"
     )
   } else {
     check(false, "the unique unselected HAL name resolves without ambiguity")
   }
+
+  let independentAV = FakeListeningModeTransport(
+    name: "Desk AirPods",
+    kind: .av
+  )
+  let sameName = coordinatorOutcome(
+    ["--device", "Desk AirPods", "lm", "set", "adaptive"],
+    candidates: [
+      candidate(name: "Desk AirPods", av: independentAV, route: .unknown),
+      candidate(name: "Desk AirPods", hal: unselectedHAL, route: .notSelected),
+    ]
+  )
+  check(
+    sameName.plain == "ambiguous-device",
+    "independent AV and HAL targets with the same name stay ambiguous"
+  )
+  check(independentAV.setterTargets.isEmpty, "ambiguous AV target is not written")
+  check(unselectedHAL.setterTargets.isEmpty, "ambiguous HAL target is not written")
 
   let otherRaw = FakeRawDevice(name: "Travel AirPods")
   let otherAV = PrivateAudioDevice.compatible(
@@ -485,7 +503,7 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
     chooseAmbiguous: { _ in .unavailable }
   )
   if case .session(let session) = avOnly {
-    check(session.name == "Desk AirPods", "HAL absence preserves first-AV selection")
+    check(session.name == "Nearby AirPods", "HAL absence preserves first-AV selection")
   } else {
     check(false, "HAL absence keeps legacy AV-only selection")
   }
