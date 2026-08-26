@@ -209,163 +209,6 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
   }
 }
 
-final class ListeningModeAllowOffAuthorization {
-  let cachedEvidence: CachedAllowOffEvidence?
-
-  private let cache: (any ListeningModeAllowOffCaching)?
-  private let record: AllowOffCacheRecord?
-
-  private init(
-    cachedEvidence: CachedAllowOffEvidence?,
-    cache: (any ListeningModeAllowOffCaching)?,
-    record: AllowOffCacheRecord?
-  ) {
-    self.cachedEvidence = cachedEvidence
-    self.cache = cache
-    self.record = record
-  }
-
-  static func live(
-    cache: (any ListeningModeAllowOffCaching)?,
-    record: AllowOffCacheRecord?
-  ) -> ListeningModeAllowOffAuthorization {
-    ListeningModeAllowOffAuthorization(
-      cachedEvidence: nil,
-      cache: cache,
-      record: record
-    )
-  }
-
-  static func cached(
-    cache: any ListeningModeAllowOffCaching,
-    record: AllowOffCacheRecord
-  ) -> ListeningModeAllowOffAuthorization {
-    ListeningModeAllowOffAuthorization(
-      cachedEvidence: record.evidence,
-      cache: cache,
-      record: record
-    )
-  }
-
-  func invalidate() {
-    guard let cache, let record else { return }
-    _ = cache.remove(record: record)
-  }
-}
-
-final class ListeningModeAllowOffCorrelation {
-  private let targetAudioDeviceID: AudioDeviceID
-  private let collisionAudioDeviceIDs: [AudioDeviceID]
-  private let backend: any AudioRoutingBackend
-  private let cache: any ListeningModeAllowOffCaching
-  private let logger: DebugLogger
-  private let now: () -> Date
-
-  init(
-    targetAudioDeviceID: AudioDeviceID,
-    collisionAudioDeviceIDs: [AudioDeviceID],
-    backend: any AudioRoutingBackend,
-    cache: any ListeningModeAllowOffCaching,
-    logger: DebugLogger,
-    now: @escaping () -> Date = Date.init
-  ) {
-    self.targetAudioDeviceID = targetAudioDeviceID
-    self.collisionAudioDeviceIDs = Array(Set(collisionAudioDeviceIDs)).sorted()
-    self.backend = backend
-    self.cache = cache
-    self.logger = logger
-    self.now = now
-  }
-
-  func captureObservationTime() -> Date {
-    now()
-  }
-
-  func observeAvailability(
-    _ observation: ListeningModeAvailabilityObservation,
-    observedAt: Date
-  ) -> ListeningModeAllowOffAuthorization? {
-    switch observation {
-    case .unavailable:
-      return nil
-    case .value(let modes) where modes.contains(.off):
-      var storedRecord: AllowOffCacheRecord?
-      var mutation: AllowOffCacheMutation = .unavailable
-      withUnambiguousRawUID { rawDeviceUID in
-        mutation = cache.applyObservation(
-          rawDeviceUID: rawDeviceUID,
-          allowsOff: true,
-          observedAt: observedAt
-        )
-        if case .hit(let record) = cache.lookup(rawDeviceUID: rawDeviceUID) {
-          storedRecord = record
-        }
-      }
-      if mutation == .unchanged, storedRecord == nil {
-        return nil
-      }
-      // Fresh AV evidence can authorize this invocation even when the
-      // disposable cache cannot be correlated or written.
-      return .live(cache: storedRecord == nil ? nil : cache, record: storedRecord)
-    case .value:
-      withUnambiguousRawUID { rawDeviceUID in
-        _ = cache.applyObservation(
-          rawDeviceUID: rawDeviceUID,
-          allowsOff: false,
-          observedAt: observedAt
-        )
-      }
-      return nil
-    }
-  }
-
-  func observeCurrentOff(observedAt: Date) {
-    withUnambiguousRawUID { rawDeviceUID in
-      _ = cache.applyObservation(
-        rawDeviceUID: rawDeviceUID,
-        allowsOff: true,
-        observedAt: observedAt
-      )
-    }
-  }
-
-  func cachedAuthorization() -> ListeningModeAllowOffAuthorization? {
-    var record: AllowOffCacheRecord?
-    withUnambiguousRawUID { rawDeviceUID in
-      if case .hit(let value) = cache.lookup(rawDeviceUID: rawDeviceUID) {
-        record = value
-      }
-    }
-    guard let record else {
-      logger.debug("allow_off_cache", "miss")
-      return nil
-    }
-    logger.debug("allow_off_cache", "hit")
-    let age = max(0, min(604_800, Int(now().timeIntervalSince(record.evidence.observedAt))))
-    logger.debug("allow_off_cache.age_seconds", age)
-    return .cached(cache: cache, record: record)
-  }
-
-  private func withUnambiguousRawUID(_ body: (String) -> Void) {
-    guard collisionAudioDeviceIDs.contains(targetAudioDeviceID),
-      !collisionAudioDeviceIDs.isEmpty
-    else { return }
-
-    var values: [(AudioDeviceID, String)] = []
-    for audioDeviceID in collisionAudioDeviceIDs {
-      guard case .value(.some(let rawUID)) = backend.readDeviceUID(for: audioDeviceID),
-        !rawUID.isEmpty,
-        rawUID.utf8.count <= 4_096
-      else { return }
-      values.append((audioDeviceID, rawUID))
-    }
-    guard let targetUID = values.first(where: { $0.0 == targetAudioDeviceID })?.1,
-      values.filter({ $0.1 == targetUID }).count == 1
-    else { return }
-    body(targetUID)
-  }
-}
-
 enum ListeningModeCandidateRoute: Equatable {
   case selected
   case notSelected
@@ -441,64 +284,6 @@ struct ListeningModeSession {
 
   var cachedAllowOffEvidence: CachedAllowOffEvidence? {
     allowOffAuthorization?.cachedEvidence
-  }
-}
-
-struct ListeningModeWritePlan {
-  private let transport: any ListeningModeTransport
-  private let availableModes: [ListeningMode]
-  private let allowOffAuthorization: ListeningModeAllowOffAuthorization?
-  private let authorizesHALOff: Bool
-
-  init(
-    transport: any ListeningModeTransport,
-    availableModes: [ListeningMode],
-    allowOffAuthorization: ListeningModeAllowOffAuthorization?
-  ) {
-    self.transport = transport
-    self.availableModes = availableModes
-    self.allowOffAuthorization = allowOffAuthorization
-    authorizesHALOff = transport.listeningModeTransportKind == .hal
-      && allowOffAuthorization != nil
-  }
-
-  func canWrite(_ target: ListeningMode) -> Bool {
-    availableModes.contains(target)
-  }
-
-  func execute(_ target: ListeningMode) -> ListeningModeWriteResolution {
-    precondition(canWrite(target), "write plan cannot execute an unavailable mode")
-    let observation: DeviceWriteObservation<ListeningMode>
-    if target == .off, authorizesHALOff {
-      guard let allowOffTransport = transport as? any ListeningModeAllowOffTransport
-      else {
-        return resolveListeningModeWrite(
-          requested: target,
-          setterAccepted: false,
-          observed: transport.currentListeningMode(),
-          transparencySupported: false
-        )
-      }
-      observation = allowOffTransport.setListeningModeAndReadBackAllowingOff(target)
-    } else {
-      observation = transport.setListeningModeAndReadBack(target)
-    }
-    if target == .off,
-      authorizesHALOff,
-      allowOffAuthorization?.cachedEvidence != nil,
-      observation.setterAccepted,
-      let observed = observation.observed,
-      observed != .off
-    {
-      allowOffAuthorization?.invalidate()
-    }
-    return resolveListeningModeWrite(
-      requested: target,
-      setterAccepted: observation.setterAccepted,
-      observed: observation.observed,
-      transparencySupported: availableModes.contains(.transparency)
-        && !authorizesHALOff
-    )
   }
 }
 
@@ -752,50 +537,26 @@ final class ListeningModeCoordinator {
       if currentMode == .off, let correlation, let currentObservedAt {
         correlation.observeCurrentOff(observedAt: currentObservedAt)
       }
-    case .list:
-      let availabilityObservedAt = transport.listeningModeTransportKind == .av
-        ? correlation?.captureObservationTime()
-        : nil
-      currentMode = transport.currentListeningMode()
-      let availability = transport.listeningModeAvailabilityObservation()
-      availableModes = normalizedModes(from: availability)
-      freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
-        availability,
-        transport: transport,
-        command: command
-      )
-      allowOffAuthorization = applyAllowOffPolicy(
-        to: availability,
-        transport: transport,
+    case .list, .set, .cycle:
+      let preflight = availabilityPreflight(
+        for: transport,
         command: command,
         correlation: correlation,
         liveAllowOffAuthorization: liveAllowOffAuthorization,
-        blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
-        observedAt: availabilityObservedAt
+        blocksCachedAllowOff: blocksCachedAllowOff
       )
-      canSet = false
-    case .set, .cycle:
-      let availabilityObservedAt = transport.listeningModeTransportKind == .av
-        ? correlation?.captureObservationTime()
-        : nil
-      currentMode = transport.currentListeningMode()
-      let availability = transport.listeningModeAvailabilityObservation()
-      availableModes = normalizedModes(from: availability)
-      freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
-        availability,
-        transport: transport,
-        command: command
-      )
-      allowOffAuthorization = applyAllowOffPolicy(
-        to: availability,
-        transport: transport,
-        command: command,
-        correlation: correlation,
-        liveAllowOffAuthorization: liveAllowOffAuthorization,
-        blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
-        observedAt: availabilityObservedAt
-      )
-      canSet = transport.canSetListeningMode()
+      currentMode = preflight.currentMode
+      availableModes = preflight.availableModes
+      allowOffAuthorization = preflight.allowOffAuthorization
+      freshAVBlocksCachedAllowOff = preflight.blocksCachedAllowOff
+      switch command {
+      case .list:
+        canSet = false
+      case .set, .cycle:
+        canSet = transport.canSetListeningMode()
+      case .get:
+        canSet = false
+      }
     }
 
     let effectiveModes: [ListeningMode]
@@ -822,6 +583,48 @@ final class ListeningModeCoordinator {
       availableModes: effectiveModes,
       currentMode: currentMode,
       writePlan: writePlan,
+      allowOffAuthorization: allowOffAuthorization,
+      blocksCachedAllowOff: freshAVBlocksCachedAllowOff
+    )
+  }
+
+  private struct ListeningModeAvailabilityPreflight {
+    let currentMode: ListeningMode?
+    let availableModes: [ListeningMode]
+    let allowOffAuthorization: ListeningModeAllowOffAuthorization?
+    let blocksCachedAllowOff: Bool
+  }
+
+  private func availabilityPreflight(
+    for transport: any ListeningModeTransport,
+    command: ListeningModeCommand,
+    correlation: ListeningModeAllowOffCorrelation?,
+    liveAllowOffAuthorization: ListeningModeAllowOffAuthorization?,
+    blocksCachedAllowOff: Bool
+  ) -> ListeningModeAvailabilityPreflight {
+    let observedAt = transport.listeningModeTransportKind == .av
+      ? correlation?.captureObservationTime()
+      : nil
+    let currentMode = transport.currentListeningMode()
+    let availability = transport.listeningModeAvailabilityObservation()
+    let availableModes = normalizedModes(from: availability)
+    let freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
+      availability,
+      transport: transport,
+      command: command
+    )
+    let allowOffAuthorization = applyAllowOffPolicy(
+      to: availability,
+      transport: transport,
+      command: command,
+      correlation: correlation,
+      liveAllowOffAuthorization: liveAllowOffAuthorization,
+      blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
+      observedAt: observedAt
+    )
+    return ListeningModeAvailabilityPreflight(
+      currentMode: currentMode,
+      availableModes: availableModes,
       allowOffAuthorization: allowOffAuthorization,
       blocksCachedAllowOff: freshAVBlocksCachedAllowOff
     )
