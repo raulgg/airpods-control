@@ -608,6 +608,72 @@ func testListeningModeAllowOffStalePositiveAuthorization() {
   )
 }
 
+func testInMemoryAllowOffCachePreservesObservationOrdering() {
+  let positiveObservedAt = Date(timeIntervalSince1970: 2_050_000_000)
+  var current = positiveObservedAt
+  guard let cache = InMemoryListeningModeAllowOffCache(
+    salt: Data(repeating: 0xD8, count: 32),
+    now: { current }
+  ) else {
+    check(false, "in-memory ordering test accepts a valid salt")
+    return
+  }
+
+  check(
+    cache.applyObservation(
+      rawDeviceUID: "equal-timestamp-uid",
+      allowsOff: true,
+      observedAt: positiveObservedAt
+    ) == .applied,
+    "in-memory cache stores the first positive observation"
+  )
+  check(
+    cache.applyObservation(
+      rawDeviceUID: "equal-timestamp-uid",
+      allowsOff: true,
+      observedAt: positiveObservedAt
+    ) == .unchanged,
+    "equal positive observations are unchanged"
+  )
+  check(
+    cache.applyObservation(
+      rawDeviceUID: "equal-timestamp-uid",
+      allowsOff: false,
+      observedAt: positiveObservedAt
+    ) == .applied,
+    "equal negative observations replace positive evidence"
+  )
+  check(
+    cache.lookup(rawDeviceUID: "equal-timestamp-uid") == .miss,
+    "equal negative evidence blocks the positive lookup"
+  )
+
+  let rollbackUID = "rollback-uid"
+  check(
+    cache.applyObservation(
+      rawDeviceUID: rollbackUID,
+      allowsOff: true,
+      observedAt: positiveObservedAt
+    ) == .applied,
+    "in-memory rollback test stores positive evidence"
+  )
+  let rolledBack = positiveObservedAt.addingTimeInterval(-60)
+  current = rolledBack
+  check(
+    cache.applyObservation(
+      rawDeviceUID: rollbackUID,
+      allowsOff: false,
+      observedAt: rolledBack
+    ) == .applied,
+    "in-memory cache records a fresh rollback negative"
+  )
+  current = positiveObservedAt
+  check(
+    cache.lookup(rawDeviceUID: rollbackUID) == .miss,
+    "in-memory cache cannot resurrect rollback-superseded evidence"
+  )
+}
+
 func testListeningModeCoordinatorOrdersDelayedAVObservations() {
   let cache = InMemoryListeningModeAllowOffCache(
     salt: Data(repeating: 0xE1, count: 32)

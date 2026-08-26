@@ -55,16 +55,20 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     let existingNegative = negativeEvidence[key]
     if allowsOff {
       guard existingNegative ?? .distantPast < observedAt,
-        existingPositive ?? .distantPast <= observedAt
+        existingPositive ?? .distantPast < observedAt
       else { return .unchanged }
       negativeEvidence.removeValue(forKey: key)
       positiveEvidence[key] = observedAt
     } else {
-      guard existingPositive ?? .distantPast <= observedAt,
-        existingNegative ?? .distantPast < observedAt
+      let effectiveObservedAt = effectiveNegativeObservedAt(
+        observedAt: observedAt,
+        existingPositive: existingPositive
+      )
+      guard existingPositive ?? .distantPast <= effectiveObservedAt,
+        existingNegative ?? .distantPast < effectiveObservedAt
       else { return .unchanged }
       positiveEvidence.removeValue(forKey: key)
-      negativeEvidence[key] = observedAt
+      negativeEvidence[key] = effectiveObservedAt
     }
     return .applied
   }
@@ -77,6 +81,20 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     else { return .unchanged }
     positiveEvidence.removeValue(forKey: record.key)
     return .applied
+  }
+
+  private func effectiveNegativeObservedAt(
+    observedAt: Date,
+    existingPositive: Date?
+  ) -> Date {
+    guard let existingPositive else { return observedAt }
+    let current = now()
+    guard current.timeIntervalSince1970.isFinite,
+      current >= existingPositive
+    else {
+      return existingPositive
+    }
+    return observedAt
   }
 
   private func usableEvidence(observedAt: Date) -> CachedAllowOffEvidence? {
