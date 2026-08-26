@@ -731,21 +731,20 @@ final class ListeningModeCoordinator {
     switch command {
     case .get:
       availableModes = []
+      let currentObservedAt = transport.listeningModeTransportKind == .av
+        ? correlation?.captureObservationTime()
+        : nil
       currentMode = transport.currentListeningMode()
       canSet = false
-      if transport.listeningModeTransportKind == .av, currentMode == .off {
-        if let correlation {
-          correlation.observeCurrentOff(
-            observedAt: correlation.captureObservationTime()
-          )
-        }
+      if currentMode == .off, let correlation, let currentObservedAt {
+        correlation.observeCurrentOff(observedAt: currentObservedAt)
       }
     case .list:
-      currentMode = transport.currentListeningMode()
-      let availability = transport.listeningModeAvailabilityObservation()
       let availabilityObservedAt = transport.listeningModeTransportKind == .av
         ? correlation?.captureObservationTime()
         : nil
+      currentMode = transport.currentListeningMode()
+      let availability = transport.listeningModeAvailabilityObservation()
       availableModes = normalizedModes(from: availability)
       freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
         availability,
@@ -763,11 +762,11 @@ final class ListeningModeCoordinator {
       )
       canSet = false
     case .set, .cycle:
-      currentMode = transport.currentListeningMode()
-      let availability = transport.listeningModeAvailabilityObservation()
       let availabilityObservedAt = transport.listeningModeTransportKind == .av
         ? correlation?.captureObservationTime()
         : nil
+      currentMode = transport.currentListeningMode()
+      let availability = transport.listeningModeAvailabilityObservation()
       availableModes = normalizedModes(from: availability)
       freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
         availability,

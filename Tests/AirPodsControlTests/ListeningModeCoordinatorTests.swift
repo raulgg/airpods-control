@@ -1,4 +1,5 @@
 import CoreAudio
+import Dispatch
 import Foundation
 
 private final class FakeListeningModeTransport: ListeningModeTransport {
@@ -9,6 +10,7 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
   var settable: Bool
   var appliesWrites: Bool
   var availabilityObservation: ListeningModeAvailabilityObservation?
+  var onAvailabilityRead: (() -> Void)?
   var dropsWriteReadback = false
   private(set) var readModesCount = 0
   private(set) var readCurrentCount = 0
@@ -39,6 +41,7 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
 
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
     readModesCount += 1
+    onAvailabilityRead?()
     return availabilityObservation ?? .value(modes)
   }
 
@@ -1258,6 +1261,129 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
   )
 }
 
+func testListeningModeCoordinatorOrdersDelayedAVObservations() {
+  let cache = InMemoryListeningModeAllowOffCache(
+    salt: Data(repeating: 0xE1, count: 32)
+  )!
+  let oldReadStarted = DispatchSemaphore(value: 0)
+  let releaseOldRead = DispatchSemaphore(value: 0)
+
+  let oldBackend = FakeHALRoutingBackend()
+  oldBackend.deviceUIDs[80] = .value("uid-80")
+  let oldCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 80,
+    collisionAudioDeviceIDs: [80],
+    backend: oldBackend,
+    cache: cache,
+    logger: DebugLogger(enabled: false),
+    now: { Date(timeIntervalSince1970: 2_000_000_400) }
+  )
+  let oldAV = FakeListeningModeTransport(
+    name: "Delayed AirPods",
+    kind: .av,
+    modes: ListeningMode.allCases
+  )
+  oldAV.onAvailabilityRead = {
+    oldReadStarted.signal()
+    _ = releaseOldRead.wait(timeout: .now() + 2)
+  }
+  let oldWork = DispatchWorkItem {
+    _ = coordinatorOutcome(
+      ["lm", "list"],
+      candidates: [
+        candidate(
+          name: "Delayed AirPods",
+          av: oldAV,
+          route: .selected,
+          allowOffCorrelation: oldCorrelation
+        )
+      ]
+    )
+  }
+  DispatchQueue.global().async(execute: oldWork)
+  let oldStarted = oldReadStarted.wait(timeout: .now() + 2) == .success
+  check(oldStarted, "the older AV read reaches its controlled pause")
+
+  let newBackend = FakeHALRoutingBackend()
+  newBackend.deviceUIDs[80] = .value("uid-80")
+  let newCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 80,
+    collisionAudioDeviceIDs: [80],
+    backend: newBackend,
+    cache: cache,
+    logger: DebugLogger(enabled: false),
+    now: { Date(timeIntervalSince1970: 2_000_000_500) }
+  )
+  let newAV = FakeListeningModeTransport(
+    name: "Delayed AirPods",
+    kind: .av,
+    modes: [.transparency, .adaptive, .noiseCancellation]
+  )
+  let newOutcome = coordinatorOutcome(
+    ["lm", "list"],
+    candidates: [
+      candidate(
+        name: "Delayed AirPods",
+        av: newAV,
+        route: .selected,
+        allowOffCorrelation: newCorrelation
+      )
+    ]
+  )
+  check(
+    newOutcome.plain == "transparency,adaptive,noise-cancellation",
+    "the newer negative AV observation completes while the older read is paused"
+  )
+
+  releaseOldRead.signal()
+  check(
+    oldWork.wait(timeout: .now() + 2) == .success,
+    "the older AV observation completes after the newer one"
+  )
+  if case .miss = cache.lookup(rawDeviceUID: "uid-80") {
+    check(true, "an older positive AV observation cannot replace a newer tombstone")
+  } else {
+    check(false, "an older positive AV observation cannot replace a newer tombstone")
+  }
+
+  let halBackend = FakeHALRoutingBackend()
+  halBackend.rawModeRead = .value(2)
+  halBackend.deviceUIDs[80] = .value("uid-80")
+  let halCorrelation = ListeningModeAllowOffCorrelation(
+    targetAudioDeviceID: 80,
+    collisionAudioDeviceIDs: [80],
+    backend: halBackend,
+    cache: cache,
+    logger: DebugLogger(enabled: false),
+    now: { Date(timeIntervalSince1970: 2_000_000_500) }
+  )
+  let hal = HALListeningModeTransport(
+    name: "Delayed AirPods",
+    audioDeviceID: 80,
+    bluetoothDevice: NSObject(),
+    backend: halBackend,
+    logger: DebugLogger(enabled: false),
+    wait: { _ in }
+  )
+  let offOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [
+      ListeningModeCandidate(
+        displayName: "Delayed AirPods",
+        selectableNames: ["Delayed AirPods"],
+        avTransport: nil,
+        halTransport: hal,
+        route: .notSelected,
+        allowOffCorrelation: halCorrelation
+      )
+    ]
+  )
+  check(
+    offOutcome.plain == "unsupported" && halBackend.writtenValues.isEmpty,
+    "the newer negative tombstone blocks a later HAL Off write"
+  )
+}
+
 func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorRouteAndPreflightSelection()
   testListeningModeCoordinatorPreservesAVUnknownStateWrites()
@@ -1272,4 +1398,5 @@ func runListeningModeCoordinatorTests() {
   testListeningModeWritePlanOwnsHALAllowOffPolicy()
   testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence()
   testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity()
+  testListeningModeCoordinatorOrdersDelayedAVObservations()
 }
