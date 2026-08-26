@@ -215,9 +215,71 @@ func testListeningModeControlCandidateJoinsOnlyExactActiveEndpoint() {
   )
 }
 
+func testListeningModeControlRejectsSingularAVFallbackAfterProbeMismatch() {
+  let bluetoothDevice = EqualBluetoothObject(identity: 506)
+  let backend = FakeAudioRoutingBackend()
+  backend.outputDefaults = [.value(78), .value(78)]
+  backend.inputDefaults = [.value(nil), .value(nil)]
+  backend.listeningModeSupport[78] = .value(0b111)
+  backend.listeningModeSettable[78] = .value(true)
+  backend.listeningModeWriteResult = .success
+
+  let unrelatedRawAVDevice = FakeRawDevice(name: "Unrelated AirPods")
+  let mismatchedProbe = FakeActiveAudioEndpointProbe(
+    .value(
+      ActiveAudioEndpointBinding(
+        audioDeviceID: 999,
+        endpoint: unrelatedRawAVDevice
+      )
+    )
+  )
+  let (controller, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 78,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Selected AirPods"),
+        appleAudioDevice: .value(true),
+        listeningMode: .value(3)
+      )
+    ],
+    backend: backend,
+    activeProbe: mismatchedProbe,
+    readStatusListeningMode: false
+  )
+  let unrelatedAV = PrivateAudioDevice.compatible(
+    object: unrelatedRawAVDevice,
+    sources: [.contextSingular],
+    index: 0,
+    logger: DebugLogger(enabled: false)
+  )!
+  let coordinator = ListeningModeCoordinator(
+    avDevices: [unrelatedAV],
+    halCandidates: controller.listeningModeCandidates(),
+    logger: DebugLogger(enabled: false)
+  )
+  let invocation = try! parseInvocation(["lm", "set", "adaptive"])
+  _ = CommandExecution.executeListeningMode(
+    invocation,
+    resolveSession: { command, name, _ in
+      coordinator.resolve(
+        command: command,
+        named: name,
+        chooseAmbiguous: { _ in .unavailable }
+      )
+    }
+  )
+
+  check(
+    unrelatedRawAVDevice.listeningModeSetCount == 0,
+    "a mismatched enrichment probe never writes through the singular AV endpoint"
+  )
+}
+
 func runHALListeningModeCandidateTests() {
   testListeningModeControlCandidatesReuseMappedOutputInventory()
   testListeningModeControlTargetsTheEndpointThatExposesLstm()
   testListeningModeControlInventoryDefersHALStateReads()
   testListeningModeControlCandidateJoinsOnlyExactActiveEndpoint()
+  testListeningModeControlRejectsSingularAVFallbackAfterProbeMismatch()
 }

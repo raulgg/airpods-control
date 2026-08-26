@@ -201,19 +201,23 @@ struct ListeningModeCandidate {
   let avTransport: (any ListeningModeTransport)?
   let halTransport: (any ListeningModeTransport)?
   let route: ListeningModeCandidateRoute
+  let avJoinEvidence: ActiveFeatureEndpointJoinEvidence
 
   init(
     displayName: String,
     selectableNames: [String],
     avTransport: (any ListeningModeTransport)?,
     halTransport: (any ListeningModeTransport)?,
-    route: ListeningModeCandidateRoute
+    route: ListeningModeCandidateRoute,
+    avJoinEvidence: ActiveFeatureEndpointJoinEvidence? = nil
   ) {
     self.displayName = displayName
     self.selectableNames = selectableNames
     self.avTransport = avTransport
     self.halTransport = halTransport
     self.route = route
+    self.avJoinEvidence = avJoinEvidence
+      ?? (avTransport == nil ? .unavailable : .matched)
   }
 }
 
@@ -354,6 +358,7 @@ final class ListeningModeCoordinator {
     guard candidate.route == .selected, candidate.avTransport == nil else {
       return candidate
     }
+    guard candidate.avJoinEvidence == .unavailable else { return candidate }
     let activeAV = avCandidates.filter { $0.route == .selected }
     guard activeAV.count == 1, let avCandidate = activeAV.first,
           let avTransport = avCandidate.avTransport
@@ -372,7 +377,8 @@ final class ListeningModeCoordinator {
       selectableNames: names,
       avTransport: avTransport,
       halTransport: candidate.halTransport,
-      route: candidate.route
+      route: candidate.route,
+      avJoinEvidence: .matched
     )
   }
 

@@ -550,8 +550,46 @@ struct ActiveAudioEndpointBinding {
   let endpoint: AnyObject
 }
 
+enum ActiveAudioEndpointCapture {
+  case value(ActiveAudioEndpointBinding)
+  case unavailable
+  case routeChanged
+  case failure(OSStatus)
+}
+
 protocol ActiveAudioEndpointProbing {
-  func capture() -> AudioRoutingRead<ActiveAudioEndpointBinding>
+  func capture() -> ActiveAudioEndpointCapture
+}
+
+enum ActiveFeatureEndpointJoinEvidence: Equatable {
+  case matched
+  case unavailable
+  case mismatch
+  case readFailure
+  case routeChanged
+}
+
+private enum ActiveFeatureEndpointJoin {
+  case matched(AnyObject)
+  case unavailable
+  case mismatch
+  case readFailure
+  case routeChanged
+
+  var endpoint: AnyObject? {
+    guard case let .matched(endpoint) = self else { return nil }
+    return endpoint
+  }
+
+  var evidence: ActiveFeatureEndpointJoinEvidence {
+    switch self {
+    case .matched: return .matched
+    case .unavailable: return .unavailable
+    case .mismatch: return .mismatch
+    case .readFailure: return .readFailure
+    case .routeChanged: return .routeChanged
+    }
+  }
 }
 
 private enum StableBluetoothRoute {
@@ -586,8 +624,7 @@ final class AudioRoutingObserver {
   private let logger: DebugLogger
   private let lock = NSLock()
   private var storedSnapshot: AudioRoutingSnapshot?
-  private var didCaptureActiveFeatureEndpoint = false
-  private var storedActiveFeatureEndpoint: AnyObject?
+  private var storedActiveFeatureEndpointJoin: ActiveFeatureEndpointJoin?
 
   init(
     backend: any AudioRoutingBackend = CoreAudioRoutingBackend(),
@@ -641,29 +678,50 @@ final class AudioRoutingObserver {
   // only when its associated Core Audio ID is the same stable default output
   // whose IOBluetoothDevice exactly equals this candidate.
   func activeFeatureEndpoint(for candidate: AnyObject) -> AnyObject? {
+    activeFeatureEndpointJoin(for: candidate).endpoint
+  }
+
+  func activeFeatureEndpointJoinEvidence(
+    for candidate: AnyObject
+  ) -> ActiveFeatureEndpointJoinEvidence {
+    activeFeatureEndpointJoin(for: candidate).evidence
+  }
+
+  private func activeFeatureEndpointJoin(
+    for candidate: AnyObject
+  ) -> ActiveFeatureEndpointJoin {
     guard case let .device(defaultOutputID, selectedBluetoothDevice) =
       snapshot().route(for: .output),
       bluetoothDevicesAreExactlyEqual(candidate, selectedBluetoothDevice),
       let activeEndpointProbe
-    else { return nil }
+    else { return .unavailable }
 
     lock.lock()
     defer { lock.unlock() }
-    if didCaptureActiveFeatureEndpoint { return storedActiveFeatureEndpoint }
-    didCaptureActiveFeatureEndpoint = true
+    if let storedActiveFeatureEndpointJoin {
+      return storedActiveFeatureEndpointJoin
+    }
 
+    let join: ActiveFeatureEndpointJoin
     switch activeEndpointProbe.capture() {
     case let .value(binding) where binding.audioDeviceID == defaultOutputID:
       logger.debug("routing.active_feature_join", true)
-      storedActiveFeatureEndpoint = binding.endpoint
+      join = .matched(binding.endpoint)
     case .value:
       logger.debug("routing.active_feature_join", false)
+      join = .mismatch
     case .unavailable:
       logger.debug("routing.active_feature_join", "unavailable")
+      join = .unavailable
+    case .routeChanged:
+      logger.debug("routing.active_feature_join", "route-changed")
+      join = .routeChanged
     case let .failure(status):
       logger.debug("routing.active_feature_join.error", status)
+      join = .readFailure
     }
-    return storedActiveFeatureEndpoint
+    storedActiveFeatureEndpointJoin = join
+    return join
   }
 
   private func snapshot() -> AudioRoutingSnapshot {

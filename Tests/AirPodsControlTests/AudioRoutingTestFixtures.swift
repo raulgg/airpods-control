@@ -160,14 +160,14 @@ final class FakeBluetoothAudioRuntime: BluetoothAudioRuntime {
 }
 
 final class FakeActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
-  var read: AudioRoutingRead<ActiveAudioEndpointBinding>
+  var read: ActiveAudioEndpointCapture
   private(set) var captureCount = 0
 
-  init(_ read: AudioRoutingRead<ActiveAudioEndpointBinding>) {
+  init(_ read: ActiveAudioEndpointCapture) {
     self.read = read
   }
 
-  func capture() -> AudioRoutingRead<ActiveAudioEndpointBinding> {
+  func capture() -> ActiveAudioEndpointCapture {
     captureCount += 1
     return read
   }

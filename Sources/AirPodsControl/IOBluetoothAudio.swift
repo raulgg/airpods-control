@@ -120,7 +120,7 @@ private let maximumActiveRouteIdentifierLength = 512
 struct SystemActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
   let outputContext: AnyObject
 
-  func capture() -> AudioRoutingRead<ActiveAudioEndpointBinding> {
+  func capture() -> ActiveAudioEndpointCapture {
     guard let before = endpointAndIdentifier(),
           outputContext.responds(to: activeAssociatedDeviceIDSelector),
           let rawAssociatedID = outputContext.perform(activeAssociatedDeviceIDSelector)?
@@ -128,9 +128,9 @@ struct SystemActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
           let associatedUID = rawAssociatedID as? String,
           !associatedUID.isEmpty,
           associatedUID.utf8.count <= maximumActiveRouteIdentifierLength,
-          let after = endpointAndIdentifier(),
-          before.identifier == after.identifier
+          let after = endpointAndIdentifier()
     else { return .unavailable }
+    guard before.identifier == after.identifier else { return .routeChanged }
 
     switch translateDeviceUID(associatedUID) {
     case let .value(.some(deviceID)):
@@ -649,6 +649,9 @@ final class IOBluetoothStatusController {
           logger: logger
         )
       }
+      let avJoinEvidence = routingObserver.activeFeatureEndpointJoinEvidence(
+        for: binding.bluetoothDevice
+      )
 
       let names = [transport.name, avTransport?.name]
         .compactMap { $0 }
@@ -663,7 +666,8 @@ final class IOBluetoothStatusController {
         selectableNames: names,
         avTransport: avTransport,
         halTransport: transport,
-        route: route
+        route: route,
+        avJoinEvidence: avJoinEvidence
       )
     }
   }
