@@ -153,7 +153,11 @@ func runListeningModeAllowOffCacheTests() {
       "cache lookup does not create its directory"
     )
     check(
-      cache.storePositiveObservation(rawDeviceUID: rawUID) == .applied,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
       "positive Allow Off evidence is stored"
     )
 
@@ -199,7 +203,11 @@ func runListeningModeAllowOffCacheTests() {
     )
     let rawUID = "UID-secret-material-A"
     check(
-      cache.storePositiveObservation(rawDeviceUID: rawUID) == .applied,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
       "cache writes a privacy-preserving document"
     )
 
@@ -286,13 +294,21 @@ func runListeningModeAllowOffCacheTests() {
     )
     let rawUID = "conditional-eviction-uid"
 
-    _ = cache.storePositiveObservation(rawDeviceUID: rawUID)
+    _ = cache.applyObservation(
+      rawDeviceUID: rawUID,
+      allowsOff: true,
+      observedAt: clock.value
+    )
     guard let oldRecord = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
       check(false, "conditional eviction obtains its original record")
       return
     }
     clock.value = clock.value.addingTimeInterval(5)
-    _ = cache.storePositiveObservation(rawDeviceUID: rawUID)
+    _ = cache.applyObservation(
+      rawDeviceUID: rawUID,
+      allowsOff: true,
+      observedAt: clock.value
+    )
     guard let refreshedRecord = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
       check(false, "conditional eviction obtains its refreshed record")
       return
@@ -311,10 +327,22 @@ func runListeningModeAllowOffCacheTests() {
     )
     check(cache.lookup(rawDeviceUID: rawUID) == .miss, "record eviction removes evidence")
 
-    _ = cache.storePositiveObservation(rawDeviceUID: "first")
-    _ = cache.storePositiveObservation(rawDeviceUID: "second")
+    _ = cache.applyObservation(
+      rawDeviceUID: "first",
+      allowsOff: true,
+      observedAt: clock.value
+    )
+    _ = cache.applyObservation(
+      rawDeviceUID: "second",
+      allowsOff: true,
+      observedAt: clock.value
+    )
     check(
-      cache.removeEvidence(rawDeviceUID: "first") == .applied,
+      cache.applyObservation(
+        rawDeviceUID: "first",
+        allowsOff: false,
+        observedAt: clock.value
+      ) == .applied,
       "raw UID removal deletes its positive evidence"
     )
     check(cache.lookup(rawDeviceUID: "first") == .miss, "raw UID removal misses afterward")
@@ -323,8 +351,12 @@ func runListeningModeAllowOffCacheTests() {
       "raw UID removal preserves unrelated evidence"
     )
     check(
-      cache.removeEvidence(rawDeviceUID: "missing") == .unchanged,
-      "removing absent Allow Off evidence is unchanged"
+      cache.applyObservation(
+        rawDeviceUID: "missing",
+        allowsOff: false,
+        observedAt: clock.value
+      ) == .applied,
+      "negative observations retain a tombstone even without positive evidence"
     )
   }
 
@@ -336,7 +368,11 @@ func runListeningModeAllowOffCacheTests() {
       saltGenerator: { allowOffCacheTestSalt }
     )
     let rawUID = "corruption-test-uid"
-    _ = cache.storePositiveObservation(rawDeviceUID: rawUID)
+    _ = cache.applyObservation(
+      rawDeviceUID: rawUID,
+      allowsOff: true,
+      observedAt: clock.value
+    )
     do {
       try Data("{not-json".utf8).write(to: fileURL, options: .atomic)
       try FileManager.default.setAttributes(
@@ -349,7 +385,11 @@ func runListeningModeAllowOffCacheTests() {
     }
     check(cache.lookup(rawDeviceUID: rawUID) == .miss, "malformed cache is a safe miss")
     check(
-      cache.storePositiveObservation(rawDeviceUID: rawUID) == .applied,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
       "positive observation replaces a malformed disposable cache"
     )
     check(
@@ -368,12 +408,16 @@ func runListeningModeAllowOffCacheTests() {
     }
     check(cache.lookup(rawDeviceUID: rawUID) == .miss, "unsafe file mode is a safe miss")
     check(
-      cache.removeEvidence(rawDeviceUID: rawUID) == .applied,
-      "removal purges an invalid disposable cache"
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: clock.value
+      ) == .applied,
+      "negative observation replaces a malformed disposable cache"
     )
     check(
-      !FileManager.default.fileExists(atPath: fileURL.path),
-      "invalid cache purge removes the cache document"
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "negative observation leaves no positive evidence"
     )
   }
 
@@ -383,12 +427,19 @@ func runListeningModeAllowOffCacheTests() {
       saltGenerator: { allowOffCacheTestSalt }
     )
     check(
-      cache.storePositiveObservation(rawDeviceUID: "") == .unavailable,
+      cache.applyObservation(
+        rawDeviceUID: "",
+        allowsOff: true,
+        observedAt: Date()
+      ) == .unavailable,
       "empty raw device UID is rejected"
     )
     check(
-      cache.storePositiveObservation(rawDeviceUID: String(repeating: "x", count: 4_097))
-        == .unavailable,
+      cache.applyObservation(
+        rawDeviceUID: String(repeating: "x", count: 4_097),
+        allowsOff: true,
+        observedAt: Date()
+      ) == .unavailable,
       "oversized raw device UID is rejected"
     )
     check(
@@ -403,7 +454,11 @@ func runListeningModeAllowOffCacheTests() {
       saltGenerator: { Data(repeating: 0, count: 31) }
     )
     check(
-      cache.storePositiveObservation(rawDeviceUID: "uid") == .unavailable,
+      cache.applyObservation(
+        rawDeviceUID: "uid",
+        allowsOff: true,
+        observedAt: Date()
+      ) == .unavailable,
       "invalid generated salt makes cache storage unavailable"
     )
     check(
@@ -417,11 +472,19 @@ func runListeningModeAllowOffCacheTests() {
       fileURL: fileURL,
       saltGenerator: { allowOffCacheTestSalt }
     )
-    _ = cache.storePositiveObservation(rawDeviceUID: "existing")
+    _ = cache.applyObservation(
+      rawDeviceUID: "existing",
+      allowsOff: true,
+      observedAt: Date()
+    )
 
     withHeldAllowOffCacheFileLock(fileURL: fileURL) {
       let startedAt = DispatchTime.now().uptimeNanoseconds
-      let result = cache.storePositiveObservation(rawDeviceUID: "contended")
+      let result = cache.applyObservation(
+        rawDeviceUID: "contended",
+        allowsOff: true,
+        observedAt: Date()
+      )
       let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
       check(result == .unavailable, "contended cache mutation fails soft")
       check(
@@ -451,11 +514,19 @@ func runListeningModeAllowOffCacheTests() {
       },
       saltGenerator: { allowOffCacheTestSalt }
     )
-    _ = cache.storePositiveObservation(rawDeviceUID: "seed")
+    _ = cache.applyObservation(
+      rawDeviceUID: "seed",
+      allowsOff: true,
+      observedAt: observedAt
+    )
 
     withHeldAllowOffCacheFileLock(fileURL: fileURL, holdFor: "0.15") {
       check(
-        cache.storePositiveObservation(rawDeviceUID: "delayed") == .applied,
+        cache.applyObservation(
+          rawDeviceUID: "delayed",
+          allowsOff: true,
+          observedAt: observedAt
+        ) == .applied,
         "positive observation waits for brief lock contention"
       )
     }
@@ -480,12 +551,20 @@ func runListeningModeAllowOffCacheTests() {
 
     clock.value = newer
     check(
-      cache.storePositiveObservation(rawDeviceUID: rawUID) == .applied,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: newer
+      ) == .applied,
       "newer positive observation is stored"
     )
     clock.value = older
     check(
-      cache.storePositiveObservation(rawDeviceUID: rawUID) == .unchanged,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: older
+      ) == .unchanged,
       "older positive observation cannot replace newer evidence"
     )
     clock.value = current
@@ -496,7 +575,11 @@ func runListeningModeAllowOffCacheTests() {
     )
     clock.value = older
     check(
-      cache.removeEvidence(rawDeviceUID: rawUID) == .unchanged,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: older
+      ) == .unchanged,
       "older negative observation cannot remove newer evidence"
     )
     clock.value = current
@@ -506,8 +589,29 @@ func runListeningModeAllowOffCacheTests() {
       "newer evidence survives a delayed older negative observation"
     )
     check(
-      cache.removeEvidence(rawDeviceUID: rawUID) == .applied,
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: current
+      ) == .applied,
       "newer negative observation removes older evidence"
+    )
+
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: current
+      ) == .unchanged,
+      "equal positive and negative observations fail closed"
+    )
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: older
+      ) == .unchanged,
+      "an older positive observation cannot replace a newer negative tombstone"
     )
   }
 
@@ -522,7 +626,11 @@ func runListeningModeAllowOffCacheTests() {
           now: clock.read,
           saltGenerator: { allowOffCacheTestSalt }
         )
-        _ = cache.storePositiveObservation(rawDeviceUID: "concurrent-uid-\(index)")
+        _ = cache.applyObservation(
+          rawDeviceUID: "concurrent-uid-\(index)",
+          allowsOff: true,
+          observedAt: clock.value
+        )
         group.leave()
       }
     }
@@ -557,7 +665,11 @@ func runListeningModeAllowOffCacheTests() {
     }
     check(cache.lookup(rawDeviceUID: "uid") == .miss, "in-memory cache starts empty")
     check(
-      cache.storePositiveObservation(rawDeviceUID: "uid") == .applied,
+      cache.applyObservation(
+        rawDeviceUID: "uid",
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
       "in-memory cache stores positive evidence"
     )
     guard let record = allowOffRecord(from: cache.lookup(rawDeviceUID: "uid")) else {

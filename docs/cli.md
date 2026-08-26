@@ -162,19 +162,22 @@ the connected device does not support. If fewer than two remain, it reports
 ### Cached Allow Off availability
 
 The HAL `lsms` mask has no Allow Off bit. To support a connected but unselected
-device without changing the audio route, the CLI keeps a weak positive cache of
-the exact output endpoint having advertised Off through AV.
+device without changing the audio route, the CLI keeps a weak cache of the
+exact output endpoint's latest eligible AV availability observation. Only a
+positive observation, where AV advertises Off, can authorize a HAL command.
 
 An AV available-mode read updates this cache only when the read is already
 needed for `list`, `set off`, or an explicit cycle set containing Off. A
 successful eligible read that includes Off writes or refreshes the positive
-observation; a successful eligible read that omits Off deletes it. An AV-backed
-`listening-mode get` also refreshes the observation when it returns Off. A
-non-Off result is not negative evidence, and incidental current-mode reads made
-by other operations do not warm the cache. Selector failures, unavailable
-endpoints, and failed reads leave the cache unchanged. The CLI does not perform
-an extra AV read solely to warm the cache, and HAL observations never refresh
-it.
+observation; a successful eligible read that omits Off removes the positive
+observation and writes a negative tombstone. The latest observation time wins,
+and a negative observation wins ties, so an older in-flight positive read cannot
+restore stale evidence. An AV-backed `listening-mode get` also refreshes the
+positive observation when it returns Off. A non-Off current-mode result is not
+an availability observation, and incidental current-mode reads made by other
+operations do not warm the cache. Selector failures, unavailable endpoints,
+and failed reads leave the cache unchanged. The CLI does not perform an extra
+AV read solely to warm the cache, and HAL observations never refresh it.
 
 A valid observation lets the exact HAL target include Off in `list`, attempt
 `set off`, or retain Off in an explicit cycle set. It never adds Off to the
@@ -184,11 +187,14 @@ set. Cache correlation happens after target and provider selection; it cannot
 select, merge, or disambiguate devices. A missing or nonunique exact endpoint
 correlation is a silent miss.
 
-The cache contains positive observations only. Each one expires seven days
-after the AV observation, and use does not extend that lifetime. A new eligible
-positive AV observation starts a new seven-day period; a macOS update does not.
-Missing, expired, malformed, or unreadable data is treated as a miss. The
-disposable, backup-excluded cache is stored at:
+The cache stores positive observations and negative tombstones. Only a positive
+observation can add Off or authorize a HAL write. Positive observations expire
+seven days after the AV observation, and use does not extend that lifetime.
+Negative tombstones only order observations and never authorize a write. A new
+eligible observation replaces the older state for that endpoint; a macOS update
+does not extend or invalidate a positive observation. Missing, expired,
+malformed, or unreadable data is treated as a miss. The disposable,
+backup-excluded cache is stored at:
 
 ```text
 ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
@@ -202,7 +208,9 @@ persisted; the raw UID, digest, and salt are never printed or logged.
 cache file safely restores the pre-cache HAL behavior.
 
 This evidence may be stale if Allow Off changes before another eligible AV read
-or a HAL write disproves it. If an accepted cache-authorized Off write finishes
+or a HAL write disproves it. Observation timestamps prevent delayed older reads
+from overwriting newer reads, with a negative result winning equal timestamps.
+If an accepted cache-authorized Off write finishes
 with a definitive non-Off state, the command reports `no-op` with that actual
 state and deletes the observation. It does not retry through AV, infer a
 Transparency fallback, or choose a second cycle target. A rejected write,

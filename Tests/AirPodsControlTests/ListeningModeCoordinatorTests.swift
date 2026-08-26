@@ -87,6 +87,7 @@ private final class FakeHALRoutingBackend: AudioRoutingBackend {
   var writeResult: AudioRoutingWrite = .success
   var appliesWrite = true
   var deviceUIDs: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
+  var onDeviceUIDRead: (() -> Void)?
   private(set) var writtenValues: [UInt32] = []
   private(set) var deviceUIDReads: [AudioDeviceID] = []
 
@@ -115,6 +116,7 @@ private final class FakeHALRoutingBackend: AudioRoutingBackend {
   }
   func readDeviceUID(for deviceID: AudioDeviceID) -> AudioRoutingRead<String?> {
     deviceUIDReads.append(deviceID)
+    onDeviceUIDRead?()
     return deviceUIDs[deviceID] ?? .unavailable
   }
   func readIsAppleAudioDevice(_ deviceID: AudioDeviceID) -> AudioRoutingRead<Bool> {
@@ -159,12 +161,17 @@ private final class FailingRemovalAllowOffCache: ListeningModeAllowOffCaching {
     wrapped.lookup(rawDeviceUID: rawDeviceUID)
   }
 
-  func storePositiveObservation(rawDeviceUID: String) -> AllowOffCacheMutation {
-    wrapped.storePositiveObservation(rawDeviceUID: rawDeviceUID)
-  }
-
-  func removeEvidence(rawDeviceUID: String) -> AllowOffCacheMutation {
-    .unavailable
+  func applyObservation(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    guard allowsOff else { return .unavailable }
+    return wrapped.applyObservation(
+      rawDeviceUID: rawDeviceUID,
+      allowsOff: true,
+      observedAt: observedAt
+    )
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
@@ -693,7 +700,11 @@ func testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata() {
   let backend = FakeHALRoutingBackend()
   backend.rawModeRead = .value(2)
   let fixture = allowOffCacheFixture(backend: backend, now: { clock })
-  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  _ = fixture.cache.applyObservation(
+    rawDeviceUID: "uid-42",
+    allowsOff: true,
+    observedAt: clock
+  )
 
   let listOutcome = coordinatorOutcome(
     ["lm", "list", "--json"],
@@ -789,7 +800,11 @@ func testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly() {
   let backend = FakeHALRoutingBackend()
   backend.rawModeRead = .value(2)
   let fixture = allowOffCacheFixture(backend: backend, now: { clock })
-  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  _ = fixture.cache.applyObservation(
+    rawDeviceUID: "uid-42",
+    allowsOff: true,
+    observedAt: clock
+  )
   let halCandidate = ListeningModeCandidate(
     displayName: "Cached AirPods",
     selectableNames: ["Cached AirPods"],
@@ -828,7 +843,11 @@ func testListeningModeWritePlanOwnsHALAllowOffPolicy() {
   let clock = Date(timeIntervalSince1970: 2_000_000_150)
   let backend = FakeHALRoutingBackend()
   let fixture = allowOffCacheFixture(backend: backend, now: { clock })
-  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  _ = fixture.cache.applyObservation(
+    rawDeviceUID: "uid-42",
+    allowsOff: true,
+    observedAt: clock
+  )
   let hal = FakeListeningModeTransport(
     name: "Planned AirPods",
     kind: .hal,
@@ -884,7 +903,11 @@ func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
   backend.rawModeRead = .value(2)
   backend.appliesWrite = false
   let fixture = allowOffCacheFixture(backend: backend, now: { clock })
-  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  _ = fixture.cache.applyObservation(
+    rawDeviceUID: "uid-42",
+    allowsOff: true,
+    observedAt: clock
+  )
   let halCandidate = ListeningModeCandidate(
     displayName: "Cached AirPods",
     selectableNames: ["Cached AirPods"],
@@ -914,7 +937,11 @@ func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
     check(false, "accepted definitive mismatch evicts the positive evidence")
   }
 
-  _ = fixture.cache.storePositiveObservation(rawDeviceUID: "uid-42")
+  _ = fixture.cache.applyObservation(
+    rawDeviceUID: "uid-42",
+    allowsOff: true,
+    observedAt: clock
+  )
   backend.writeResult = .notSettable
   let rejected = coordinatorOutcome(["lm", "set", "off"], candidates: [halCandidate])
   check(rejected.plain == "no-op", "a provider rejection remains a no-op")
@@ -950,10 +977,12 @@ func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
 }
 
 func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
-  let clock = Date(timeIntervalSince1970: 2_000_000_300)
+  var clock = Date(timeIntervalSince1970: 2_000_000_300)
   let backend = FakeHALRoutingBackend()
   backend.rawModeRead = .value(2)
   let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  let firstObservationTime = clock
+  backend.onDeviceUIDRead = { clock.addTimeInterval(1) }
   let av = FakeListeningModeTransport(
     name: "Cached AirPods",
     kind: .av,
@@ -967,8 +996,15 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
     allowOffCorrelation: fixture.correlation
   )
   _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
+  backend.onDeviceUIDRead = nil
   if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "successful AV availability with Off refreshes positive evidence")
+    if case .hit(let record) = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+      check(
+        record.evidence.observedAt == firstObservationTime,
+        "AV observation time is captured before UID correlation"
+      )
+    }
   } else {
     check(false, "successful AV availability with Off refreshes positive evidence")
   }
@@ -981,6 +1017,7 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
     check(false, "successful AV availability without Off deletes evidence")
   }
 
+  clock.addTimeInterval(1)
   av.current = .off
   let readsBeforeGet = av.readModesCount
   _ = coordinatorOutcome(["lm", "get"], candidates: [joined])
@@ -999,7 +1036,11 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
     check(false, "AV selector/read failure leaves evidence unchanged")
   }
 
-  _ = fixture.cache.removeEvidence(rawDeviceUID: "uid-42")
+  _ = fixture.cache.applyObservation(
+    rawDeviceUID: "uid-42",
+    allowsOff: false,
+    observedAt: clock
+  )
   av.availabilityObservation = nil
   av.current = .off
   _ = coordinatorOutcome(["lm", "set", "adaptive"], candidates: [joined])
@@ -1017,7 +1058,11 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
     salt: Data(repeating: 0xB6, count: 32),
     now: { clock }
   )!
-  _ = ambiguousCache.storePositiveObservation(rawDeviceUID: "same-uid")
+  _ = ambiguousCache.applyObservation(
+    rawDeviceUID: "same-uid",
+    allowsOff: true,
+    observedAt: clock
+  )
   let ambiguousCorrelation = ListeningModeAllowOffCorrelation(
     targetAudioDeviceID: 42,
     collisionAudioDeviceIDs: [42, 43],
@@ -1096,7 +1141,11 @@ func testListeningModeAllowOffAVEvidenceLifecycleAndSilentAmbiguity() {
     salt: Data(repeating: 0xD8, count: 32),
     now: { clock }
   )!
-  _ = wrappedCache.storePositiveObservation(rawDeviceUID: "uid-62")
+  _ = wrappedCache.applyObservation(
+    rawDeviceUID: "uid-62",
+    allowsOff: true,
+    observedAt: clock
+  )
   let failingRemovalCache = FailingRemovalAllowOffCache(wrapped: wrappedCache)
   let staleCorrelation = ListeningModeAllowOffCorrelation(
     targetAudioDeviceID: 62,

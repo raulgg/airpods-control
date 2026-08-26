@@ -169,8 +169,10 @@
   seven days from its observation time; cache reads never extend that deadline.
   macOS version changes neither invalidate nor extend that deadline.
   A successful cache-eligible AV observation refreshes the positive when Off is
-  advertised and deletes it when Off is absent. A selector or read failure is
-  not an observation and leaves the cache unchanged.
+  advertised and replaces it with a negative tombstone when Off is absent. The
+  newest observation wins, and a negative observation wins equal timestamps, so
+  an older in-flight positive read cannot restore stale evidence. A selector or
+  read failure is not an observation and leaves the cache unchanged.
   On a HAL-only path, a usable positive adds Off to listed availability and may
   authorize `set off` or a cycle whose explicit mode set contains Off. It never
   adds Off to the default cycle.

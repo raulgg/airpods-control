@@ -228,14 +228,14 @@ cycle still advances in canonical order from the current mode to the next mode t
 .B no-op
 (exit 3).
 .SS ALLOW OFF CACHE
-The CLI can reuse a recent positive AV observation of Allow Off for an exact HAL output endpoint. This weak evidence says only that the endpoint recently advertised Off through AV; it is not a live device query, durable device identity, or protocol acknowledgement.
+The CLI can reuse a recent positive AV observation of Allow Off for an exact HAL output endpoint. This weak evidence says only that the endpoint recently advertised Off through AV; it is not a live device query, durable device identity, or protocol acknowledgement. The cache also keeps a negative tombstone when a newer eligible AV read omits Off; that tombstone never authorizes a write.
 .PP
 An AV available-mode read updates the cache only when already needed for
 .BR list ,
 .BR "set off" ,
 or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes the positive observation; a successful eligible read omitting Off deletes it. An AV-backed
 .B listening-mode get
-also refreshes the observation when it returns Off. A non-Off result is not negative evidence, and incidental current-mode reads made by other operations do not warm the cache. Selector failures, unavailable endpoints, and failed reads leave the cache unchanged. The CLI does not perform an extra AV read to warm the cache, and HAL observations never refresh it.
+also refreshes the positive observation when it returns Off. A successful eligible availability read that omits Off removes the positive observation and writes a negative tombstone. The latest observation time wins, and a negative observation wins equal timestamps, so an older in-flight positive read cannot restore stale evidence. A non-Off current-mode result is not an availability observation, and incidental current-mode reads made by other operations do not warm the cache. Selector failures, unavailable endpoints, and failed reads leave the cache unchanged. The CLI does not perform an extra AV read to warm the cache, and HAL observations never refresh it.
 .PP
 A valid observation lets the exact HAL target include Off in
 .BR list ,
@@ -247,7 +247,7 @@ Correlation occurs after target and provider selection and cannot select, merge,
 .B support-report
 does not access this cache or include its data. Missing or nonunique correlation is a silent cache miss.
 .PP
-Positive observations expire seven days after the AV observation. Use does not extend the lifetime, and macOS version changes do not invalidate or refresh it. Missing, expired, unreadable, or malformed data is a miss. The disposable, backup-excluded file is stored at
+Positive observations expire seven days after the AV observation. Use does not extend the lifetime, and macOS version changes do not invalidate or refresh it. Negative tombstones only order observations and never authorize a write. A newer eligible observation replaces the older state. Missing, expired, unreadable, or malformed data is a miss. The disposable, backup-excluded file is stored at
 .BR ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json .
 Deleting it safely restores the pre-cache HAL behavior.
 .PP

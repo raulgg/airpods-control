@@ -287,7 +287,11 @@ func testListeningModeAllowOffCorrelationIsLazyAndExact() {
     salt: Data(repeating: 0xC7, count: 32),
     now: { clock }
   )!
-  _ = cache.storePositiveObservation(rawDeviceUID: "exact-core-audio-uid")
+  _ = cache.applyObservation(
+    rawDeviceUID: "exact-core-audio-uid",
+    allowsOff: true,
+    observedAt: clock
+  )
   let (controller, _) = makeBluetoothController(
     inventory: [
       FakeInventoryEndpoint(

@@ -11,8 +11,9 @@ Allow Off is enabled. A device can later remain connected and controllable
 through HAL after it stops being the selected audio output, so the CLI can
 reuse a recent AV observation without changing the route or starting audio.
 
-This is deliberately a weak, positive cache. A record means only that the
-exact output endpoint recently advertised Off through AV. It is not a current
+This is deliberately a weak cache. A positive record means only that the exact
+output endpoint recently advertised Off through AV. A negative tombstone means
+that a newer eligible read did not advertise Off. Neither record is a current
 read of the AirPods setting, a device-level capability, a durable device
 identity, or a protocol acknowledgement.
 
@@ -34,8 +35,10 @@ already required for:
 
 A successful eligible availability read that advertises Off writes or
 refreshes the positive record. A successful eligible read that omits Off
-deletes an existing positive record. A selector failure, read failure, or
-unavailable AV endpoint leaves the record unchanged.
+removes the positive record and writes a negative tombstone. The latest
+observation time wins, and a negative observation wins ties so an older
+in-flight positive read cannot restore stale evidence. A selector failure, read
+failure, or unavailable AV endpoint leaves the record unchanged.
 
 An AV-backed `listening-mode get` may also write or refresh the record when its
 result is Off. A non-Off result is not negative evidence and does not delete
@@ -62,20 +65,22 @@ behavior.
 
 ### Storage and lifetime
 
-Positive records are stored in:
+Positive records and negative tombstones are stored in:
 
 ```text
 ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
 ```
 
-Each record expires seven days after its AV observation. The lifetime is
-non-sliding: consuming a record does not refresh it. A new eligible positive AV
-observation starts a new seven-day period; macOS version changes do not extend
-or invalidate one. Missing, expired, unreadable, or malformed cache data is a
-miss. The file is disposable cache data and should be excluded from backups;
-deleting it safely restores the pre-cache behavior. The cache directory and
-files are restricted to the current user, and updates use atomic replacement so
-an interrupted write becomes a miss rather than partial trusted evidence.
+Each positive record expires seven days after its AV observation. The lifetime
+is non-sliding: consuming a record does not refresh it. Negative tombstones are
+used only to order observations and never authorize Off. A new eligible
+observation replaces the older state for that endpoint; macOS version changes
+do not extend or invalidate a positive record. Missing, expired, unreadable, or
+malformed cache data is a miss. The file is disposable cache data and should be
+excluded from backups; deleting it safely restores the pre-cache behavior. The
+cache directory and files are restricted to the current user, and updates use
+atomic replacement so an interrupted write becomes a miss rather than partial
+trusted evidence.
 
 ### HAL behavior
 

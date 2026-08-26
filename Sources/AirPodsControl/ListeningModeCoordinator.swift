@@ -275,8 +275,13 @@ final class ListeningModeAllowOffCorrelation {
     self.now = now
   }
 
+  func captureObservationTime() -> Date {
+    now()
+  }
+
   func observeAvailability(
-    _ observation: ListeningModeAvailabilityObservation
+    _ observation: ListeningModeAvailabilityObservation,
+    observedAt: Date
   ) -> ListeningModeAllowOffAuthorization? {
     switch observation {
     case .unavailable:
@@ -284,7 +289,11 @@ final class ListeningModeAllowOffCorrelation {
     case .value(let modes) where modes.contains(.off):
       var storedRecord: AllowOffCacheRecord?
       withUnambiguousRawUID { rawDeviceUID in
-        _ = cache.storePositiveObservation(rawDeviceUID: rawDeviceUID)
+        _ = cache.applyObservation(
+          rawDeviceUID: rawDeviceUID,
+          allowsOff: true,
+          observedAt: observedAt
+        )
         if case .hit(let record) = cache.lookup(rawDeviceUID: rawDeviceUID) {
           storedRecord = record
         }
@@ -294,15 +303,23 @@ final class ListeningModeAllowOffCorrelation {
       return .live(cache: storedRecord == nil ? nil : cache, record: storedRecord)
     case .value:
       withUnambiguousRawUID { rawDeviceUID in
-        _ = cache.removeEvidence(rawDeviceUID: rawDeviceUID)
+        _ = cache.applyObservation(
+          rawDeviceUID: rawDeviceUID,
+          allowsOff: false,
+          observedAt: observedAt
+        )
       }
       return nil
     }
   }
 
-  func observeCurrentOff() {
+  func observeCurrentOff(observedAt: Date) {
     withUnambiguousRawUID { rawDeviceUID in
-      _ = cache.storePositiveObservation(rawDeviceUID: rawDeviceUID)
+      _ = cache.applyObservation(
+        rawDeviceUID: rawDeviceUID,
+        allowsOff: true,
+        observedAt: observedAt
+      )
     }
   }
 
@@ -713,11 +730,18 @@ final class ListeningModeCoordinator {
       currentMode = transport.currentListeningMode()
       canSet = false
       if transport.listeningModeTransportKind == .av, currentMode == .off {
-        correlation?.observeCurrentOff()
+        if let correlation {
+          correlation.observeCurrentOff(
+            observedAt: correlation.captureObservationTime()
+          )
+        }
       }
     case .list:
       currentMode = transport.currentListeningMode()
       let availability = transport.listeningModeAvailabilityObservation()
+      let availabilityObservedAt = transport.listeningModeTransportKind == .av
+        ? correlation?.captureObservationTime()
+        : nil
       availableModes = normalizedModes(from: availability)
       freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
         availability,
@@ -730,12 +754,16 @@ final class ListeningModeCoordinator {
         command: command,
         correlation: correlation,
         liveAllowOffAuthorization: liveAllowOffAuthorization,
-        blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff
+        blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
+        observedAt: availabilityObservedAt
       )
       canSet = false
     case .set, .cycle:
       currentMode = transport.currentListeningMode()
       let availability = transport.listeningModeAvailabilityObservation()
+      let availabilityObservedAt = transport.listeningModeTransportKind == .av
+        ? correlation?.captureObservationTime()
+        : nil
       availableModes = normalizedModes(from: availability)
       freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
         availability,
@@ -748,7 +776,8 @@ final class ListeningModeCoordinator {
         command: command,
         correlation: correlation,
         liveAllowOffAuthorization: liveAllowOffAuthorization,
-        blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff
+        blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
+        observedAt: availabilityObservedAt
       )
       canSet = transport.canSetListeningMode()
     }
@@ -796,16 +825,21 @@ final class ListeningModeCoordinator {
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
     liveAllowOffAuthorization: ListeningModeAllowOffAuthorization?,
-    blocksCachedAllowOff: Bool
+    blocksCachedAllowOff: Bool,
+    observedAt: Date?
   ) -> ListeningModeAllowOffAuthorization? {
     guard commandMayUseAllowOffCache(command) else { return nil }
     switch transport.listeningModeTransportKind {
     case .av:
       if case .value(let modes) = availability, modes.contains(.off) {
-        return correlation?.observeAvailability(availability)
-          ?? .live(cache: nil, record: nil)
+        if let correlation, let observedAt {
+          return correlation.observeAvailability(availability, observedAt: observedAt)
+        }
+        return .live(cache: nil, record: nil)
       }
-      _ = correlation?.observeAvailability(availability)
+      if let correlation, let observedAt {
+        _ = correlation.observeAvailability(availability, observedAt: observedAt)
+      }
       return nil
     case .hal:
       guard case .value = availability else { return nil }

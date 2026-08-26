@@ -27,8 +27,11 @@ enum AllowOffCacheMutation: Equatable {
 
 protocol ListeningModeAllowOffCaching: AnyObject {
   func lookup(rawDeviceUID: String) -> AllowOffCacheLookup
-  func storePositiveObservation(rawDeviceUID: String) -> AllowOffCacheMutation
-  func removeEvidence(rawDeviceUID: String) -> AllowOffCacheMutation
+  func applyObservation(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date
+  ) -> AllowOffCacheMutation
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation
 }
 
@@ -47,6 +50,40 @@ private struct PersistedAllowOffCache: Codable {
   let schemaVersion: Int
   let salt: Data
   var positiveEvidence: [String: PersistedAllowOffEvidence]
+  var negativeEvidence: [String: PersistedAllowOffEvidence]
+
+  private enum CodingKeys: String, CodingKey {
+    case schemaVersion
+    case salt
+    case positiveEvidence
+    case negativeEvidence
+  }
+
+  init(
+    schemaVersion: Int,
+    salt: Data,
+    positiveEvidence: [String: PersistedAllowOffEvidence],
+    negativeEvidence: [String: PersistedAllowOffEvidence]
+  ) {
+    self.schemaVersion = schemaVersion
+    self.salt = salt
+    self.positiveEvidence = positiveEvidence
+    self.negativeEvidence = negativeEvidence
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    salt = try container.decode(Data.self, forKey: .salt)
+    positiveEvidence = try container.decode(
+      [String: PersistedAllowOffEvidence].self,
+      forKey: .positiveEvidence
+    )
+    negativeEvidence = try container.decodeIfPresent(
+      [String: PersistedAllowOffEvidence].self,
+      forKey: .negativeEvidence
+    ) ?? [:]
+  }
 }
 
 private struct PersistedAllowOffEvidence: Codable, Equatable {
@@ -121,15 +158,20 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       case .value(let document) = readPersistedCache(),
       let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID),
       let entry = document.positiveEvidence[key],
+      document.negativeEvidence[key]?.observedAt ?? .distantPast < entry.observedAt,
       let evidence = usableEvidence(observedAt: entry.observedAt)
     else { return .miss }
     return .hit(AllowOffCacheRecord(evidence: evidence, key: key))
   }
 
-  func storePositiveObservation(rawDeviceUID: String) -> AllowOffCacheMutation {
-    guard validTTL, isValidRawDeviceUID(rawDeviceUID) else { return .unavailable }
-    let observationTime = now()
-    guard observationTime.timeIntervalSince1970.isFinite else { return .unavailable }
+  func applyObservation(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    guard validTTL, isValidRawDeviceUID(rawDeviceUID),
+      observedAt.timeIntervalSince1970.isFinite
+    else { return .unavailable }
     return withExclusiveMutationLock {
       let document: PersistedAllowOffCache
       switch readPersistedCache() {
@@ -149,39 +191,32 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         rawDeviceUID: rawDeviceUID
       )
       else { return .unavailable }
-      if let existing = document.positiveEvidence[key],
-        existing.observedAt > observationTime
-      {
-        return .unchanged
+
+      let existingPositive = document.positiveEvidence[key]
+      let existingNegative = document.negativeEvidence[key]
+      if allowsOff {
+        guard existingNegative?.observedAt ?? .distantPast < observedAt,
+          existingPositive?.observedAt ?? .distantPast <= observedAt
+        else { return .unchanged }
+      } else {
+        guard existingPositive?.observedAt ?? .distantPast <= observedAt,
+          existingNegative?.observedAt ?? .distantPast < observedAt
+        else { return .unchanged }
       }
 
       var updated = document
-      updated.positiveEvidence[key] = PersistedAllowOffEvidence(
-        observedAt: observationTime
-      )
-      return write(updated) ? .applied : .unavailable
-    }
-  }
-
-  func removeEvidence(rawDeviceUID: String) -> AllowOffCacheMutation {
-    guard isValidRawDeviceUID(rawDeviceUID) else { return .unavailable }
-    let observationTime = now()
-    guard observationTime.timeIntervalSince1970.isFinite else { return .unavailable }
-    return withExclusiveMutationLock {
-      guard case .value(let document) = readPersistedCache() else {
-        return purgeInvalidCacheIfNeeded()
-      }
-      guard
-        let key = digestKey(
-          salt: document.salt,
-          rawDeviceUID: rawDeviceUID
+      if allowsOff {
+        updated.negativeEvidence.removeValue(forKey: key)
+        updated.positiveEvidence[key] = PersistedAllowOffEvidence(
+          observedAt: observedAt
         )
-      else { return .unavailable }
-      guard let existing = document.positiveEvidence[key] else {
-        return .unchanged
+      } else {
+        updated.positiveEvidence.removeValue(forKey: key)
+        updated.negativeEvidence[key] = PersistedAllowOffEvidence(
+          observedAt: observedAt
+        )
       }
-      guard existing.observedAt <= observationTime else { return .unchanged }
-      return remove(key: key, observedAt: existing.observedAt, from: document)
+      return write(updated) ? .applied : .unavailable
     }
   }
 
@@ -231,7 +266,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     return PersistedAllowOffCache(
       schemaVersion: allowOffCacheSchemaVersion,
       salt: salt,
-      positiveEvidence: [:]
+      positiveEvidence: [:],
+      negativeEvidence: [:]
     )
   }
 
@@ -252,9 +288,14 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   private func validate(_ document: PersistedAllowOffCache) -> Bool {
     guard document.schemaVersion == allowOffCacheSchemaVersion,
       document.salt.count == allowOffCacheSaltByteCount,
-      document.positiveEvidence.count <= allowOffCacheMaximumEntryCount
-    else { return false }
+      document.positiveEvidence.count + document.negativeEvidence.count
+        <= allowOffCacheMaximumEntryCount
+    else {
+      return false
+    }
     return document.positiveEvidence.allSatisfy { key, entry in
+      isDigestKey(key) && entry.observedAt.timeIntervalSince1970.isFinite
+    } && document.negativeEvidence.allSatisfy { key, entry in
       isDigestKey(key) && entry.observedAt.timeIntervalSince1970.isFinite
     }
   }
@@ -510,7 +551,8 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   private let ttl: TimeInterval
   private let now: () -> Date
   private let lock = NSLock()
-  private var entries: [String: Date] = [:]
+  private var positiveEvidence: [String: Date] = [:]
+  private var negativeEvidence: [String: Date] = [:]
 
   init?(
     salt: Data,
@@ -530,53 +572,52 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return .miss
     }
     lock.lock()
-    let observedAt = entries[key]
+    let observedAt = positiveEvidence[key]
+    let negativeObservedAt = negativeEvidence[key]
     lock.unlock()
     guard let observedAt,
+      negativeObservedAt ?? .distantPast < observedAt,
       let evidence = usableEvidence(observedAt: observedAt)
     else { return .miss }
     return .hit(AllowOffCacheRecord(evidence: evidence, key: key))
   }
 
-  func storePositiveObservation(rawDeviceUID: String) -> AllowOffCacheMutation {
+  func applyObservation(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
     guard let key = digestKey(salt: salt, rawDeviceUID: rawDeviceUID) else {
       return .unavailable
     }
-    let observationTime = now()
-    guard observationTime.timeIntervalSince1970.isFinite else { return .unavailable }
+    guard observedAt.timeIntervalSince1970.isFinite else { return .unavailable }
     lock.lock()
-    if let existing = entries[key], existing > observationTime {
-      lock.unlock()
-      return .unchanged
+    defer { lock.unlock() }
+    let existingPositive = positiveEvidence[key]
+    let existingNegative = negativeEvidence[key]
+    if allowsOff {
+      guard existingNegative ?? .distantPast < observedAt,
+        existingPositive ?? .distantPast <= observedAt
+      else { return .unchanged }
+      negativeEvidence.removeValue(forKey: key)
+      positiveEvidence[key] = observedAt
+    } else {
+      guard existingPositive ?? .distantPast <= observedAt,
+        existingNegative ?? .distantPast < observedAt
+      else { return .unchanged }
+      positiveEvidence.removeValue(forKey: key)
+      negativeEvidence[key] = observedAt
     }
-    entries[key] = observationTime
-    lock.unlock()
-    return .applied
-  }
-
-  func removeEvidence(rawDeviceUID: String) -> AllowOffCacheMutation {
-    guard let key = digestKey(salt: salt, rawDeviceUID: rawDeviceUID) else {
-      return .unavailable
-    }
-    let observationTime = now()
-    guard observationTime.timeIntervalSince1970.isFinite else { return .unavailable }
-    lock.lock()
-    guard let existing = entries[key], existing <= observationTime else {
-      lock.unlock()
-      return .unchanged
-    }
-    entries.removeValue(forKey: key)
-    lock.unlock()
     return .applied
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
     lock.lock()
     defer { lock.unlock() }
-    guard let observedAt = entries[record.key],
+    guard let observedAt = positiveEvidence[record.key],
       observedAt == record.evidence.observedAt
     else { return .unchanged }
-    entries.removeValue(forKey: record.key)
+    positiveEvidence.removeValue(forKey: record.key)
     return .applied
   }
 
