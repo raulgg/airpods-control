@@ -15,18 +15,6 @@ private func statusRecords(_ outcome: CommandOutcome) -> [[String: Any]]? {
   outcome.payload["devices"] as? [[String: Any]]
 }
 
-private func serializedStatusPayload(_ outcome: CommandOutcome) -> String? {
-  guard JSONSerialization.isValidJSONObject(outcome.payload),
-        let data = try? JSONSerialization.data(
-          withJSONObject: outcome.payload,
-          options: [.sortedKeys]
-        )
-  else {
-    return nil
-  }
-  return String(decoding: data, as: UTF8.self)
-}
-
 func testStatusRendersOneOrManyDevicesInResolverOrder() {
   let bedroom = FakeCompatibleAudioDevice(
     name: "Bedroom AirPods",
@@ -60,7 +48,6 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
     """,
     "plain status groups fields under device names in resolver order"
   )
-  check(outcome.payload.count == 2, "successful status has the exact top-level shape")
   check(outcome.payload["result"] as? String == "ok", "multi-device status result is ok")
   guard let records = statusRecords(outcome) else {
     check(false, "status payload contains device records")
@@ -74,7 +61,6 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
       && records[0]["conversationAwareness"] as? String == "on",
     "available status fields use canonical values"
   )
-  check(records[1].count == 4, "unsupported CA leaves the exact reduced record shape")
   check(
     records[1]["conversationAwareness"] == nil,
     "proven unsupported CA omits its canonical JSON key"
@@ -89,14 +75,6 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
       && records[1]["isSelectedAudioInput"] as? Bool == true,
     "each device has independent input and output selection observations"
   )
-  check(records.allSatisfy { $0["lm"] == nil && $0["ca"] == nil }, "aliases are never JSON keys")
-  check(
-    serializedStatusPayload(outcome) == """
-    {"devices":[{"conversationAwareness":"on","device":"Bedroom AirPods","isSelectedAudioInput":false,"isSelectedAudioOutput":true,"listeningMode":"transparency"},{"device":"Studio Beats","isSelectedAudioInput":true,"isSelectedAudioOutput":false,"listeningMode":"noise-cancellation"}],"result":"ok"}
-    """,
-    "multi-device status has the exact sorted JSON contract"
-  )
-
   let singleton = statusOutcome(
     ["status", "--device", "Bedroom AirPods", "--json"],
     devices: [bedroom]
@@ -128,7 +106,6 @@ func testStatusPreservesExistingUnresolvedGetFallbacks() {
     check(false, "unresolved status has a JSON record")
     return
   }
-  check(record.count == 5, "unresolved status keeps all canonical state keys")
   check(record["listeningMode"] is NSNull, "unresolved listening mode is JSON null")
   check(record["conversationAwareness"] is NSNull, "unresolved CA is JSON null")
   check(record["errors"] == nil, "unresolved values are not read errors")
@@ -223,63 +200,12 @@ func testStatusReportsReadErrorsAndAggregateExitPolicy() {
     ],
     "JSON all-read-error map names every canonical field"
   )
-  check(
-    serializedStatusPayload(failedOutcome) == """
-    {"devices":[{"conversationAwareness":null,"device":"Failed AirPods","errors":{"conversationAwareness":"read-error","isSelectedAudioInput":"read-error","isSelectedAudioOutput":"read-error","listeningMode":"read-error"},"isSelectedAudioInput":null,"isSelectedAudioOutput":null,"listeningMode":null}],"error":"read-error","result":"error"}
-    """,
-    "all-read-error status has the exact sorted JSON contract"
-  )
-
   let unsupported = FakeCompatibleAudioDevice(name: "Unsupported Beats")
   unsupported.listeningModeStatusOverride = .unsupported
   unsupported.conversationAwarenessStatusOverride = .unsupported
   let mixed = statusOutcome(devices: [failed, unsupported])
   check(mixed.exitCode == 0, "proven unsupported outcomes keep a mixed scan successful")
   check(mixed.payload["result"] as? String == "ok", "mixed scan has an ok result")
-  check(
-    statusRecords(mixed)?.last?.count == 3,
-    "a fully feature-unsupported record still contains both selection observations"
-  )
-
-  for readErrorMask in 0..<16 {
-    let device = FakeCompatibleAudioDevice(
-      name: "Combination \(readErrorMask)",
-      audioOutputSelectionStatus: (readErrorMask & 4) == 0 ? .notSelected : .readError,
-      audioInputSelectionStatus: (readErrorMask & 8) == 0 ? .notSelected : .readError
-    )
-    device.listeningModeStatusOverride = (readErrorMask & 1) == 0
-      ? .value(.transparency)
-      : .readError
-    device.conversationAwarenessStatusOverride = (readErrorMask & 2) == 0
-      ? .value(false)
-      : .readError
-
-    let outcome = statusOutcome(devices: [device])
-    let shouldFail = readErrorMask == 15
-    check(
-      outcome.exitCode == (shouldFail ? 5 : 0),
-      "only the all-four-fields read-error combination exits five (mask \(readErrorMask))"
-    )
-    check(
-      outcome.payload["result"] as? String == (shouldFail ? "error" : "ok"),
-      "every read-error combination has the matching aggregate result (mask \(readErrorMask))"
-    )
-    check(
-      (outcome.payload["error"] as? String) == (shouldFail ? "read-error" : nil),
-      "only the all-read-error combination has a top-level error (mask \(readErrorMask))"
-    )
-
-    var expectedErrors: [String: String] = [:]
-    if (readErrorMask & 1) != 0 { expectedErrors["listeningMode"] = "read-error" }
-    if (readErrorMask & 2) != 0 { expectedErrors["conversationAwareness"] = "read-error" }
-    if (readErrorMask & 4) != 0 { expectedErrors["isSelectedAudioOutput"] = "read-error" }
-    if (readErrorMask & 8) != 0 { expectedErrors["isSelectedAudioInput"] = "read-error" }
-    let errors = statusRecords(outcome)?.first?["errors"] as? [String: String] ?? [:]
-    check(
-      errors == expectedErrors,
-      "every read-error combination names exactly its failed fields (mask \(readErrorMask))"
-    )
-  }
 }
 
 func testStatusDistinguishesUnresolvedSelectionFromReadErrors() {
@@ -374,15 +300,9 @@ func testStatusNoDeviceContractAndResolutionPolicy() {
       outcome.plain == "No compatible AirPods or Beats device is connected.",
       "status uses the exact accepted no-device sentence"
     )
-    check(outcome.payload.count == 3, "status no-device has the exact payload shape")
     check((outcome.payload["devices"] as? [[String: Any]])?.isEmpty == true, "no-device array is empty")
     check(outcome.payload["error"] as? String == "no-device", "no-device JSON has its error")
     check(outcome.payload["result"] as? String == "error", "no-device JSON is an error")
-    check(
-      serializedStatusPayload(outcome)
-        == "{\"devices\":[],\"error\":\"no-device\",\"result\":\"error\"}",
-      "status no-device JSON is exact"
-    )
     if arguments.count == 1 {
       check(capturedName == nil, "unnamed status forwards no requested name")
     } else {

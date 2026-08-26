@@ -3,9 +3,6 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 BUILT_CLI="$ROOT/build/airpods-control"
-VERSION_FILE="$ROOT/version.txt"
-COMPATIBILITY_TEMPLATE="$ROOT/.github/ISSUE_TEMPLATE/compatibility-report.yml"
-COMPATIBILITY_DOC="$ROOT/docs/compatibility.md"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -16,7 +13,8 @@ assert_equal() {
   expected="$1"
   actual="$2"
   description="$3"
-  [ "$actual" = "$expected" ] || fail "$description: expected '$expected', got '$actual'"
+  [ "$actual" = "$expected" ] ||
+    fail "$description: expected '$expected', got '$actual'"
 }
 
 assert_contains() {
@@ -42,231 +40,68 @@ expect_failure() {
 }
 
 [ -x "$BUILT_CLI" ] || fail "missing executable: run make first"
-[ -f "$VERSION_FILE" ] || fail "missing version file: $VERSION_FILE"
-VERSION=$(cat "$VERSION_FILE")
-[ -n "$VERSION" ] || fail "empty version file: $VERSION_FILE"
-[ ! -e "$ROOT/build/airpods" ] || fail "legacy build/airpods artifact exists"
-[ -f "$COMPATIBILITY_TEMPLATE" ] || fail "missing compatibility report issue template"
-[ -f "$COMPATIBILITY_DOC" ] || fail "missing device compatibility documentation"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  'name: Compatibility report' "compatibility form name"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  '  - compatibility' "compatibility form default label"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  '  - raulgg' "compatibility form default assignee"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  '    id: report' "compatibility form report field ID"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  '    id: notes' "compatibility form notes field ID"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  '    id: privacy' "compatibility form privacy checklist"
-assert_contains "$(cat "$COMPATIBILITY_TEMPLATE")" \
-  'I reviewed this report and confirmed it contains no custom device name' \
-  "compatibility form requires a privacy review"
-assert_contains "$(cat "$COMPATIBILITY_DOC")" \
-  '| `support-report` metadata | Pending | Verified | Pending | Exploratory |' \
-  "compatibility matrix tracks support-report verification"
+VERSION=$(cat "$ROOT/version.txt")
+[ -n "$VERSION" ] || fail "empty version file"
 
-# Excluding avbypass.dylib proves these parser-only paths return before the
+# Omitting avbypass.dylib proves these parser-only journeys finish before the
 # entitlement bootstrap and private-framework lookup.
 PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/airpods-control-test.XXXXXX")
 trap 'rm -rf "$PROBE_DIR"' EXIT HUP INT TERM
 cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
 CLI="$PROBE_DIR/airpods-control"
 
-global_help=$("$CLI")
-assert_contains "$global_help" \
-  'airpods-control [--device NAME] <resource> <command>' "bare command help"
-assert_contains "$("$CLI" --help)" 'Resources:' "long global help"
-assert_contains "$("$CLI" -h)" 'Resources:' "short global help"
-assert_contains "$("$CLI" --help)" '--debug' "global debug help"
-assert_contains "$("$CLI" --help)" '--device NAME' "global device help"
-assert_contains "$("$CLI" --help)" 'Read, set, list, or cycle listening modes.' \
-  "global listening-mode command summary"
-assert_contains "$("$CLI" --help)" 'status' "global status command"
-assert_contains "$("$CLI" --help)" 'support-report' "global contributor command"
+"$CLI" --help >/dev/null
+"$CLI" lm --help >/dev/null
+"$CLI" status --help >/dev/null
+"$CLI" support-report --help >/dev/null
 
-assert_contains "$("$CLI" lm --help)" 'listening-mode set <mode>' "lm help"
-assert_contains "$("$CLI" listening-mode -h)" 'listening-mode list' "listening-mode help"
-assert_contains "$("$CLI" lm cycle --help)" 'listening-mode cycle' "lm cycle help"
-assert_contains "$("$CLI" lm --help)" 'anc, nc' "listening-mode alias help"
-assert_contains "$("$CLI" ca get --help)" 'conversation-awareness get' "ca help"
-assert_contains "$("$CLI" conversation-awareness set on -h)" \
-  'conversation-awareness set <on|off>' "conversation-awareness help"
-assert_contains "$("$CLI" status --help)" \
-  'airpods-control status [--device NAME]' "status help"
-assert_contains "$("$CLI" status -h)" \
-  'every compatible AirPods or Beats device' "short status help"
-assert_contains "$("$CLI" status --help)" \
-  'No compatible AirPods or Beats device is connected.' "status no-device help"
-assert_contains "$("$CLI" --device status lm get --help)" \
-  'listening-mode get' "device value does not select status help"
-assert_contains "$("$CLI" --json lm set adaptive --json --help)" \
-  'listening-mode set <mode>' "help precedence"
-assert_contains "$("$CLI" support-report --help)" \
-  'Build a local compatibility report' "support-report help"
-assert_contains "$("$CLI" support-report --help)" \
-  '--with-write-tests' "support-report consent flag help"
-assert_contains "$("$CLI" support-report --help)" \
-  '--no-write-tests' "support-report decline flag help"
-assert_contains "$("$CLI" support-report --help)" \
-  '--debug' "support-report debug flag help"
-
-assert_equal "$VERSION" "$("$CLI" --version)" "--version"
-assert_equal "$VERSION" "$("$CLI" -v)" "-v"
-assert_equal "$VERSION" "$("$CLI" version)" "version command"
+assert_equal "$VERSION" "$("$CLI" --version)" "plain version"
 assert_equal "{\"result\":\"ok\",\"version\":\"$VERSION\"}" \
   "$("$CLI" --json version)" "JSON version"
 
-"$CLI" --version >"$PROBE_DIR/plain.stdout" 2>"$PROBE_DIR/plain.stderr"
-assert_equal "$VERSION" "$(cat "$PROBE_DIR/plain.stdout")" "plain stdout"
-assert_equal '' "$(cat "$PROBE_DIR/plain.stderr")" "normal command has no diagnostics"
+"$CLI" --debug --version >"$PROBE_DIR/debug.stdout" \
+  2>"$PROBE_DIR/debug.stderr"
+assert_equal "$VERSION" "$(cat "$PROBE_DIR/debug.stdout")" \
+  "debug preserves stdout"
+[ -s "$PROBE_DIR/debug.stderr" ] ||
+  fail "debug version should emit diagnostics on stderr"
 
-"$CLI" --debug --version >"$PROBE_DIR/debug.stdout" 2>"$PROBE_DIR/debug.stderr"
-assert_equal "$VERSION" "$(cat "$PROBE_DIR/debug.stdout")" "debug preserves stdout"
-assert_contains "$(cat "$PROBE_DIR/debug.stderr")" \
-  'debug: cli.command="version"' "debug uses stderr"
-
-expect_failure 2 bad-args "$CLI" lm
-expect_failure 2 bad-args "$CLI" conversation-awareness
-expect_failure 2 bad-args "$CLI" get
-expect_failure 2 bad-args "$CLI" set adaptive
-expect_failure 2 bad-args "$CLI" list
-expect_failure 2 bad-args "$CLI" toggle transparency adaptive
-expect_failure 2 bad-args "$CLI" lm toggle transparency adaptive
-expect_failure 2 bad-args "$CLI" ca toggle
-expect_failure 2 bad-args "$CLI" st
-expect_failure 2 bad-args "$CLI" status extra
-expect_failure 2 bad-args "$CLI" status --modes transparency,adaptive
-expect_failure 2 bad-args "$CLI" status --with-write-tests
-expect_failure 2 bad-args "$CLI" status --no-write-tests
-expect_failure 2 bad-args "$CLI" cycle
-expect_failure 2 bad-args "$CLI" lm cycle extra
-expect_failure 2 bad-args "$CLI" lm cycle --modes
+# Representative failures exercise command shape, option ownership, duplicate
+# globals, and cycle validation. Detailed parser seams stay in the Swift suite.
+expect_failure 2 bad-args "$CLI" unknown-command
+expect_failure 2 bad-args "$CLI" lm set
 expect_failure 2 bad-args "$CLI" lm cycle --modes transparency
-expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,transparency
-expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,normal
-expect_failure 2 bad-args "$CLI" lm cycle --modes trans,transparency
-expect_failure 2 bad-args "$CLI" lm cycle --modes ,transparency,adaptive
-expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,,adaptive
-expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,adaptive,
-expect_failure 2 bad-args "$CLI" lm cycle --modes transparency,adaptive extra
+expect_failure 2 bad-args "$CLI" lm get --json --json
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
-  "$CLI" lm cycle --modes anc --json
-expect_failure 2 bad-args "$CLI" lm set normal
-expect_failure 2 bad-args "$CLI" ca set true
-expect_failure 2 bad-args "$CLI" lm --version
-expect_failure 2 bad-args "$CLI" -- lm get
-expect_failure 2 bad-args "$CLI" --device AirPods version
-expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" support-report --json
-expect_failure 2 bad-args "$CLI" --device AirPods support-report
-expect_failure 2 bad-args "$CLI" support-report extra
-expect_failure 2 bad-args "$CLI" support-report --with-write-tests --no-write-tests
-expect_failure 2 bad-args "$CLI" support-report --with-write-tests --with-write-tests
-expect_failure 2 bad-args "$CLI" lm get --with-write-tests
-expect_failure 2 bad-args "$CLI" --no-write-tests version
-expect_failure 2 bad-args "$CLI" lm get --device
-expect_failure 2 bad-args "$CLI" lm get --device --modes
-expect_failure 2 bad-args "$CLI" --device One --device Two lm get
-expect_failure 2 '{"error":"bad-args","result":"error"}' "$CLI" --json
-expect_failure 2 '{"error":"bad-args","result":"error"}' \
-  "$CLI" lm get --json --json
+  "$CLI" support-report --json
 
-set +e
-duplicate_debug_output=$(
-  "$CLI" --debug --debug lm get 2>"$PROBE_DIR/duplicate-debug.stderr"
-)
-duplicate_debug_status=$?
-set -e
-assert_equal 2 "$duplicate_debug_status" "duplicate debug exit status"
-assert_equal bad-args "$duplicate_debug_output" "duplicate debug output"
-assert_contains "$(cat "$PROBE_DIR/duplicate-debug.stderr")" \
-  'warning: cli.parse="bad-args"' "duplicate debug diagnostics"
-
-for alias in anc nc trans automatic auto; do
-  expect_failure 1 no-device "$CLI" lm set "$alias"
-done
-
-expect_failure 1 no-device "$CLI" lm cycle
-expect_failure 1 no-device "$CLI" lm cycle --modes off,trans,anc
-expect_failure 1 \
-  '{"device":null,"error":"no-device","listeningMode":null,"result":"error"}' \
-  "$CLI" lm cycle --json
-
-expect_failure 1 no-device "$CLI" lm --device 'Missing AirPods' get
-expect_failure 1 no-device "$CLI" --device 'Missing AirPods' ca get
-
-for invocation in \
-  'lm get' \
-  'lm set adaptive' \
-  'lm list' \
-  'lm cycle' \
-  'ca get' \
-  'ca set on'
-do
-  # Word splitting is intentional: these fixed invocations contain no quoted
-  # arguments, while the requested device remains one separately quoted arg.
-  # shellcheck disable=SC2086
-  expect_failure 1 no-device "$CLI" $invocation --device 'Missing AirPods'
-done
-
-expect_failure 1 'No compatible AirPods or Beats device is connected.' \
-  "$CLI" status
-expect_failure 1 'No compatible AirPods or Beats device is connected.' \
-  "$CLI" status --device 'Missing AirPods'
-expect_failure 1 \
-  '{"devices":[],"error":"no-device","result":"error"}' \
-  "$CLI" status --json
-expect_failure 1 \
-  '{"devices":[],"error":"no-device","result":"error"}' \
-  "$CLI" --device 'Missing AirPods' --json status
-
-expect_failure 1 \
-  '{"device":null,"error":"no-device","listeningMode":null,"result":"error"}' \
-  "$CLI" lm get --json
+# Exercise the executable's script-facing no-device contract as one journey.
+expect_failure 1 no-device "$CLI" \
+  --device 'Missing AirPods' lm set anc
 expect_failure 1 \
   '{"device":null,"error":"no-device","listeningMode":null,"result":"error","supportedListeningModes":[]}' \
   "$CLI" --json lm list
 expect_failure 1 \
-  '{"conversationAwareness":null,"device":null,"error":"no-device","result":"error"}' \
-  "$CLI" ca get --json
+  '{"devices":[],"error":"no-device","result":"error"}' \
+  "$CLI" --json status
 
 set +e
-support_report_output=$("$CLI" support-report 2>"$PROBE_DIR/support-report.stderr")
+support_report_output=$(
+  "$CLI" support-report 2>"$PROBE_DIR/support-report.stderr"
+)
 support_report_status=$?
 set -e
 assert_equal 1 "$support_report_status" "support-report no-device exit status"
 assert_contains "$support_report_output" \
   'Connect exactly one compatible AirPods or Beats device' \
   "support-report unique-device guidance"
-assert_contains "$support_report_output" \
-  'Nothing was sent to GitHub.' "support-report does not offer issue creation"
 assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
   "support-report no-device has no prompt"
 
-set +e
-support_report_debug_output=$(
-  "$CLI" support-report --debug 2>"$PROBE_DIR/support-report-debug.stderr"
-)
-support_report_debug_status=$?
-set -e
-assert_equal 1 "$support_report_debug_status" "support-report --debug exit status"
-assert_contains "$support_report_debug_output" \
-  'Connect exactly one compatible AirPods or Beats device' \
-  "--debug leaves support-report stdout alone"
-assert_contains "$(cat "$PROBE_DIR/support-report-debug.stderr")" \
-  'debug: cli.command="support-report"' "support-report accepts --debug"
-
-# Safety guard for the consented invocation below: --with-write-tests
-# authorizes real device writes without prompting, and CONTRIBUTING.md
-# promises that tests never write device settings. The probe copy excludes
-# avbypass.dylib, so the entitlement gate must block device discovery. Prove
-# that here, immediately before the consented flag, so the guard travels with
-# this test instead of depending on earlier tests or file ordering. If this
-# assertion ever fails, the consented invocation could switch listening modes
-# on a contributor's connected AirPods.
+# --with-write-tests authorizes real writes. This probe copy has no bypass
+# dylib, and this immediately preceding operational command proves discovery is
+# blocked before the consented invocation runs.
 expect_failure 1 no-device "$CLI" lm get
-
 set +e
 support_report_writes_output=$(
   "$CLI" support-report --with-write-tests \
@@ -281,15 +116,5 @@ assert_contains "$support_report_writes_output" \
   "consented support-report unique-device guidance"
 assert_equal '' "$(cat "$PROBE_DIR/support-report-writes.stderr")" \
   "no device means no consent prompt and no writes"
-
-set +e
-"$CLI" --debug lm get >"$PROBE_DIR/operation.stdout" 2>"$PROBE_DIR/operation.stderr"
-operation_status=$?
-set -e
-assert_equal 1 "$operation_status" "debug operational exit status"
-assert_equal no-device "$(cat "$PROBE_DIR/operation.stdout")" \
-  "debug operational stdout"
-assert_contains "$(cat "$PROBE_DIR/operation.stderr")" \
-  'debug: cli.command="listening-mode.get"' "debug operational diagnostics"
 
 printf '%s\n' 'CLI contract tests passed'

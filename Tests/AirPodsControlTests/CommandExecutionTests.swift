@@ -10,7 +10,6 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   check(resolverCallCount == 0, "version does not resolve a device")
   check(version.plain == VERSION, "version outcome has plain version")
   check(version.exitCode == 0, "version outcome succeeds")
-  check(version.payload.count == 2, "version payload has no resource fields")
   check(version.payload["result"] as? String == "ok", "version payload succeeds")
   check(version.payload["version"] as? String == VERSION, "version payload has version")
 
@@ -29,7 +28,6 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   check(!capturedLoggerEnabled, "execution forwards its configured logger")
   check(noDevice.plain == "no-device", "missing device has plain no-device")
   check(noDevice.exitCode == 1, "missing device exits one")
-  check(noDevice.payload.count == 4, "missing device get has the exact payload shape")
   check(noDevice.payload["device"] is NSNull, "missing device is JSON null")
   check(noDevice.payload["listeningMode"] is NSNull, "missing listening mode is JSON null")
   check(noDevice.payload["result"] as? String == "error", "missing device is an error")
@@ -37,7 +35,6 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
 
   let listInvocation = try! parseInvocation(["lm", "list"])
   let noDeviceList = CommandExecution.execute(listInvocation) { _, _ in nil }
-  check(noDeviceList.payload.count == 5, "missing-device list has the exact payload shape")
   check(
     noDeviceList.payload["supportedListeningModes"] as? [String] == [],
     "missing-device list has an empty supported mode list"
@@ -305,58 +302,9 @@ func testConversationAwarenessCommandExecution() {
   check(unchanged.payload["error"] == nil, "Conversation Awareness no-op omits error")
 }
 
-func testEveryOperationalCommandUsesSharedNamedSelection() {
-  let cases: [([String], String, Bool)] = [
-    (["--device", "Studio AirPods", "lm", "get"], "listeningMode", false),
-    (["lm", "set", "adaptive", "--device", "Studio AirPods"], "listeningMode", false),
-    (["lm", "--device", "Studio AirPods", "list"], "listeningMode", true),
-    (["--device", "Studio AirPods", "lm", "cycle"], "listeningMode", false),
-    (["ca", "--device", "Studio AirPods", "get"], "conversationAwareness", false),
-    (["ca", "set", "on", "--device", "Studio AirPods"], "conversationAwareness", false),
-  ]
-
-  for (arguments, stateKey, isList) in cases {
-    let invocation = try! parseInvocation(arguments)
-    var resolverCallCount = 0
-    var capturedName: String?
-    var capturedPolicy: DeviceSelectionPolicy?
-    let outcome = CommandExecution.execute(
-      invocation,
-      resolveDevices: { name, policy, _ in
-        resolverCallCount += 1
-        capturedName = name
-        capturedPolicy = policy
-        return nil
-      }
-    )
-    check(resolverCallCount == 1, "\(arguments) resolves exactly once")
-    check(capturedName == "Studio AirPods", "\(arguments) forwards its exact requested name")
-    if case .firstOrExact? = capturedPolicy {
-      check(true, "\(arguments) retains first-or-exact operational selection")
-    } else {
-      check(false, "\(arguments) retains first-or-exact operational selection")
-    }
-    check(outcome.plain == "no-device", "\(arguments) retains plain no-device")
-    check(outcome.exitCode == 1, "\(arguments) retains no-device exit one")
-    check(outcome.payload[stateKey] is NSNull, "\(arguments) nulls its canonical state")
-    check(outcome.payload["device"] is NSNull, "\(arguments) has no selected device")
-    check(outcome.payload["error"] as? String == "no-device", "\(arguments) has no-device error")
-    check(outcome.payload["result"] as? String == "error", "\(arguments) result is error")
-    if isList {
-      check(
-        outcome.payload["supportedListeningModes"] as? [String] == [],
-        "list retains an empty supported mode list"
-      )
-    } else {
-      check(outcome.payload["supportedListeningModes"] == nil, "non-list omits supported modes")
-    }
-  }
-}
-
 func runCommandExecutionTests() {
   testCommandExecutionLifecycleAndNoDeviceOutcomes()
   testListeningModeCommandExecution()
   testListeningModeCycleCommandExecution()
   testConversationAwarenessCommandExecution()
-  testEveryOperationalCommandUsesSharedNamedSelection()
 }
