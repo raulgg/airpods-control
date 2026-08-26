@@ -22,10 +22,6 @@ protocol ListeningModeTransport: AnyObject {
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode>
-  func setListeningModeAndReadBack(
-    _ target: ListeningMode,
-    allowOff: Bool
-  ) -> DeviceWriteObservation<ListeningMode>
   func settle(for interval: TimeInterval)
 }
 
@@ -34,12 +30,12 @@ extension ListeningModeTransport {
     .value(availableListeningModes())
   }
 
-  func setListeningModeAndReadBack(
-    _ target: ListeningMode,
-    allowOff: Bool
-  ) -> DeviceWriteObservation<ListeningMode> {
-    setListeningModeAndReadBack(target)
-  }
+}
+
+protocol ListeningModeAllowOffTransport: ListeningModeTransport {
+  func setListeningModeAndReadBackAllowingOff(
+    _ target: ListeningMode
+  ) -> DeviceWriteObservation<ListeningMode>
 }
 
 extension PrivateAudioDevice: ListeningModeTransport {
@@ -62,7 +58,7 @@ private let halListeningModeSupportMask: UInt32 = 0b111
 private let halReadbackAttempts = 16
 private let halReadbackInterval: TimeInterval = 0.05
 
-final class HALListeningModeTransport: ListeningModeTransport {
+final class HALListeningModeTransport: ListeningModeAllowOffTransport {
   let name: String?
   let audioDeviceID: AudioDeviceID
   let bluetoothDevice: AnyObject
@@ -154,7 +150,13 @@ final class HALListeningModeTransport: ListeningModeTransport {
     setListeningModeAndReadBack(target, allowOff: false)
   }
 
-  func setListeningModeAndReadBack(
+  func setListeningModeAndReadBackAllowingOff(
+    _ target: ListeningMode
+  ) -> DeviceWriteObservation<ListeningMode> {
+    setListeningModeAndReadBack(target, allowOff: true)
+  }
+
+  private func setListeningModeAndReadBack(
     _ target: ListeningMode,
     allowOff: Bool
   ) -> DeviceWriteObservation<ListeningMode> {
@@ -466,10 +468,21 @@ struct ListeningModeWritePlan {
 
   func execute(_ target: ListeningMode) -> ListeningModeWriteResolution {
     precondition(canWrite(target), "write plan cannot execute an unavailable mode")
-    let observation = transport.setListeningModeAndReadBack(
-      target,
-      allowOff: authorizesHALOff
-    )
+    let observation: DeviceWriteObservation<ListeningMode>
+    if target == .off, authorizesHALOff {
+      guard let allowOffTransport = transport as? any ListeningModeAllowOffTransport
+      else {
+        return resolveListeningModeWrite(
+          requested: target,
+          setterAccepted: false,
+          observed: transport.currentListeningMode(),
+          transparencySupported: false
+        )
+      }
+      observation = allowOffTransport.setListeningModeAndReadBackAllowingOff(target)
+    } else {
+      observation = transport.setListeningModeAndReadBack(target)
+    }
     if target == .off,
       authorizesHALOff,
       allowOffAuthorization?.cachedEvidence != nil,

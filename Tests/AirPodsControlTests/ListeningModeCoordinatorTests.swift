@@ -2,7 +2,7 @@ import CoreAudio
 import Dispatch
 import Foundation
 
-private final class FakeListeningModeTransport: ListeningModeTransport {
+private final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
   let name: String?
   let listeningModeTransportKind: ListeningModeTransportKind
   var modes: [ListeningMode]
@@ -58,14 +58,14 @@ private final class FakeListeningModeTransport: ListeningModeTransport {
   func setListeningModeAndReadBack(
     _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode> {
-    applyWrite(target)
+    allowOffWrites.append(false)
+    return applyWrite(target)
   }
 
-  func setListeningModeAndReadBack(
-    _ target: ListeningMode,
-    allowOff: Bool
+  func setListeningModeAndReadBackAllowingOff(
+    _ target: ListeningMode
   ) -> DeviceWriteObservation<ListeningMode> {
-    allowOffWrites.append(allowOff)
+    allowOffWrites.append(true)
     return applyWrite(target)
   }
 
