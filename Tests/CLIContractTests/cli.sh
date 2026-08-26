@@ -71,7 +71,8 @@ assert_equal "$VERSION" "$(cat "$PROBE_DIR/debug.stdout")" \
 expect_failure 2 bad-args "$CLI" unknown-command
 expect_failure 2 bad-args "$CLI" lm set
 expect_failure 2 bad-args "$CLI" lm cycle --modes transparency
-expect_failure 2 bad-args "$CLI" lm get --json --json
+expect_failure 2 '{"error":"bad-args","result":"error"}' \
+  "$CLI" lm get --json --json
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" support-report --json
 
