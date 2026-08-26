@@ -68,15 +68,29 @@ private func allowOffCachePermissions(at url: URL) -> Int? {
   return permissions.intValue
 }
 
+private func allowOffCacheFileLockIsContended(fileURL: URL) -> Bool {
+  let lockURL = fileURL.deletingLastPathComponent()
+    .appendingPathComponent("allow-off-v1.lock")
+  let descriptor = Darwin.open(lockURL.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+  guard descriptor >= 0 else { return false }
+  defer { Darwin.close(descriptor) }
+  if Darwin.lockf(descriptor, F_TLOCK, 0) == 0 {
+    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+    return false
+  }
+  return errno == EACCES || errno == EAGAIN
+}
+
 private func withHeldAllowOffCacheFileLock(
   fileURL: URL,
+  holdFor seconds: String = "2",
   _ body: () -> Void
 ) {
   let lockURL = fileURL.deletingLastPathComponent()
     .appendingPathComponent("allow-off-v1.lock")
   let process = Process()
   process.executableURL = URL(fileURLWithPath: "/usr/bin/lockf")
-  process.arguments = ["-t", "0", lockURL.path, "/bin/sleep", "2"]
+  process.arguments = ["-t", "0", lockURL.path, "/bin/sleep", seconds]
   do {
     try process.run()
   } catch {
@@ -422,6 +436,78 @@ func runListeningModeAllowOffCacheTests() {
     check(
       cache.lookup(rawDeviceUID: "contended") == .miss,
       "failed-soft lock contention does not mutate the cache"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let observedAt = Date(timeIntervalSince1970: 1_734_000_000)
+    let afterContention = observedAt.addingTimeInterval(10)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: {
+        allowOffCacheFileLockIsContended(fileURL: fileURL)
+          ? observedAt
+          : afterContention
+      },
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    _ = cache.storePositiveObservation(rawDeviceUID: "seed")
+
+    withHeldAllowOffCacheFileLock(fileURL: fileURL, holdFor: "0.15") {
+      check(
+        cache.storePositiveObservation(rawDeviceUID: "delayed") == .applied,
+        "positive observation waits for brief lock contention"
+      )
+    }
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: "delayed"))?.evidence.observedAt
+        == observedAt,
+      "positive observation keeps the time captured before lock contention"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let current = Date(timeIntervalSince1970: 1_736_000_020)
+    let clock = AllowOffCacheTestClock(current)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "ordered-observation-uid"
+    let older = current.addingTimeInterval(-20)
+    let newer = current.addingTimeInterval(-10)
+
+    clock.value = newer
+    check(
+      cache.storePositiveObservation(rawDeviceUID: rawUID) == .applied,
+      "newer positive observation is stored"
+    )
+    clock.value = older
+    check(
+      cache.storePositiveObservation(rawDeviceUID: rawUID) == .unchanged,
+      "older positive observation cannot replace newer evidence"
+    )
+    clock.value = current
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+        == newer,
+      "newer evidence survives a delayed older positive observation"
+    )
+    clock.value = older
+    check(
+      cache.removeEvidence(rawDeviceUID: rawUID) == .unchanged,
+      "older negative observation cannot remove newer evidence"
+    )
+    clock.value = current
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+        == newer,
+      "newer evidence survives a delayed older negative observation"
+    )
+    check(
+      cache.removeEvidence(rawDeviceUID: rawUID) == .applied,
+      "newer negative observation removes older evidence"
     )
   }
 
