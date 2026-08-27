@@ -1,0 +1,7 @@
+:robot: I have created a release *beep* *boop*
+---
+
+This release expands listening-mode control and hardens Allow Off cache handling.
+
+---
+This PR was generated with [Release Please](https://github.com/googleapis/release-please). See [documentation](https://github.com/googleapis/release-please#release-please).

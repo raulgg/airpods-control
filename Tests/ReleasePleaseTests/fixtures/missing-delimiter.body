@@ -1,0 +1,9 @@
+## [0.3.0](https://github.com/raulgg/airpods-control/compare/v0.2.1...v0.3.0) (2026-08-27)
+
+This release expands listening-mode control and hardens Allow Off cache handling.
+
+### Included
+
+- Control listening modes on unselected AirPods ([#31](https://github.com/raulgg/airpods-control/issues/31)).
+
+This PR was generated with [Release Please](https://github.com/googleapis/release-please).
