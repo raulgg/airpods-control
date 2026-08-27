@@ -3,6 +3,10 @@ import Darwin
 @main
 struct TestRunner {
   static func main() {
+    if let status = runAllowOffCacheLockHolderCommandIfRequested() {
+      exit(status)
+    }
+
     runCLIParsingTests()
     runInteractiveDeviceChooserTests()
     runListeningModeTests()

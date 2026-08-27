@@ -19,6 +19,61 @@ private enum AllowOffCacheTestError: Error {
 }
 
 private let allowOffCacheTestSalt = Data(0..<32)
+private let allowOffCacheLockHolderArgument = "--hold-allow-off-cache-lock"
+
+func runAllowOffCacheLockHolderCommandIfRequested() -> Int32? {
+  let arguments = Array(CommandLine.arguments.dropFirst())
+  guard arguments.first == allowOffCacheLockHolderArgument else { return nil }
+  guard arguments.count == 3,
+    let seconds = TimeInterval(arguments[2]),
+    seconds.isFinite,
+    seconds > 0
+  else {
+    fputs("allow-off lock holder: expected <lock-path> <positive-seconds>\n", stderr)
+    return 2
+  }
+
+  let lockURL = URL(fileURLWithPath: arguments[1])
+  let descriptor = lockURL.withUnsafeFileSystemRepresentation { path in
+    guard let path else { return Int32(-1) }
+    return Darwin.open(
+      path,
+      O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW,
+      mode_t(0o600)
+    )
+  }
+  guard descriptor >= 0 else {
+    let errorCode = errno
+    fputs(
+      "allow-off lock holder: open failed: \(String(cString: strerror(errorCode)))\n",
+      stderr
+    )
+    return 1
+  }
+  defer { Darwin.close(descriptor) }
+
+  guard Darwin.lockf(descriptor, F_TLOCK, 0) == 0 else {
+    let errorCode = errno
+    fputs(
+      "allow-off lock holder: lock failed: \(String(cString: strerror(errorCode)))\n",
+      stderr
+    )
+    return 1
+  }
+  defer { _ = Darwin.lockf(descriptor, F_ULOCK, 0) }
+
+  var startSignal: UInt8 = 0
+  while true {
+    let count = Darwin.read(STDIN_FILENO, &startSignal, 1)
+    if count == 1 { break }
+    if count == -1 && errno == EINTR { continue }
+    fputs("allow-off lock holder: parent did not send the start signal\n", stderr)
+    return 1
+  }
+
+  Thread.sleep(forTimeInterval: seconds)
+  return 0
+}
 
 private func withTemporaryAllowOffCache(
   _ body: (URL) -> Void
@@ -88,16 +143,24 @@ private func withHeldAllowOffCacheFileLock(
 ) {
   let lockURL = fileURL.deletingLastPathComponent()
     .appendingPathComponent("allow-off-v1.lock")
+  guard let executableURL = Bundle.main.executableURL else {
+    check(false, "lock contention test resolves the swift-tests executable")
+    return
+  }
+
   let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/lockf")
-  process.arguments = ["-t", "0", lockURL.path, "/bin/sleep", seconds]
+  let startPipe = Pipe()
+  process.executableURL = executableURL
+  process.arguments = [allowOffCacheLockHolderArgument, lockURL.path, seconds]
+  process.standardInput = startPipe
   do {
     try process.run()
   } catch {
-    check(false, "lock contention test starts a lock holder")
+    check(false, "lock contention test starts a lock holder: \(error)")
     return
   }
   defer {
+    try? startPipe.fileHandleForWriting.close()
     if process.isRunning { process.terminate() }
     process.waitUntilExit()
   }
@@ -114,10 +177,25 @@ private func withHeldAllowOffCacheFileLock(
     if Darwin.lockf(descriptor, F_TLOCK, 0) == -1,
       errno == EACCES || errno == EAGAIN
     {
+      do {
+        try startPipe.fileHandleForWriting.write(contentsOf: Data([1]))
+        try startPipe.fileHandleForWriting.close()
+      } catch {
+        check(false, "lock contention test signals the lock holder: \(error)")
+        return
+      }
       body()
       return
     }
     _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+    if !process.isRunning {
+      process.waitUntilExit()
+      check(
+        false,
+        "lock contention holder exited before acquiring the lock (status \(process.terminationStatus))"
+      )
+      return
+    }
     _ = Darwin.usleep(1_000)
   }
   check(false, "lock contention fixture acquires the cache lock")
