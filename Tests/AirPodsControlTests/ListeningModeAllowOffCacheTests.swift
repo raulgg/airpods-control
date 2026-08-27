@@ -537,6 +537,192 @@ func runListeningModeAllowOffCacheTests() {
   }
 
   withTemporaryAllowOffCache { fileURL in
+    let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_500_000))
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "untrusted-cache-file-uid"
+    let directoryURL = fileURL.deletingLastPathComponent()
+    let externalURL = directoryURL.appendingPathComponent("external.json")
+    let externalData = Data("external-cache-target".utf8)
+
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "untrusted-file test seeds positive evidence"
+    )
+    do {
+      try externalData.write(to: externalURL)
+      try FileManager.default.removeItem(at: fileURL)
+      try FileManager.default.createSymbolicLink(
+        at: fileURL,
+        withDestinationURL: externalURL
+      )
+    } catch {
+      check(false, "symlink test prepares an external cache target")
+      return
+    }
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "a cache symlink is treated as a miss"
+    )
+    check(
+      (try? Data(contentsOf: externalURL)) == externalData,
+      "a cache symlink never reads the external target as trusted evidence"
+    )
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "a cache symlink can be replaced without following it"
+    )
+    check(
+      (try? Data(contentsOf: externalURL)) == externalData,
+      "rebuilding a symlinked cache leaves the external target unchanged"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_600_000))
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "hard-linked-cache-file-uid"
+    let directoryURL = fileURL.deletingLastPathComponent()
+    let externalURL = directoryURL.appendingPathComponent("hard-link-target.json")
+    let externalData = Data("hard-link-cache-target".utf8)
+
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "hard-link test seeds positive evidence"
+    )
+    do {
+      try externalData.write(to: externalURL)
+      try FileManager.default.removeItem(at: fileURL)
+      try FileManager.default.linkItem(atPath: externalURL.path, toPath: fileURL.path)
+    } catch {
+      check(false, "hard-link test prepares an external cache target")
+      return
+    }
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "a cache hard link is treated as a miss"
+    )
+    check(
+      (try? Data(contentsOf: externalURL)) == externalData,
+      "a cache hard link never trusts a multiply-linked file"
+    )
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "a hard-linked cache can be replaced safely"
+    )
+    check(
+      (try? Data(contentsOf: externalURL)) == externalData,
+      "rebuilding a hard-linked cache leaves the external target unchanged"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_700_000))
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "oversized-cache-file-uid"
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "oversized-file test seeds positive evidence"
+    )
+    do {
+      try Data(repeating: 0x78, count: 1_048_577).write(
+        to: fileURL,
+        options: .atomic
+      )
+      try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o600)],
+        ofItemAtPath: fileURL.path
+      )
+    } catch {
+      check(false, "oversized-file test prepares a cache over the byte limit")
+      return
+    }
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "an oversized cache file is a safe miss"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_800_000))
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "overfull-cache-file-uid"
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      ) == .applied,
+      "overfull-file test seeds positive evidence"
+    )
+    var positiveEvidence: [String: Any] = [:]
+    for index in 0...256 {
+      let digits = String(index, radix: 16)
+      let key = String(repeating: "0", count: 64 - digits.count) + digits
+      positiveEvidence[key] = ["observedAt": clock.value.timeIntervalSince1970]
+    }
+    let document: [String: Any] = [
+      "schemaVersion": 1,
+      "salt": allowOffCacheTestSalt.base64EncodedString(),
+      "positiveEvidence": positiveEvidence,
+      "negativeEvidence": [:],
+    ]
+    do {
+      let data = try JSONSerialization.data(
+        withJSONObject: document,
+        options: [.sortedKeys]
+      )
+      try data.write(to: fileURL, options: .atomic)
+      try FileManager.default.setAttributes(
+        [.posixPermissions: NSNumber(value: 0o600)],
+        ofItemAtPath: fileURL.path
+      )
+    } catch {
+      check(false, "overfull-file test prepares more than the entry limit")
+      return
+    }
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "a cache over the entry limit is a safe miss"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
     let observedAt = Date(timeIntervalSince1970: 1_732_000_000)
     let clock = AllowOffCacheTestClock(observedAt)
     let cache = PersistentListeningModeAllowOffCache(
