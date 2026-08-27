@@ -61,11 +61,15 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .RB [ --help | -h ]
 .SH DESCRIPTION
 .B airpods-control
-reads and sets the AirPods listening mode and Conversation Awareness through private macOS audio interfaces, including the private AVFoundation API
-.RB ( AVOutputDevice
-in
-.BR AVRouting.framework ).
-A successful change takes effect immediately and shows the same on-screen banner as a stem press. No Control Center, menu bar, or Accessibility permission is involved.
+reads and sets the AirPods listening mode and Conversation Awareness through
+private macOS audio interfaces, including the private
+.B AVOutputDevice
+control object in
+.BR AVRouting.framework .
+The
+.B AVOutputDevice
+object is macOS's per-endpoint audio control surface.
+A successful write means the selected macOS provider reports the requested state within a bounded readback window; it is not a direct accessory acknowledgement. No Control Center, menu bar, or Accessibility permission is involved.
 .PP
 Reaching the API requires one private audio entitlement
 .RB ( com.apple.avfoundation.allow-system-wide-context )
@@ -84,7 +88,7 @@ command.
 .IP
 Status builds records from the public
 .B kAudioHardwarePropertyDevices
-list of currently available Core Audio devices. An eligible endpoint must be ordinary and nonaggregate, use classic Bluetooth, be alive and ready, have an audio stream, and map to an IOBluetoothDevice. A runtime-gated HAL property is the primary Apple audio compatibility signal. An allowlisted Apple or Beats manufacturer is used only when that property is unavailable. Input and output endpoints form one record when their mapped objects compare equal in both directions, with the output endpoint preferred. The Core Audio name is used only for display and exact
+list of currently available Core Audio devices. An eligible endpoint must be ordinary and nonaggregate, use classic Bluetooth, be alive and ready, have an audio stream, and map to an IOBluetoothDevice. A runtime-gated HAL (Core Audio's hardware abstraction layer) property is the primary Apple audio compatibility signal. An allowlisted Apple or Beats manufacturer is used only when that property is unavailable. Input and output endpoints form one record when their mapped objects compare equal in both directions, with the output endpoint preferred. The Core Audio name is used only for display and exact
 .B --device
 targeting, never identity or correlation.
 .IP
@@ -180,12 +184,21 @@ An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to C
 .IP
 The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
 .SS LISTENING MODE
+For each command, a command-ready selected AirPods output uses the private AV
+provider; an eligible device proven unselected uses its mapped Core Audio HAL
+output endpoint that exposes the lstm property. In a group with several Core
+Audio outputs, this control endpoint can differ from the named display endpoint.
+Unknown routing tries AV before a pre-write HAL fallback. Once a setter is
+attempted, the provider is sticky and the command never retries through the
+other provider. No command changes the audio route.
 .TP
 .BR "listening-mode get" ", " "lm get"
 Print the current listening mode.
 .TP
 .BR "listening-mode set " mode ", " "lm set " mode
-Set the listening mode. If the mode is already active, prints
+Set the listening mode. The setter is idempotent: repeating a request for the
+current state does not issue another write. If the mode is already active,
+prints
 .B ok
 without issuing a write. Otherwise prints
 .B ok
@@ -196,6 +209,8 @@ if the requested mode is not observed within the bounded verification window.
 .BR "listening-mode list" ", " "lm list"
 Print the comma-separated modes supported by the connected device in the deterministic order documented under
 .BR MODES .
+.IP
+A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. It omits Off because HAL does not expose the separate user-configured Allow Off setting. HAL-only direct writes or cycles into Off are therefore unsupported until that setting can be established. AV-backed commands continue to expose Off when AV advertises it.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
 Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes always cycle in the order documented under
@@ -219,7 +234,8 @@ or
 .BR off .
 .TP
 .BR "conversation-awareness set " "on|off" ", " "ca set " "on|off"
-Set Conversation Awareness. The setter is idempotent and uses the same
+Set Conversation Awareness. The setter is idempotent: repeating a request for
+the current state does not issue another write. It uses the same
 .B ok
 and
 .B no-op
@@ -237,7 +253,7 @@ The read-only report includes only the normalized model identifier, advertised l
 .IP
 The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It does not enumerate the Core Audio status inventory, query the selected input or output route, call the selection mapper, run active-output enrichment, or read or report routing identifiers. It never uses the clipboard, sends telemetry, or submits anything. A read-only report does not change device settings or intentionally interrupt audio; consented write tests temporarily change the settings in the captured plan.
 .IP
-When at least one write test can be planned safely, an interactive run captures the initial settings and advertised capabilities, displays that plan, and asks for consent, defaulting to no. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped. The tests switch through recognized advertised listening modes and toggle Conversation Awareness away from the captured state and back. Mode switches are audible, and noise control changes while the device is worn. Do not run the tests during a call.
+When at least one write test can be planned safely, an interactive run (standard input connected to a terminal, or TTY) captures the initial settings and advertised capabilities, displays that plan, and asks for consent, defaulting to no. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped. The tests switch through recognized advertised listening modes and toggle Conversation Awareness away from the captured state and back. Mode switches are audible, and noise control changes while the device is worn. Do not run the tests during a call.
 .IP
 An accepted but unverified write is reported as
 .BR no-op ;
@@ -303,12 +319,19 @@ at least two distinct entries. Mode aliases are accepted. Duplicates are ignored
 (exit 2).
 .TP
 .BI "--device " name
-Target a compatible device using a case-insensitive exact name match. Individual resource commands match their compatible AV output devices; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. No match or multiple exact matches produce
+Target a compatible device using a case-insensitive exact name match. Listening-mode commands can match a mapped Core Audio HAL device or their compatible AV output device; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. Multiple exact listening-mode matches produce
+.BR ambiguous-device ;
+other missing or ambiguous matches retain
 .BR no-device .
 .IP
 The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
 .IP
-Without this option, listening-mode and Conversation Awareness commands use the first compatible system output device.
+Without this option, listening-mode commands automatically use the selected output or a unique eligible HAL target. If no selected HAL target exists and multiple HAL targets remain, they prompt only when standard input and standard error are terminals and JSON is absent; multiple selected HAL targets never open the chooser. All other ambiguity fails with
+.BR ambiguous-device .
+HAL target selection does not add leftover AV records to the chooser. A unique selected HAL target and unique singular active AV endpoint form one logical target even when optional status enrichment cannot join them; names are never used for that correlation. If HAL listening-mode control is entirely unavailable, the established AV-only behavior continues to use the first compatible AV output.
+Blank input,
+.BR q ,
+or end of input cancels the chooser. Conversation Awareness retains the first compatible AV output behavior.
 .B status
 instead reports every eligible canonical device derived from the currently available Core Audio endpoint list, regardless of which device is the selected output.
 .TP
@@ -357,7 +380,9 @@ set to
 .BR error .
 .TP
 .B --debug
-Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code. Diagnostics cover the entitlement bypass, private API discovery, device selection, capabilities, reads, and writes. Status-inventory diagnostics report bounded eligibility, filter, mapping, and deduplication outcomes without logging opaque Core Audio handles or raw HAL values. Audio-selection diagnostics report only bounded outcomes such as mapped, unrelated transport, composite, or unresolved. Display names can appear but are never identity or correlation evidence. Raw addresses, UIDs, and private routing identifiers are not read for inventory or selection. The optional feature-enrichment probe never logs its associatedAudioDeviceID, translated device handle, or private endpoint deviceID. Accepted anywhere in an operational command, a global version command, or
+Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code. Diagnostics cover the entitlement bypass, private API discovery, device selection, capabilities, reads, and writes. When a Core Audio call fails, diagnostics may include its
+.B OSStatus
+numeric status code returned by macOS. Status-inventory diagnostics report bounded eligibility, filter, mapping, and deduplication outcomes without logging opaque Core Audio handles or raw HAL values. Audio-selection diagnostics report only bounded outcomes such as mapped, unrelated transport, composite, or unresolved. Display names can appear but are never identity or correlation evidence. Raw addresses, UIDs, and private routing identifiers are not read for inventory or selection. The optional feature-enrichment probe never logs its associatedAudioDeviceID, translated device handle, or private endpoint deviceID. Accepted anywhere in an operational command, a global version command, or
 .BR support-report ,
 where the diagnostics can explain why a device is not recognized.
 .B support-report
@@ -370,7 +395,7 @@ Debug output from operational commands can also contain selected device names. R
 Success.
 .TP
 .B 1
-No supported target was selected, or no unique identifiable report device was available (no-device).
+No supported target was selected, selection was cancelled, devices were ambiguous, or no unique identifiable report device was available.
 .TP
 .B 2
 Missing or malformed arguments (bad-args).
@@ -393,7 +418,7 @@ An externally delivered SIGINT was caught during the write tests and restoration
 .B 143
 An externally delivered SIGTERM was caught during the write tests and restoration was attempted.
 .SH NOTES
-Listening-mode writes use a bounded readback window while the device settles. If
+Listening-mode writes use one route-selected AV or HAL provider and a bounded same-provider readback window while the device settles. A matching readback means macOS reports the requested state through that provider; it is not a direct AirPods protocol acknowledgement. Commands never change the default output or start an audio stream. If
 .B off
 is not verified, the setter accepted the request, and the device advertises Transparency, direct writes and explicit cycles into
 .B off

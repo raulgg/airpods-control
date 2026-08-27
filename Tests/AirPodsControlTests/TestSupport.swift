@@ -58,6 +58,10 @@ func commandOutcome(
   return CommandExecution.execute(invocation) { _, _ in device }
 }
 
+extension FakeCompatibleAudioDevice: ListeningModeTransport {
+  var listeningModeTransportKind: ListeningModeTransportKind { .av }
+}
+
 extension CommandExecution {
   static func execute(
     _ invocation: CLIInvocation,
@@ -67,7 +71,35 @@ extension CommandExecution {
     ) -> (any CompatibleAudioDevice)?,
     supportReport: SupportReportCommand = SupportReportCommand()
   ) -> CommandOutcome {
-    execute(
+    if ListeningModeCommand(invocation.command) != nil {
+      return executeListeningMode(
+        invocation,
+        resolveSession: { command, requestedName, logger in
+          guard let transport = resolveDevice(requestedName, logger)
+            as? any ListeningModeTransport
+          else { return .noDevice }
+          let name = transport.name ?? "Compatible device"
+          let coordinator = ListeningModeCoordinator(
+            candidates: [
+              ListeningModeCandidate(
+                displayName: name,
+                selectableNames: [name],
+                avTransport: transport,
+                halTransport: nil,
+                route: .unknown
+              )
+            ],
+            logger: logger
+          )
+          return coordinator.resolve(
+            command: command,
+            named: requestedName,
+            chooseAmbiguous: { _ in .unavailable }
+          )
+        }
+      )
+    }
+    return execute(
       invocation,
       resolveDevices: { requestedName, _, logger in
         resolveDevice(requestedName, logger).map { [$0] }

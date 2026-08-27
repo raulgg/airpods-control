@@ -17,12 +17,20 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   var capturedName: String?
   var capturedLoggerEnabled = true
   resolverCallCount = 0
-  let noDevice = CommandExecution.execute(namedInvocation) { name, logger in
+  let noDevice = CommandExecution.executeListeningMode(
+    namedInvocation,
+    resolveSession: { command, name, logger in
     resolverCallCount += 1
     capturedName = name
     capturedLoggerEnabled = logger.enabled
-    return nil
-  }
+      if case .get = command {
+        check(true, "listening-mode execution passes the narrow get command")
+      } else {
+        check(false, "listening-mode execution must pass get")
+      }
+      return .noDevice
+    }
+  )
   check(resolverCallCount == 1, "resource command resolves a device exactly once")
   check(capturedName == "Studio AirPods", "execution forwards the requested device name")
   check(!capturedLoggerEnabled, "execution forwards its configured logger")
@@ -34,7 +42,9 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   check(noDevice.payload["error"] as? String == "no-device", "missing device has error")
 
   let listInvocation = try! parseInvocation(["lm", "list"])
-  let noDeviceList = CommandExecution.execute(listInvocation) { _, _ in nil }
+  let noDeviceList = CommandExecution.executeListeningMode(listInvocation) { _, _, _ in
+    .noDevice
+  }
   check(
     noDeviceList.payload["supportedListeningModes"] as? [String] == [],
     "missing-device list has an empty supported mode list"
@@ -302,9 +312,47 @@ func testConversationAwarenessCommandExecution() {
   check(unchanged.payload["error"] == nil, "Conversation Awareness no-op omits error")
 }
 
+func testConversationAwarenessUsesSharedNamedSelection() {
+  let cases: [([String], String)] = [
+    (["ca", "--device", "Studio AirPods", "get"], "conversationAwareness"),
+    (["ca", "set", "on", "--device", "Studio AirPods"], "conversationAwareness"),
+  ]
+
+  for (arguments, stateKey) in cases {
+    let invocation = try! parseInvocation(arguments)
+    var resolverCallCount = 0
+    var capturedName: String?
+    var capturedPolicy: DeviceSelectionPolicy?
+    let outcome = CommandExecution.execute(
+      invocation,
+      resolveDevices: { name, policy, _ in
+        resolverCallCount += 1
+        capturedName = name
+        capturedPolicy = policy
+        return nil
+      }
+    )
+    check(resolverCallCount == 1, "\(arguments) resolves exactly once")
+    check(capturedName == "Studio AirPods", "\(arguments) forwards its exact requested name")
+    if case .firstOrExact? = capturedPolicy {
+      check(true, "\(arguments) retains first-or-exact operational selection")
+    } else {
+      check(false, "\(arguments) retains first-or-exact operational selection")
+    }
+    check(outcome.plain == "no-device", "\(arguments) retains plain no-device")
+    check(outcome.exitCode == 1, "\(arguments) retains no-device exit one")
+    check(outcome.payload[stateKey] is NSNull, "\(arguments) nulls its canonical state")
+    check(outcome.payload["device"] is NSNull, "\(arguments) has no selected device")
+    check(outcome.payload["error"] as? String == "no-device", "\(arguments) has no-device error")
+    check(outcome.payload["result"] as? String == "error", "\(arguments) result is error")
+    check(outcome.payload["supportedListeningModes"] == nil, "Conversation Awareness omits supported modes")
+  }
+}
+
 func runCommandExecutionTests() {
   testCommandExecutionLifecycleAndNoDeviceOutcomes()
   testListeningModeCommandExecution()
   testListeningModeCycleCommandExecution()
   testConversationAwarenessCommandExecution()
+  testConversationAwarenessUsesSharedNamedSelection()
 }

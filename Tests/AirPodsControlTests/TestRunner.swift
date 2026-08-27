@@ -4,9 +4,13 @@ import Darwin
 struct TestRunner {
   static func main() {
     runCLIParsingTests()
+    runInteractiveDeviceChooserTests()
     runListeningModeTests()
+    runListeningModeCoordinatorTests()
     runCommandExecutionTests()
     runPrivateAudioDiscoveryTests()
+    runCoreAudioListeningModePropertyTests()
+    runHALListeningModeCandidateTests()
     runAudioRoutingTests()
     runStatusCommandTests()
     runPrivateAudioTests()

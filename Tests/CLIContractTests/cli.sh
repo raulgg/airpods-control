@@ -49,6 +49,7 @@ PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/airpods-control-test.XXXXXX")
 trap 'rm -rf "$PROBE_DIR"' EXIT HUP INT TERM
 cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
 CLI="$PROBE_DIR/airpods-control"
+MISSING_DEVICE='__airpods_control_cli_contract_missing__'
 
 "$CLI" --help >/dev/null
 "$CLI" lm --help >/dev/null
@@ -77,11 +78,16 @@ expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" support-report --json
 
 # Exercise the executable's script-facing no-device contract as one journey.
+# Valid mutating invocations stay in the Swift suite. This black-box contract
+# never runs one against production discovery, even with a sentinel name.
 expect_failure 1 no-device "$CLI" \
-  --device 'Missing AirPods' lm set anc
+  --device "$MISSING_DEVICE" lm set anc
 expect_failure 1 \
   '{"device":null,"error":"no-device","listeningMode":null,"result":"error","supportedListeningModes":[]}' \
-  "$CLI" --json lm list
+  "$CLI" --device "$MISSING_DEVICE" --json lm list
+expect_failure 1 \
+  '{"conversationAwareness":null,"device":null,"error":"no-device","result":"error"}' \
+  "$CLI" --device "$MISSING_DEVICE" ca get --json
 expect_failure 1 \
   '{"devices":[],"error":"no-device","result":"error"}' \
   "$CLI" --json status
