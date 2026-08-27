@@ -12,6 +12,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   var outputStreams: [AudioDeviceID: AudioRoutingRead<Bool>] = [:]
   var manufacturers: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   var names: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
+  var deviceUIDs: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   var appleAudioDevices: [AudioDeviceID: AudioRoutingRead<Bool>] = [:]
   var listeningModes: [AudioDeviceID: AudioRoutingRead<UInt32>] = [:]
   var listeningModePresence: [AudioDeviceID: Bool] = [:]
@@ -25,6 +26,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   private(set) var aggregateReads: [AudioDeviceID] = []
   private(set) var transportReads: [AudioDeviceID] = []
   private(set) var listeningModeReads: [AudioDeviceID] = []
+  private(set) var deviceUIDReads: [AudioDeviceID] = []
 
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]> {
     audioDeviceReadCount += 1
@@ -82,6 +84,13 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
     names[deviceID] ?? .value("Test AirPods")
   }
 
+  func readDeviceUID(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<String?> {
+    deviceUIDReads.append(deviceID)
+    return deviceUIDs[deviceID] ?? .unavailable
+  }
+
   func readIsAppleAudioDevice(
     _ deviceID: AudioDeviceID
   ) -> AudioRoutingRead<Bool> {
@@ -119,6 +128,10 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   ) -> AudioRoutingWrite {
     listeningModeWrites.append((deviceID, rawValue))
     return listeningModeWriteResult
+  }
+
+  func resetDeviceUIDReads() {
+    deviceUIDReads.removeAll()
   }
 
   private func read<Value>(
@@ -209,7 +222,8 @@ func makeBluetoothController(
   backend: FakeAudioRoutingBackend = FakeAudioRoutingBackend(),
   configureRuntime: (FakeBluetoothAudioRuntime) -> Void = { _ in },
   activeProbe: (any ActiveAudioEndpointProbing)? = nil,
-  readStatusListeningMode: Bool = true
+  readStatusListeningMode: Bool = true,
+  allowOffCache: (any ListeningModeAllowOffCaching)? = nil
 ) -> (IOBluetoothStatusController, FakeBluetoothAudioRuntime) {
   let runtime = FakeBluetoothAudioRuntime()
   for (device, entry) in featureEntries { runtime.add(device, entry: entry) }
@@ -234,6 +248,7 @@ func makeBluetoothController(
     routingBackend: backend,
     activeEndpointProbe: activeProbe,
     readStatusListeningMode: readStatusListeningMode,
+    allowOffCache: allowOffCache,
     logger: DebugLogger(enabled: false)
   )!
   return (controller, runtime)

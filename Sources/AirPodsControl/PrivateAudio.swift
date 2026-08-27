@@ -229,7 +229,7 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       label: "modelID",
       maximumLength: SupportReportSnapshot.maximumModelIdentifierLength
     )
-    let unrecognizedModes = availableRawListeningModes().filter {
+    let unrecognizedModes = (availableRawListeningModes() ?? []).filter {
       listeningModesByRawValue[$0] == nil
     }
     return SupportReportDeviceMetadata(
@@ -316,20 +316,28 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     return true
   }
 
-  private func availableRawListeningModes() -> [String] {
+  private func availableRawListeningModes() -> [String]? {
     guard object.responds(to: availableModesSelector),
           let value = object.perform(availableModesSelector)?.takeUnretainedValue(),
           let modes = value as? [String]
     else {
       logger.warning("selector.availableBluetoothListeningModes", "unavailable")
-      return []
+      return nil
     }
     logger.debug("device.available_modes", modes.joined(separator: ","))
     return modes
   }
 
   func availableListeningModes() -> [ListeningMode] {
-    availableRawListeningModes().compactMap { listeningModesByRawValue[$0] }
+    guard case let .value(modes) = listeningModeAvailabilityObservation() else {
+      return []
+    }
+    return modes
+  }
+
+  func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
+    guard let rawModes = availableRawListeningModes() else { return .unavailable }
+    return .value(rawModes.compactMap { listeningModesByRawValue[$0] })
   }
 
   private func currentRawListeningMode() -> String? {

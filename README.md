@@ -220,6 +220,17 @@ all pre-write state, capability, setter, and bounded readback operations are
 sticky for one command. The CLI never changes the default route or starts an
 audio stream. `status` remains a separate read-only Core Audio adapter.
 
+HAL's supported-mode mask does not expose the user-configured Allow Off
+setting. After the exact output endpoint advertises Off in an eligible AV
+availability read, or an AV-backed `get` reports current Off, the CLI can reuse
+that positive observation for HAL-backed `list`, `set off`, and explicit cycles
+containing Off. The observation expires after seven days and is not refreshed
+by use; the default cycle always excludes Off. A cache miss preserves the
+fail-closed HAL behavior. See
+[the CLI reference](docs/cli.md#cached-allow-off-availability) and
+[ADR 0002](docs/adr/0002-cache-av-derived-allow-off-availability.md) for the
+evidence and invalidation rules.
+
 The inventory starts with macOS's public list of available Core Audio devices.
 It accepts an ordinary, nonaggregate classic-Bluetooth endpoint when the
 endpoint is alive and ready, has an audio stream, and maps to an
@@ -253,9 +264,14 @@ before and after to catch a route change. Conversation Awareness is `unknown`
 when this join is unavailable.
 
 Core Audio handles and the identifiers used by the enrichment probe stay inside
-the process. The CLI does not parse or log them. Inventory and selection do not
-read Bluetooth addresses, Core Audio UIDs, or private route identifiers, and
-raw HAL values are not emitted. `support-report` does not use this status path.
+the process. The CLI does not parse or log them. Status inventory and target
+selection do not read Bluetooth addresses, Core Audio UIDs, or private route
+identifiers, and raw HAL values are not emitted. After target selection, Allow
+Off cache correlation reads the exact public Core Audio UID transiently and
+persists a random per-cache salt, a salted full SHA-256 digest, and the
+observation time. The raw UID is never persisted; the raw UID, digest, and salt
+are never printed or logged. `support-report` accesses neither this cache nor
+the status path.
 
 To reach the shared system audio context used by feature controls, the
 `airpods-control` process loads the small interpose library in

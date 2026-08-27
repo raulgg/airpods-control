@@ -276,10 +276,82 @@ func testListeningModeControlRejectsSingularAVFallbackAfterProbeMismatch() {
   )
 }
 
+func testListeningModeAllowOffCorrelationIsLazyAndExact() {
+  let clock = Date(timeIntervalSince1970: 2_000_001_000)
+  let bluetoothDevice = EqualBluetoothObject(identity: 81)
+  let backend = FakeAudioRoutingBackend()
+  backend.deviceUIDs[81] = .value("exact-core-audio-uid")
+  backend.listeningModes[81] = .value(2)
+  backend.listeningModeSupport[81] = .value(0b111)
+  let cache = InMemoryListeningModeAllowOffCache(
+    salt: Data(repeating: 0xC7, count: 32),
+    now: { clock }
+  )!
+  _ = cache.applyObservation(
+    rawDeviceUID: "exact-core-audio-uid",
+    allowsOff: true,
+    observedAt: clock
+  )
+  let (controller, _) = makeBluetoothController(
+    inventory: [
+      FakeInventoryEndpoint(
+        audioDeviceID: 81,
+        bluetoothDevice: bluetoothDevice,
+        name: .value("Lazy AirPods"),
+        appleAudioDevice: .value(true)
+      )
+    ],
+    backend: backend,
+    readStatusListeningMode: false,
+    allowOffCache: cache
+  )
+
+  check(backend.deviceUIDReads.isEmpty, "control discovery never reads a cache identifier")
+  let candidates = controller.listeningModeCandidates()
+  check(backend.deviceUIDReads.isEmpty, "candidate construction keeps UID correlation lazy")
+
+  let coordinator = ListeningModeCoordinator(
+    candidates: candidates,
+    logger: DebugLogger(enabled: false)
+  )
+  let listInvocation = try! parseInvocation(["lm", "list", "--json"])
+  let listOutcome = CommandExecution.executeListeningMode(
+    listInvocation,
+    resolveSession: { command, name, _ in
+      coordinator.resolve(
+        command: command,
+        named: name,
+        chooseAmbiguous: { _ in .unavailable }
+      )
+    }
+  )
+  check(backend.deviceUIDReads == [81], "a cache-relevant selected operation reads one exact UID")
+  check(
+    (listOutcome.payload["supportedListeningModes"] as? [String])?.contains("off")
+      == true,
+    "the exact endpoint UID correlates its cached positive evidence"
+  )
+
+  backend.resetDeviceUIDReads()
+  let getInvocation = try! parseInvocation(["lm", "get"])
+  _ = CommandExecution.executeListeningMode(
+    getInvocation,
+    resolveSession: { command, name, _ in
+      coordinator.resolve(
+        command: command,
+        named: name,
+        chooseAmbiguous: { _ in .unavailable }
+      )
+    }
+  )
+  check(backend.deviceUIDReads.isEmpty, "HAL current-mode get never reads the UID cache key")
+}
+
 func runHALListeningModeCandidateTests() {
   testListeningModeControlCandidatesReuseMappedOutputInventory()
   testListeningModeControlTargetsTheEndpointThatExposesLstm()
   testListeningModeControlInventoryDefersHALStateReads()
   testListeningModeControlCandidateJoinsOnlyExactActiveEndpoint()
   testListeningModeControlRejectsSingularAVFallbackAfterProbeMismatch()
+  testListeningModeAllowOffCorrelationIsLazyAndExact()
 }

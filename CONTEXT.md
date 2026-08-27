@@ -127,3 +127,84 @@
 : What a compatible audio device reports after a write attempt: whether the
   underlying setter accepted the request and which final state was observed
   within the bounded settling window.
+
+## Persistence-cache discovery
+
+**Allow Off availability observation**
+: A successful observation that a device's active AV control surface did or did
+  not advertise Off at a particular time. It is evidence about that observation
+  time, not a perpetual statement of the device's current configuration.
+
+**Cache-eligible AV observation**
+: A successful live AV availability read for an availability list, `set off`,
+  or a cycle whose explicit mode set contains Off, after the observation has
+  been joined to the exact device. A successful live AV current-mode read is
+  also eligible when, and only when, it returns Off; other current modes do not
+  establish Allow Off availability. No operation adds an AV read solely to warm
+  the cache.
+
+**HAL cache invalidation**
+: A HAL current-mode result never refreshes an AV-derived cache deadline. After
+  an accepted, cache-authorized Off write, a definitive non-Off final state over
+  the normal settling window deletes the positive entry. Setter rejection,
+  timeout, and read failure leave it unchanged.
+
+**Cache-authorized Off mismatch**
+: An accepted HAL Off write whose definitive final state is non-Off. The command
+  reports the existing no-op result and exit status 3, includes the actual final
+  mode in JSON, deletes the positive cache entry, and stops without retrying a
+  provider, applying a fallback, or advancing a cycle again.
+
+**Cached availability provenance**
+: Metadata emitted only when cached Off evidence is consumed. Plain operational
+  output remains unchanged. Additive JSON identifies the cache source and its
+  observation and expiry times; debug output is limited to hit, miss, and age.
+  The raw UID, digest, and salt are never rendered, logged, or included in a
+  support report.
+
+**Cached Allow Off availability**
+: The last persisted Allow Off availability observation associated with one
+  resolved device. A live observation outranks it, and absence of a usable cache
+  entry leaves availability unknown. A positive observation remains usable for
+  seven days from its observation time; cache reads never extend that deadline.
+  macOS version changes neither invalidate nor extend that deadline.
+  A successful cache-eligible AV observation refreshes the positive when Off is
+  advertised and replaces it with a negative tombstone when Off is absent. The
+  newest observation wins, and a negative observation wins equal timestamps, so
+  an older in-flight positive read cannot restore stale evidence. A selector or
+  read failure is not an observation and leaves the cache unchanged.
+  If a negative update cannot obtain the bounded shared mutation lock, a
+  digest-keyed deny marker is written beside the cache and honored by later
+  lookups until newer positive evidence supersedes it. A failed negative write
+  under the lock removes the disposable cache instead of retaining stale
+  positive evidence.
+  On a HAL-only path, a usable positive adds Off to listed availability and may
+  authorize `set off` or a cycle whose explicit mode set contains Off. It never
+  adds Off to the default cycle.
+  _Avoid_: Current Allow Off state, cached capability
+
+**Cache correlation key**
+: A local pseudonymous value that associates a previously resolved device with
+  its cache entry. It neither selects nor merges devices and is not device
+  identity for routing or command targeting. Its settled representation is a
+  per-cache salted, full SHA-256 digest of the exact joined output endpoint's
+  case-sensitive Core Audio device UID. The raw UID exists only transiently for
+  correlation and is never persisted, logged, or exposed.
+  _Avoid_: Device identity, device name
+
+**Ambiguous cache correlation**
+: A non-unique or conflicting correlation between cache records and current
+  exact device groups. It is treated only as a cache miss: HAL listing omits
+  Off, cache evidence authorizes no write, and the CLI neither guesses, merges,
+  selects a device, nor emits an ambiguity error solely because of the cache.
+  Commands otherwise continue normally.
+
+**Allow Off cache store**
+: The deliberately disposable, per-user, backup-excluded file at
+  `~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json`. Its
+  absence or removal by cache cleanup is a cache miss, not an operational error.
+
+**Stale availability gap**
+: The interval after Allow Off changes outside this CLI and before a later live
+  observation refreshes or invalidates the cached observation. During this gap,
+  HAL-only behavior may reflect the last observation instead of current state.

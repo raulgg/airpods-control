@@ -69,7 +69,8 @@ enum CommandExecution {
         deviceName: session.name,
         plain: mode?.rawValue ?? "unknown",
         result: "ok",
-        state: mode?.rawValue
+        state: mode?.rawValue,
+        extra: listeningModeExtra(for: session)
       )
 
     case .list:
@@ -80,16 +81,15 @@ enum CommandExecution {
         plain: tokens.joined(separator: ","),
         result: "ok",
         state: session.currentMode?.rawValue,
-        extra: ["supportedListeningModes": tokens]
+        extra: listeningModeExtra(
+          for: session,
+          adding: ["supportedListeningModes": tokens]
+        )
       )
 
     case .set(let target):
-      let stateIsSafe =
-        session.transport.listeningModeTransportKind == .av
-        || session.currentMode != nil
-      guard stateIsSafe,
-            session.availableModes.contains(target),
-            session.canSet
+      guard let writePlan = session.writePlan,
+            writePlan.canWrite(target)
       else {
         return unsupportedListeningModeOutcome(session: session)
       }
@@ -100,7 +100,8 @@ enum CommandExecution {
           deviceName: session.name,
           plain: "ok",
           result: "ok",
-          state: target.rawValue
+          state: target.rawValue,
+          extra: listeningModeExtra(for: session)
         )
       }
 
@@ -108,16 +109,14 @@ enum CommandExecution {
         target: target,
         successPlain: "ok",
         session: session,
+        writePlan: writePlan,
         logger: logger
       )
 
     case .cycle(let requested):
       let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
       let cycleModes = base.filter { session.availableModes.contains($0) }
-      let stateIsSafe =
-        session.transport.listeningModeTransportKind == .av
-        || session.currentMode != nil
-      guard stateIsSafe, cycleModes.count >= 2, session.canSet else {
+      guard cycleModes.count >= 2, let writePlan = session.writePlan else {
         return unsupportedListeningModeOutcome(session: session)
       }
 
@@ -128,6 +127,7 @@ enum CommandExecution {
         target: target,
         successPlain: target.rawValue,
         session: session,
+        writePlan: writePlan,
         logger: logger
       )
     }
@@ -276,7 +276,8 @@ enum CommandExecution {
       exitCode: 4,
       result: "error",
       state: session.currentMode?.rawValue,
-      error: "unsupported"
+      error: "unsupported",
+      extra: listeningModeExtra(for: session)
     )
   }
 
@@ -284,15 +285,10 @@ enum CommandExecution {
     target: ListeningMode,
     successPlain: String,
     session: ListeningModeSession,
+    writePlan: ListeningModeWritePlan,
     logger: DebugLogger
   ) -> CommandOutcome {
-    let observation = session.transport.setListeningModeAndReadBack(target)
-    let resolution = resolveListeningModeWrite(
-      requested: target,
-      setterAccepted: observation.setterAccepted,
-      observed: observation.observed,
-      transparencySupported: session.availableModes.contains(.transparency)
-    )
+    let resolution = writePlan.execute(target)
     if resolution.inferredOffFallback {
       logger.debug("verify.listening_mode.inferred_off_fallback", true)
     }
@@ -303,7 +299,8 @@ enum CommandExecution {
         deviceName: session.name,
         plain: successPlain,
         result: "ok",
-        state: resolution.state?.rawValue
+        state: resolution.state?.rawValue,
+        extra: listeningModeExtra(for: session)
       )
     }
     return resourceOutcome(
@@ -312,7 +309,8 @@ enum CommandExecution {
       plain: "no-op",
       exitCode: 3,
       result: "no-op",
-      state: resolution.state?.rawValue
+      state: resolution.state?.rawValue,
+      extra: listeningModeExtra(for: session)
     )
   }
 
@@ -370,5 +368,23 @@ enum CommandExecution {
       exitCode: exitCode,
       payload: payload
     )
+  }
+
+  private static func listeningModeExtra(
+    for session: ListeningModeSession,
+    adding extra: [String: Any] = [:]
+  ) -> [String: Any] {
+    var result = extra
+    guard let evidence = session.cachedAllowOffEvidence else {
+      return result
+    }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    result["allowOffAvailability"] = [
+      "source": "cached-av-observation",
+      "observedAt": formatter.string(from: evidence.observedAt),
+      "expiresAt": formatter.string(from: evidence.expiresAt),
+    ]
+    return result
   }
 }

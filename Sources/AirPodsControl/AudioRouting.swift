@@ -147,6 +147,9 @@ protocol AudioRoutingBackend {
   func readName(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<String?>
+  func readDeviceUID(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<String?>
   func readIsAppleAudioDevice(
     _ deviceID: AudioDeviceID
   ) -> AudioRoutingRead<Bool>
@@ -349,6 +352,12 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<String?> {
     readStringProperty(kAudioObjectPropertyName, from: deviceID)
+  }
+
+  func readDeviceUID(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<String?> {
+    readStringProperty(kAudioDevicePropertyDeviceUID, from: deviceID)
   }
 
   func readIsAppleAudioDevice(

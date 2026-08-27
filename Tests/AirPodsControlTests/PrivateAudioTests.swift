@@ -24,6 +24,17 @@ func testPrivateListeningModeTranslation() {
     reads: ["AVOutputDeviceBluetoothListeningModeFuture"]
   )
   check(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
+
+  let emptyRaw = FakeRawDevice(name: "Empty Inventory AirPods", modes: [])
+  let empty = PrivateAudioController(
+    endpoints: PrivateAudioContextEndpoints(plural: [], singular: emptyRaw),
+    logger: DebugLogger(enabled: false)
+  ).selectDevice(named: nil)!
+  if case .value(let modes) = empty.listeningModeAvailabilityObservation() {
+    check(modes.isEmpty, "an answered empty AV inventory is typed evidence")
+  } else {
+    check(false, "an answered empty AV inventory is typed evidence")
+  }
 }
 
 func testPrivateStatusReadClassification() {
