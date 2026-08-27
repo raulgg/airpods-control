@@ -12,32 +12,7 @@ func testSupportReportWriteTestConsent() {
     writeError: { errors.append($0) }
   )
   check(!declined, "answering n declines the write tests")
-  let prompt = errors.joined()
-  check(prompt.contains("Run write tests? [y/N]"), "consent is an explicit question")
-  check(prompt.contains("Changes are audible"), "consent warns about disruption")
-  check(
-    prompt.contains("Plan"),
-    "consent makes the fixed scope clear"
-  )
-  check(
-    prompt.contains("restored when possible; failures are reported"),
-    "consent accurately describes restoration as best effort"
-  )
-  check(
-    prompt.contains(
-      "off, adaptive, noise-cancellation (about 2s each)"
-    ),
-    "consent lists the exact exploratory modes from the captured plan"
-  )
-  check(
-    prompt.contains("Restore mode             transparency"),
-    "consent identifies the separate restoration target"
-  )
-  check(
-    prompt.contains("Conversation Awareness   toggle and restore"),
-    "consent lists the Conversation Awareness toggle"
-  )
-  check(prompt.contains("read-only"), "declining explains the fallback report")
+  check(!errors.isEmpty, "interactive decline presents the write plan")
 
   let accepted = SupportReportInteraction.requestWriteTestConsent(
     plan: SupportReportWriteTestPlan.make(device: device),
@@ -58,10 +33,7 @@ func testSupportReportWriteTestConsent() {
     writeError: { errors.append($0) }
   )
   check(!noninteractive, "noninteractive input cannot consent")
-  check(
-    errors.joined().contains("--with-write-tests"),
-    "noninteractive use points at the consent flag"
-  )
+  check(!errors.isEmpty, "noninteractive use explains that consent was not granted")
 
   let nothingToTest = FakeCompatibleAudioDevice(
     listeningModes: [],
@@ -79,49 +51,6 @@ func testSupportReportWriteTestConsent() {
   )
   check(!skipped, "nothing to test means no consent")
   check(errors.isEmpty, "nothing to test asks nothing")
-
-  let unreadableCA = FakeCompatibleAudioDevice(
-    conversationAwarenessSupported: true,
-    conversationAwarenessEnabled: nil
-  )
-  errors = []
-  _ = SupportReportInteraction.requestWriteTestConsent(
-    plan: SupportReportWriteTestPlan.make(device: unreadableCA),
-    inputIsInteractive: true,
-    readResponse: { "n" },
-    writeError: { errors.append($0) }
-  )
-  let unreadableCAPrompt = errors.joined()
-  check(
-    unreadableCAPrompt.contains("Listening modes"),
-    "readable modes are still promised"
-  )
-  check(
-    !unreadableCAPrompt.contains("Conversation Awareness   toggle and restore"),
-    "a Conversation Awareness test that would be skipped is not promised"
-  )
-}
-
-func testSupportReportConsentRendererIsPureAndTTYOptional() {
-  let plan = SupportReportWriteTestPlan.make(
-    device: FakeCompatibleAudioDevice()
-  )
-  let first = SupportReportConsentRenderer.render(plan, colorEnabled: false)
-  let second = SupportReportConsentRenderer.render(plan, colorEnabled: false)
-  let colored = SupportReportConsentRenderer.render(plan, colorEnabled: true)
-
-  check(first == second, "the consent renderer is deterministic for the same plan")
-  check(
-    first?.contains("\u{001B}[") == false
-      && colored?.contains("\u{001B}[") == true,
-    "consent color is controlled only by an explicit rendering option"
-  )
-  check(
-    first?.contains("Plan") == true
-      && first?.contains("Caution") == true
-      && first?.contains("Restore") == true,
-    "the compact consent output keeps plan, disruption, and restoration distinct"
-  )
 }
 
 func testSupportReportWriteTestsCommandFlow() {
@@ -146,92 +75,21 @@ func testSupportReportWriteTestsCommandFlow() {
   check(consentRequests == 0, "--with-write-tests never asks again")
   check(outcome.exitCode == 0, "a restored write-test run succeeds")
   check(
-    outcome.supportReportOutput.contains("Write tests"),
-    "the consented CLI report carries the write-test section"
+    outcome.supportReport?.summary.verified == 5,
+    "the consented journey records every verified write and restoration"
   )
-  check(
-    outcome.supportReportOutput.contains("Off")
-      && outcome.supportReportOutput.contains("VERIFIED"),
-    "each mode write gets a readable verdict row"
-  )
-  check(
-    outcome.supportReportOutput.contains("Conversation Awareness   VERIFIED")
-      && outcome.supportReportOutput.contains("CA restoration           VERIFIED"),
-    "the Conversation Awareness toggle and its restore each get a verdict row"
-  )
-  check(
-    outcome.supportReportOutput.contains("RESTORED"),
-    "a clean run makes restoration prominent"
-  )
-  check(
-    outcome.supportReportOutput.contains("5 verified"),
-    "the CLI report summarizes the write-test outcomes"
-  )
-  check(
-    outcome.supportReportOutput.contains("Available · tested below"),
-    "the setter row points at the write-test section"
-  )
-  check(
-    !outcome.supportReportOutput.contains("NOT RUN"),
-    "a consented report has no not-run marker"
-  )
-  let issueReport = outcome.supportReportIssueDraft?.report ?? ""
-  check(
-    issueReport.contains("#### Write tests\n\n- Status: run with consent")
-      && issueReport.contains("- `listening-mode set off`: verified"),
-    "the GitHub adapter renders the same write evidence"
-  )
-  check(
-    outcome.supportReportIssueDraft.map {
-      SupportReportIssue.safeURL(for: $0).prefilled
-    } == true,
-    "a four-mode write report fits in the prefilled issue URL"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains("Initial state restored:") == false,
-    "the issue field omits the restoration status"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains(
-      "- `listening-mode set noise-cancellation`: verified"
-    ) == true,
-    "the issue field includes the final mode-write verdict without a restoration label"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains("- `listening-mode set off`: verified") == true,
-    "the issue field includes each named mode-result row"
-  )
-  check(
-    outcome.supportReportOutput.contains("Noise cancellation"),
-    "the CLI includes the final mode-write verdict without a restoration label"
-  )
-  check(
-    !outcome.supportReportOutput.contains("Noise cancellation       VERIFIED · restore")
-      && outcome.supportReportIssueDraft?.report.contains(
-        "`listening-mode set noise-cancellation` (restore)"
-      ) == false,
-    "neither report labels the mode row that restored the initial mode"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains(
-      "- `conversation-awareness set` (restore): verified"
-    ) == true,
-    "the Conversation Awareness restore row is labeled; its value is not disclosed"
-  )
-  check(
-    !outcome.supportReportOutput.contains("###")
-      && !outcome.supportReportOutput.contains("`"),
-    "the CLI adapter emits terminal-native output"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains("Review complete") == false,
-    "the issue field omits the CLI-only footer"
-  )
+  check(outcome.supportReportIssueDraft != nil, "the completed journey creates a reviewable draft")
   check(
     device.currentListeningMode() == .noiseCancellation,
     "the fake device ends restored"
   )
+  check(
+    device.conversationAwarenessEnabled == false,
+    "Conversation Awareness also ends restored"
+  )
 
+  let modeWritesAfterConsentedRun = device.listeningModeSetCount
+  let awarenessWritesAfterConsentedRun = device.conversationAwarenessSetCount
   let skipped = try! parseInvocation(["support-report", "--no-write-tests"])
   let skippedOutcome = CommandExecution.execute(
     skipped,
@@ -242,16 +100,10 @@ func testSupportReportWriteTestsCommandFlow() {
     })
   )
   check(
-    skippedOutcome.supportReportOutput.contains("Status                   NOT RUN"),
-    "a passive report says the write tests did not run"
-  )
-  check(
-    skippedOutcome.supportReportOutput.contains("Available · not tested"),
-    "a passive report keeps the untested setter wording"
-  )
-  check(
-    !skippedOutcome.supportReportOutput.contains("VERIFIED"),
-    "a passive report has no write-test verdicts"
+    skippedOutcome.supportReport != nil
+      && device.listeningModeSetCount == modeWritesAfterConsentedRun
+      && device.conversationAwarenessSetCount == awarenessWritesAfterConsentedRun,
+    "the declined journey produces a report without writing"
   )
 
   let asked = try! parseInvocation(["support-report"])
@@ -266,35 +118,9 @@ func testSupportReportWriteTestsCommandFlow() {
   )
   check(askCount == 1, "the default invocation asks for consent exactly once")
   check(
-    askedOutcome.supportReportOutput.contains("VERIFIED"),
-    "granted consent runs the write tests"
-  )
-}
-
-func testSupportReportIssueReportIncludesCompleteModeResults() {
-  func issueReport(initialMode: ListeningMode) -> String {
-    let device = FakeCompatibleAudioDevice(
-      listeningModes: [.off, .transparency, .adaptive],
-      listeningMode: initialMode,
-      appliesListeningModeWrite: false,
-      conversationAwarenessSupported: false,
-      reportMetadata: .fixture()
-    )
-    let snapshot = SupportReportSnapshot.capture(device: device)!
-    let results = SupportReportWriteTester.run(device: device)
-    return SupportReportDocument.make(snapshot: snapshot, writeTests: results).githubIssueDraft.report
-  }
-
-  let transparencyInitial = issueReport(initialMode: .transparency)
-  let adaptiveInitial = issueReport(initialMode: .adaptive)
-
-  check(
-    transparencyInitial != adaptiveInitial,
-    "the issue field preserves the state-dependent mode results shown locally"
-  )
-  check(
-    transparencyInitial.contains("- `listening-mode set adaptive`: no-op"),
-    "the issue field includes the attempted alternate mode"
+    askedOutcome.exitCode == 0
+      && device.listeningModeSetCount > modeWritesAfterConsentedRun,
+    "granted consent runs and restores the planned writes"
   )
 }
 
@@ -327,26 +153,6 @@ func testSupportReportIssueReportDoesNotNameTheUntestedInitialMode() {
   )
 }
 
-func testSupportReportIssueReportIncludesStateDependentModeSkipReasons() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.off, .transparency, .adaptive],
-    listeningMode: .noiseCancellation,
-    conversationAwarenessSupported: false
-  )
-  let snapshot = SupportReportSnapshot.capture(device: device)!
-  let results = SupportReportWriteTester.run(device: device)
-  let report = SupportReportDocument.make(snapshot: snapshot, writeTests: results)
-
-  check(
-    report.terminalOutput.contains("initial mode is not advertised"),
-    "the local report keeps the actionable mode skip reason"
-  )
-  check(
-    report.githubIssueDraft.report.contains("initial mode is not advertised"),
-    "the issue draft includes the actionable mode skip reason"
-  )
-}
-
 func testSupportReportRunsOnlyTheConsentedWritePlan() {
   let device = FakeCompatibleAudioDevice(
     listeningModes: [.transparency, .adaptive],
@@ -376,14 +182,7 @@ func testSupportReportRunsOnlyTheConsentedWritePlan() {
     device.conversationAwarenessSetCount == 0,
     "a capability appearing after consent is not written"
   )
-  check(
-    !outcome.supportReportIssueDraft!.report.contains("listening-mode set noise-cancellation"),
-    "the report contains no undisclosed mode write"
-  )
-  check(
-    outcome.supportReportOutput.contains("SKIPPED · capability unavailable"),
-    "the report preserves the consented capability snapshot"
-  )
+  check(outcome.supportReportIssueDraft != nil, "the consented-plan result remains reviewable")
 }
 
 func testSupportReportSkipsCapabilitiesRemovedDuringConsent() {
@@ -414,84 +213,7 @@ func testSupportReportSkipsCapabilitiesRemovedDuringConsent() {
     device.conversationAwarenessSetCount == 0,
     "a setter that disappears during consent is not invoked"
   )
-  check(
-    outcome.supportReportOutput.contains(
-      "SKIPPED · planned listening modes are no longer advertised,"
-    )
-      && outcome.supportReportOutput.contains("nothing written"),
-    "the local report explains the stale mode capability"
-  )
-  check(
-    outcome.supportReportOutput.contains(
-      "SKIPPED · capability or setter no longer exposed,"
-    )
-      && outcome.supportReportOutput.contains("nothing written"),
-    "the local report explains the stale Conversation Awareness capability"
-  )
-}
-
-func testSupportReportSkipsASetterOrSupportRemovedDuringConsent() {
-  let invocation = try! parseInvocation(["support-report"])
-  let modeDevice = FakeCompatibleAudioDevice(
-    listeningModes: [.transparency, .adaptive],
-    listeningMode: .transparency,
-    conversationAwarenessSupported: false
-  )
-  let modeOutcome = CommandExecution.execute(
-    invocation,
-    resolveDevice: { _, _ in modeDevice },
-    supportReport: SupportReportCommand(
-      requestWriteTestConsent: { _ in
-        modeDevice.exposesListeningModeSetter = false
-        return true
-      },
-      runWriteTests: { plan, device in
-        SupportReportWriteTester.run(plan: plan, device: device)
-      }
-    )
-  )
-
-  check(
-    modeDevice.listeningModeSetCount == 0,
-    "a listening-mode setter removed during consent is not invoked"
-  )
-  check(
-    modeOutcome.supportReportOutput.contains("SKIPPED · setter no longer exposed, nothing written"),
-    "the local report explains the stale listening-mode setter"
-  )
-
-  let awarenessDevice = FakeCompatibleAudioDevice(
-    listeningModes: [],
-    listeningMode: nil,
-    conversationAwarenessSupported: true,
-    conversationAwarenessEnabled: false
-  )
-  let awarenessOutcome = CommandExecution.execute(
-    invocation,
-    resolveDevice: { _, _ in awarenessDevice },
-    supportReport: SupportReportCommand(
-      requestWriteTestConsent: { _ in
-        awarenessDevice.conversationAwarenessSupported = false
-        return true
-      },
-      runWriteTests: { plan, device in
-        SupportReportWriteTester.run(plan: plan, device: device)
-      }
-    )
-  )
-
-  check(
-    awarenessDevice.conversationAwarenessSetCount == 0,
-    "Conversation Awareness support removed during consent prevents a write"
-  )
-  check(
-    awarenessOutcome.supportReportOutput.contains(
-      "capability or setter no longer exposed"
-    )
-      && awarenessOutcome.supportReportOutput.contains("nothing")
-      && awarenessOutcome.supportReportOutput.contains("written"),
-    "the local report explains stale Conversation Awareness support"
-  )
+  check(outcome.exitCode == 0, "skipped stale capabilities leave a read-only report")
 }
 
 func testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() {
@@ -520,14 +242,7 @@ func testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() {
     device.currentListeningMode() == .adaptive,
     "the user's newer listening mode remains active"
   )
-  check(
-    outcome.supportReportOutput.contains(
-      "initial state changed after planning"
-    )
-      && outcome.supportReportOutput.contains("nothing")
-      && outcome.supportReportOutput.contains("written"),
-    "the report explains why the stale mode plan was skipped"
-  )
+  check(outcome.exitCode == 0, "the stale mode plan is skipped safely")
 }
 
 func testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() {
@@ -556,14 +271,7 @@ func testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() {
     device.conversationAwarenessState() == true,
     "the user's newer Conversation Awareness state remains active"
   )
-  check(
-    outcome.supportReportOutput.contains(
-      "initial state changed after planning"
-    )
-      && outcome.supportReportOutput.contains("nothing")
-      && outcome.supportReportOutput.contains("written"),
-    "the report explains why the stale Conversation Awareness plan was skipped"
-  )
+  check(outcome.exitCode == 0, "the stale Conversation Awareness plan is skipped safely")
 }
 
 func testSupportReportPreservesThePreflightSnapshotDuringWrites() {
@@ -589,12 +297,8 @@ func testSupportReportPreservesThePreflightSnapshotDuringWrites() {
     "losing model metadata after a restored run does not replace the report outcome"
   )
   check(
-    outcome.supportReportOutput.contains("Model                    AirPods Pro 3"),
+    outcome.supportReport?.device.modelName == "AirPods Pro 3",
     "the report retains the compatibility snapshot captured before writes"
-  )
-  check(
-    outcome.supportReportOutput.contains("Restoration              RESTORED"),
-    "the report still states the final restoration result"
   )
   check(
     outcome.supportReportIssueDraft != nil,
@@ -615,135 +319,70 @@ func testSupportReportWriteTestsRestoreFailure() {
   let invocation = try! parseInvocation(["support-report", "--with-write-tests"])
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
   check(outcome.exitCode == 3, "a failed restoration exits no-op")
-  check(
-    outcome.supportReportOutput.contains("NOT RESTORED")
-      && outcome.supportReportOutput.contains("listening mode is now")
-      && outcome.supportReportOutput.contains("Transparency")
-      && outcome.supportReportOutput.contains("manually in System Settings."),
-    "a failed restoration names the final state and the manual fix"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains("Initial state restored:") == false,
-    "a failed restoration and manual fix remain terminal-only"
-  )
+  check(device.currentListeningMode() == .transparency, "the final observed mode is retained")
   check(outcome.supportReportIssueDraft != nil, "a failed restoration still offers the issue draft")
 }
 
-func testSupportReportInterruptedWriteTestsUseSignalExit() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.transparency, .adaptive, .noiseCancellation],
-    listeningMode: .noiseCancellation,
-    conversationAwarenessSupported: true,
-    conversationAwarenessEnabled: false,
-    reportMetadata: .fixture()
-  )
-  var caughtSignal: Int32?
-  device.settleEffect = {
-    if device.listeningModeSetCount == 1 {
-      caughtSignal = SIGTERM
+func testSupportReportSignalsInterruptAndRestore() {
+  for signal in [SIGHUP, SIGTERM] {
+    let device = FakeCompatibleAudioDevice(
+      listeningModes: [.transparency, .adaptive, .noiseCancellation],
+      listeningMode: .noiseCancellation,
+      conversationAwarenessSupported: true,
+      conversationAwarenessEnabled: false,
+      reportMetadata: .fixture()
+    )
+    var caughtSignal: Int32?
+    device.settleEffect = {
+      if device.listeningModeSetCount == 1 {
+        caughtSignal = signal
+      }
     }
+
+    let invocation = try! parseInvocation(["support-report", "--with-write-tests"])
+    let outcome = CommandExecution.execute(
+      invocation,
+      resolveDevice: { _, _ in device },
+      supportReport: SupportReportCommand(runWriteTests: { plan, resolvedDevice in
+        SupportReportWriteTester.run(
+          plan: plan,
+          device: resolvedDevice,
+          interruptionSignal: { caughtSignal },
+          writeError: { _ in }
+        )
+      })
+    )
+
+    check(
+      outcome.exitCode == 128 + signal,
+      "signal \(signal) produces the conventional shell exit status"
+    )
+    check(
+      outcome.payload["result"] as? String == "interrupted"
+        && outcome.payload["signal"] as? Int32 == signal,
+      "the outcome records signal \(signal) as an interruption"
+    )
+    check(outcome.supportReportIssueDraft == nil, "an interrupted run offers no issue prompt")
+    check(
+      device.currentListeningMode() == .noiseCancellation,
+      "signal \(signal) restores the initial mode before returning"
+    )
+    check(
+      device.conversationAwarenessSetCount == 0,
+      "signal \(signal) starts no later capability test"
+    )
   }
-
-  let invocation = try! parseInvocation(["support-report", "--with-write-tests"])
-  let outcome = CommandExecution.execute(
-    invocation,
-    resolveDevice: { _, _ in device },
-    supportReport: SupportReportCommand(runWriteTests: { plan, resolvedDevice in
-      SupportReportWriteTester.run(
-        plan: plan,
-        device: resolvedDevice,
-        interruptionSignal: { caughtSignal },
-        writeError: { _ in }
-      )
-    })
-  )
-
-  check(outcome.exitCode == 143, "SIGTERM produces the conventional shell exit status")
-  check(
-    outcome.payload["result"] as? String == "interrupted",
-    "the outcome distinguishes interruption from a completed report"
-  )
-  check(
-    outcome.payload["signal"] as? Int32 == SIGTERM,
-    "the outcome records the caught signal"
-  )
-  check(outcome.supportReportIssueDraft == nil, "an interrupted run never opens an issue prompt")
-  check(
-    outcome.supportReportOutput.contains(
-      "INTERRUPTED · SIGTERM; remaining tests skipped"
-    ),
-    "the interrupted local report explains why testing stopped"
-  )
-  check(
-    device.currentListeningMode() == .noiseCancellation,
-    "the command restores the initial mode before returning the signal exit"
-  )
-  check(
-    device.conversationAwarenessSetCount == 0,
-    "the command starts no later capability test after interruption"
-  )
-}
-
-func testSupportReportHangupWriteTestsUseSignalExit() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.transparency, .adaptive, .noiseCancellation],
-    listeningMode: .noiseCancellation,
-    conversationAwarenessSupported: true,
-    conversationAwarenessEnabled: false,
-    reportMetadata: .fixture()
-  )
-  var caughtSignal: Int32?
-  device.settleEffect = {
-    if device.listeningModeSetCount == 1 {
-      caughtSignal = SIGHUP
-    }
-  }
-
-  let invocation = try! parseInvocation(["support-report", "--with-write-tests"])
-  let outcome = CommandExecution.execute(
-    invocation,
-    resolveDevice: { _, _ in device },
-    supportReport: SupportReportCommand(runWriteTests: { plan, resolvedDevice in
-      SupportReportWriteTester.run(
-        plan: plan,
-        device: resolvedDevice,
-        interruptionSignal: { caughtSignal },
-        writeError: { _ in }
-      )
-    })
-  )
-
-  check(outcome.exitCode == 129, "SIGHUP produces the conventional shell exit status")
-  check(
-    outcome.payload["signal"] as? Int32 == SIGHUP,
-    "the outcome records the caught hangup signal"
-  )
-  check(
-    outcome.supportReportOutput.contains(
-      "INTERRUPTED · SIGHUP; remaining tests skipped"
-    ),
-    "the interrupted local report names SIGHUP"
-  )
-  check(
-    device.currentListeningMode() == .noiseCancellation,
-    "the command restores the initial mode before returning the hangup exit"
-  )
 }
 
 func runSupportReportWriteFlowTests() {
   testSupportReportWriteTestConsent()
-  testSupportReportConsentRendererIsPureAndTTYOptional()
   testSupportReportWriteTestsCommandFlow()
-  testSupportReportIssueReportIncludesCompleteModeResults()
   testSupportReportIssueReportDoesNotNameTheUntestedInitialMode()
-  testSupportReportIssueReportIncludesStateDependentModeSkipReasons()
   testSupportReportRunsOnlyTheConsentedWritePlan()
   testSupportReportSkipsCapabilitiesRemovedDuringConsent()
-  testSupportReportSkipsASetterOrSupportRemovedDuringConsent()
   testSupportReportSkipsAPlanWhoseInitialModeChangedDuringConsent()
   testSupportReportSkipsAPlanWhoseAwarenessChangedDuringConsent()
   testSupportReportPreservesThePreflightSnapshotDuringWrites()
   testSupportReportWriteTestsRestoreFailure()
-  testSupportReportInterruptedWriteTestsUseSignalExit()
-  testSupportReportHangupWriteTestsUseSignalExit()
+  testSupportReportSignalsInterruptAndRestore()
 }

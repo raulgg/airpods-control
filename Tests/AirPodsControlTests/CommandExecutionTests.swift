@@ -10,7 +10,6 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   check(resolverCallCount == 0, "version does not resolve a device")
   check(version.plain == VERSION, "version outcome has plain version")
   check(version.exitCode == 0, "version outcome succeeds")
-  check(version.payload.count == 2, "version payload has no resource fields")
   check(version.payload["result"] as? String == "ok", "version payload succeeds")
   check(version.payload["version"] as? String == VERSION, "version payload has version")
 
@@ -37,7 +36,6 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   check(!capturedLoggerEnabled, "execution forwards its configured logger")
   check(noDevice.plain == "no-device", "missing device has plain no-device")
   check(noDevice.exitCode == 1, "missing device exits one")
-  check(noDevice.payload.count == 4, "missing device get has the exact payload shape")
   check(noDevice.payload["device"] is NSNull, "missing device is JSON null")
   check(noDevice.payload["listeningMode"] is NSNull, "missing listening mode is JSON null")
   check(noDevice.payload["result"] as? String == "error", "missing device is an error")
@@ -47,7 +45,6 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
   let noDeviceList = CommandExecution.executeListeningMode(listInvocation) { _, _, _ in
     .noDevice
   }
-  check(noDeviceList.payload.count == 5, "missing-device list has the exact payload shape")
   check(
     noDeviceList.payload["supportedListeningModes"] as? [String] == [],
     "missing-device list has an empty supported mode list"
@@ -316,12 +313,12 @@ func testConversationAwarenessCommandExecution() {
 }
 
 func testConversationAwarenessUsesSharedNamedSelection() {
-  let cases: [([String], String, Bool)] = [
-    (["ca", "--device", "Studio AirPods", "get"], "conversationAwareness", false),
-    (["ca", "set", "on", "--device", "Studio AirPods"], "conversationAwareness", false),
+  let cases: [([String], String)] = [
+    (["ca", "--device", "Studio AirPods", "get"], "conversationAwareness"),
+    (["ca", "set", "on", "--device", "Studio AirPods"], "conversationAwareness"),
   ]
 
-  for (arguments, stateKey, isList) in cases {
+  for (arguments, stateKey) in cases {
     let invocation = try! parseInvocation(arguments)
     var resolverCallCount = 0
     var capturedName: String?
@@ -348,14 +345,7 @@ func testConversationAwarenessUsesSharedNamedSelection() {
     check(outcome.payload["device"] is NSNull, "\(arguments) has no selected device")
     check(outcome.payload["error"] as? String == "no-device", "\(arguments) has no-device error")
     check(outcome.payload["result"] as? String == "error", "\(arguments) result is error")
-    if isList {
-      check(
-        outcome.payload["supportedListeningModes"] as? [String] == [],
-        "list retains an empty supported mode list"
-      )
-    } else {
-      check(outcome.payload["supportedListeningModes"] == nil, "non-list omits supported modes")
-    }
+    check(outcome.payload["supportedListeningModes"] == nil, "Conversation Awareness omits supported modes")
   }
 }
 

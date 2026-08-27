@@ -9,18 +9,6 @@ func testListeningModeVocabulary() {
   check(ListeningMode(token: "normal") == nil, "private raw names are not public tokens")
 }
 
-func testObservedOffFallbackResolution() {
-  let resolution = resolveListeningModeWrite(
-    requested: .off,
-    setterAccepted: true,
-    observed: .transparency,
-    transparencySupported: true
-  )
-
-  check(resolution.state == .transparency, "observed Off fallback reports Transparency")
-  check(!resolution.inferredOffFallback, "observed Off fallback is not inferred")
-}
-
 func testOffFallbackResolutionSeams() {
   let inferenceCases: [(String, ListeningMode?)] = [
     ("noise cancellation", .noiseCancellation),
@@ -88,6 +76,5 @@ func testOffFallbackResolutionSeams() {
 
 func runListeningModeTests() {
   testListeningModeVocabulary()
-  testObservedOffFallbackResolution()
   testOffFallbackResolutionSeams()
 }

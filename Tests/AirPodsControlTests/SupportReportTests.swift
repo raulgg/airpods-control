@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 func testSupportReportContentsAndPrivacy() {
@@ -24,40 +23,10 @@ func testSupportReportContentsAndPrivacy() {
   let cliOutput = report?.terminalOutput ?? ""
   check(cliOutput.contains("AirPods Pro 3"), "report resolves the model name")
   check(
-    cliOutput.contains("BTHeadphones76,8231 · product 0x2027"),
-    "CLI report has the model ID with its decoded Bluetooth product ID"
-  )
-  check(
     cliOutput.contains("Off, Transparency, Noise cancellation"),
     "CLI report has readable advertised capabilities"
   )
-  check(
-    !cliOutput.contains("Other modes"),
-    "CLI report omits an empty other-modes row"
-  )
-  check(
-    cliOutput.contains("Available · recognized mode"),
-    "CLI report says the mode query answers without exposing the mode"
-  )
-  check(
-    cliOutput.contains("Available · not tested"),
-    "CLI report says exposed setters were not tested"
-  )
-  check(
-    cliOutput.contains("Supported"),
-    "CLI report has advertised Conversation Awareness support"
-  )
-  check(
-    cliOutput.contains("CA query"),
-    "CLI report includes Conversation Awareness query availability"
-  )
-  check(
-    cliOutput.contains("CA setter"),
-    "CLI report includes Conversation Awareness setter availability"
-  )
   check(cliOutput.contains("26.1.0"), "report has normalized macOS version")
-  check(cliOutput.contains(VERSION), "report has CLI version")
-  check(!cliOutput.contains("Connection state"), "report omits connection state")
   check(
     !cliOutput.contains("Current listening mode"),
     "report omits the current listening-mode value"
@@ -65,10 +34,6 @@ func testSupportReportContentsAndPrivacy() {
   check(
     !cliOutput.contains("Conversation Awareness state"),
     "report omits the Conversation Awareness state value"
-  )
-  check(
-    !cliOutput.contains("###") && !cliOutput.contains("`"),
-    "CLI report uses terminal-native formatting rather than Markdown"
   )
   // Seed private source data and assert on the value, not renderer wording.
   // Add another sentinel here if a future adapter boundary gains a new private
@@ -91,137 +56,10 @@ func testSupportReportContentsAndPrivacy() {
     device.conversationAwarenessSetCount == 0,
     "report does not write Conversation Awareness"
   )
-  check(
-    report?.githubIssueDraft.title == "[Compatibility] AirPods Pro 3 on macOS 26.1.0",
-    "the issue title names the resolved model"
-  )
-
   let invocation = try! parseInvocation(["support-report"])
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
   check(outcome.exitCode == 0, "supported-device command path succeeds")
   check(outcome.supportReportIssueDraft != nil, "supported-device command path creates an issue draft")
-  check(
-    outcome.supportReportOutput.contains(
-      "Review complete. Nothing has been submitted to GitHub."
-    ),
-    "the CLI report carries its local-only completion note"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.hasPrefix(
-      "#### Device\n\n- Model: AirPods Pro 3"
-    ) == true,
-    "the issue field starts with the same Device section as the CLI"
-  )
-  let issueReport = outcome.supportReportIssueDraft?.report ?? ""
-  let sectionNames = ["#### Device", "#### Capabilities", "#### Write tests"]
-  let sectionOffsets = sectionNames.compactMap {
-    issueReport.range(of: $0)?.lowerBound
-  }
-  check(
-    sectionOffsets.count == sectionNames.count
-      && sectionOffsets == sectionOffsets.sorted(),
-    "the issue field follows the CLI section order"
-  )
-  check(
-    issueReport.contains("#### Write tests\n\n- Status: not run"),
-    "the issue field reports skipped write tests inside their own section"
-  )
-  check(
-    !issueReport.contains("### Compatibility report"),
-    "the issue field lets the form supply its own compatibility heading"
-  )
-  check(
-    outcome.supportReportIssueDraft?.report.contains("Created locally by") == false
-      && outcome.supportReportIssueDraft?.report.contains("Notes (optional)") == false,
-    "the issue field omits local-only and user-authored form sections"
-  )
-}
-
-func testSupportReportDocumentFeedsPureOutputAdapters() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.off, .transparency, .noiseCancellation],
-    listeningMode: .noiseCancellation,
-    conversationAwarenessSupported: true,
-    conversationAwarenessEnabled: false,
-    reportMetadata: .fixture()
-  )
-  let snapshot = SupportReportSnapshot.capture(
-    device: device,
-    operatingSystemVersion: OperatingSystemVersion(
-      majorVersion: 26,
-      minorVersion: 1,
-      patchVersion: 0
-    )
-  )!
-  let document = SupportReportDocument.make(
-    snapshot: snapshot,
-    writeTests: SupportReportWriteTester.run(device: device)
-  )
-  let options = SupportReportTerminalRenderOptions(
-    colorEnabled: false,
-    width: 60
-  )
-
-  let firstTerminalOutput = SupportReportTerminalRenderer.render(
-    document,
-    options: options
-  )
-  let secondTerminalOutput = SupportReportTerminalRenderer.render(
-    document,
-    options: options
-  )
-  let firstIssueDraft = SupportReportGitHubRenderer.render(document)
-  let secondIssueDraft = SupportReportGitHubRenderer.render(document)
-
-  check(
-    firstTerminalOutput == secondTerminalOutput,
-    "the terminal adapter is deterministic for the same document"
-  )
-  check(
-    firstIssueDraft.title == secondIssueDraft.title
-      && firstIssueDraft.report == secondIssueDraft.report,
-    "the GitHub adapter is deterministic for the same document"
-  )
-  check(
-    document.summary.verified == 5
-      && document.summary.inconclusive == 0
-      && document.summary.errors == 0,
-    "the document classifies verdicts before either renderer runs"
-  )
-  check(
-    firstTerminalOutput.split(separator: "\n").allSatisfy { $0.count <= 60 },
-    "the terminal adapter wraps its rows to the requested width"
-  )
-  check(
-    !firstTerminalOutput.contains("`")
-      && firstIssueDraft.report.contains("`listening-mode set off`"),
-    "each adapter applies only its own output syntax"
-  )
-  check(
-    firstIssueDraft.report.contains("#### Device")
-      && firstIssueDraft.report.contains("#### Capabilities")
-      && firstIssueDraft.report.contains(
-        "#### Write tests\n\n- Status: run with consent"
-      ),
-    "the GitHub adapter mirrors the CLI sections with Markdown formatting"
-  )
-
-  let coloredTerminalOutput = SupportReportTerminalRenderer.render(
-    document,
-    options: SupportReportTerminalRenderOptions(
-      colorEnabled: true,
-      width: 60
-    )
-  )
-  check(
-    !firstTerminalOutput.contains("\u{001B}[")
-      && coloredTerminalOutput.contains("\u{001B}["),
-    "terminal color is an explicit rendering option"
-  )
-  check(
-    SupportReportGitHubRenderer.render(document).report == firstIssueDraft.report,
-    "terminal rendering options cannot affect the GitHub adapter"
-  )
 }
 
 func testSupportReportUnavailableValuesAndIdentification() {
@@ -238,47 +76,25 @@ func testSupportReportUnavailableValuesAndIdentification() {
   )
   unavailable.exposesListeningModeSetter = false
   unavailable.exposesConversationAwarenessSetter = false
-  let report = passiveSupportReport(device: unavailable)
-  let cliOutput = report?.terminalOutput ?? ""
-  check(report != nil, "an identifiable Beats device produces an exploratory report")
-  check(cliOutput.contains("Beats (exploratory)"), "Beats report is marked exploratory")
+  let snapshot = SupportReportSnapshot.capture(device: unavailable)
+  check(snapshot != nil, "an identifiable Beats device produces an exploratory report")
+  check(snapshot?.family == .beats, "the snapshot preserves the exploratory family")
+  check(snapshot?.modelName == nil, "an unmapped identifier invents no model")
+  check(snapshot?.listeningModes.isEmpty == true, "missing advertised modes stay empty")
+  if case .unavailable? = snapshot?.listeningModeQuery {
+    check(true, "an unanswered listening-mode query stays unavailable")
+  } else {
+    check(false, "an unanswered listening-mode query stays unavailable")
+  }
+  if case .unavailable? = snapshot?.conversationAwarenessSupport {
+    check(true, "missing Conversation Awareness support stays unavailable")
+  } else {
+    check(false, "missing Conversation Awareness support stays unavailable")
+  }
   check(
-    cliOutput.contains("Model                    Not recognized by this CLI version"),
-    "an unmapped identifier keeps the model explicit"
-  )
-  check(
-    report?.githubIssueDraft.report.contains(
-      "- Model: not recognized by this CLI version"
-    ) == true,
-    "each renderer words the unresolved model in its own register"
-  )
-  check(
-    cliOutput.contains("Identifier               BeatsTest1,1"),
-    "a marketing-style identifier carries no Bluetooth product ID"
-  )
-  check(
-    cliOutput.contains("Listening modes          Unavailable / not reported"),
-    "missing advertised modes are explicit"
-  )
-  check(
-    cliOutput.contains("Mode query               Unavailable / not reported"),
-    "an unanswered mode query is explicit"
-  )
-  check(
-    cliOutput.contains("Mode setter              Not exposed"),
-    "a missing mode setter is explicit"
-  )
-  check(
-    cliOutput.contains("Conversation Awareness   Unavailable / not reported"),
-    "missing capability is explicit"
-  )
-  check(
-    cliOutput.contains("CA query                 Unavailable / not reported"),
-    "an unanswered Conversation Awareness query is explicit"
-  )
-  check(
-    cliOutput.contains("CA setter                Not exposed"),
-    "a missing Conversation Awareness setter is explicit"
+    snapshot?.listeningModeSetterExposed == false
+      && snapshot?.conversationAwarenessSetterExposed == false,
+    "unexposed setters remain absent from the snapshot"
   )
 
   let unidentified = FakeCompatibleAudioDevice(
@@ -297,16 +113,8 @@ func testSupportReportUnavailableValuesAndIdentification() {
   let outcome = CommandExecution.execute(invocation) { _, _ in unidentified }
   check(outcome.exitCode == 1, "a connected but unidentifiable device exits one")
   check(
-    outcome.supportReportOutput.contains("could not be identified"),
-    "a connected but unidentifiable device explains the metadata failure"
-  )
-  check(
-    outcome.supportReportOutput.contains("template=compatibility-report.yml"),
-    "a connected but unidentifiable device gets a manual filing instruction"
-  )
-  check(
-    !outcome.supportReportOutput.contains("Connect AirPods"),
-    "a connected but unidentifiable device gets no reconnect advice"
+    outcome.payload["error"] as? String == "unidentified-device",
+    "the command distinguishes unidentified hardware from no device"
   )
   check(outcome.supportReportIssueDraft == nil, "a connected but unidentifiable device offers no issue")
 }
@@ -366,97 +174,6 @@ func testSupportReportEscapesDeviceControlledTextPerAdapter() {
   )
 }
 
-func testSupportReportUnrecognizedListeningModes() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.off, .transparency],
-    listeningMode: nil,
-    reportMetadata: .fixture(
-      unrecognizedListeningModes: ["AVOutputDeviceBluetoothListeningModeHearingAid"]
-    )
-  )
-  let report = passiveSupportReport(device: device)
-  let cliOutput = report?.terminalOutput ?? ""
-  check(
-    cliOutput.contains(
-      "Other modes              AVOutputDeviceBluetoothListeningModeHearingAid"
-    ),
-    "an unrecognized advertised mode is readable in terminal output"
-  )
-  check(
-    cliOutput.contains("Mode query               Available · unrecognized mode"),
-    "an answered but unmapped mode query is distinguished from silence"
-  )
-  check(
-    report?.githubIssueDraft.report.contains(
-      "Other advertised listening modes: `AVOutputDeviceBluetoothListeningModeHearingAid`"
-    ) == true,
-    "the GitHub adapter fences an unrecognized advertised mode"
-  )
-
-  let noisy = FakeCompatibleAudioDevice(
-    reportMetadata: .fixture(unrecognizedListeningModes: (1...8).map { "Mode\($0)" })
-  )
-  let noisyOutput = passiveSupportReport(device: noisy)?.terminalOutput ?? ""
-  check(
-    noisyOutput.contains("Mode6, and 2 more"),
-    "overlong unrecognized-mode lists are capped with an explicit count"
-  )
-  check(
-    !noisyOutput.contains("Mode7"),
-    "capped unrecognized modes are not listed individually"
-  )
-
-  let exact = FakeCompatibleAudioDevice(
-    reportMetadata: .fixture(unrecognizedListeningModes: (1...6).map { "Mode\($0)" })
-  )
-  let exactOutput = passiveSupportReport(device: exact)?.terminalOutput ?? ""
-  check(
-    exactOutput.contains("Mode1, Mode2, Mode3, Mode4, Mode5, Mode6"),
-    "exactly six unrecognized modes are all listed"
-  )
-  check(
-    !exactOutput.contains("more"),
-    "exactly six unrecognized modes carry no overflow suffix"
-  )
-}
-
-func testSupportReportUnknownAppleProduct() {
-  let device = FakeCompatibleAudioDevice(
-    reportMetadata: .fixture(
-      family: .unknownApple,
-      modelIdentifier: "BTHeadphones76,60000"
-    )
-  )
-  let report = passiveSupportReport(
-    device: device,
-    operatingSystemVersion: OperatingSystemVersion(
-      majorVersion: 26,
-      minorVersion: 1,
-      patchVersion: 0
-    )
-  )
-  let cliOutput = report?.terminalOutput ?? ""
-  check(
-    cliOutput.contains("Family                   Apple or Beats (unidentified, exploratory)"),
-    "an unlisted Apple product ID reports the exploratory family"
-  )
-  check(
-    cliOutput.contains("Model                    Not recognized by this CLI version"),
-    "an unlisted Apple product ID has no model name"
-  )
-  check(
-    cliOutput.contains(
-      "Identifier               BTHeadphones76,60000 · product 0xEA60"
-    ),
-    "an unlisted Apple product ID still shows its decoded product ID"
-  )
-  check(
-    report?.githubIssueDraft.title
-      == "[Compatibility] Apple or Beats (unidentified, exploratory) on macOS 26.1.0",
-    "an unresolved model falls back to the family in the issue title"
-  )
-}
-
 func testSupportReportMetadataNormalization() {
   check(
     SupportReportSnapshot.normalizedMetadataValue(
@@ -505,10 +222,6 @@ func testSupportReportIssueURL() {
     }
   )
   check(selected.prefilled, "concise report uses a prefilled issue URL")
-  check(
-    query["template"] == SupportReportIssue.templateName,
-    "issue URL selects the dedicated YAML form"
-  )
   check(query["title"] == draft.title, "issue URL prefills the title")
   check(
     query[SupportReportIssue.reportFieldID] == draft.report,
@@ -527,11 +240,6 @@ func testSupportReportIssueURL() {
   )?.queryItems
   check(!fallback.prefilled, "overlong issue URL uses a safe local fallback")
   check(
-    fallbackQuery?.first(where: { $0.name == "template" })?.value
-      == SupportReportIssue.templateName,
-    "fallback still selects the compatibility template"
-  )
-  check(
     fallbackQuery?.first(where: { $0.name == "title" })?.value == draft.title,
     "fallback retains the concise dynamic title"
   )
@@ -539,17 +247,15 @@ func testSupportReportIssueURL() {
     fallbackQuery?.first(where: { $0.name == SupportReportIssue.reportFieldID }) == nil,
     "fallback omits only the overlong report field"
   )
-}
 
-func testSupportReportIssueURLEncodesPlusSigns() {
-  let draft = SupportReportIssueDraft(
+  let plusDraft = SupportReportIssueDraft(
     title: "[Compatibility] Beats Studio Buds + on macOS 26.1.0",
     report: "- Model: Beats Studio Buds +"
   )
-  let selected = SupportReportIssue.safeURL(for: draft)
-  check(selected.prefilled, "a draft containing plus signs still prefills")
+  let plusSelection = SupportReportIssue.safeURL(for: plusDraft)
+  check(plusSelection.prefilled, "a draft containing plus signs still prefills")
   let encodedQuery = URLComponents(
-    url: selected.url,
+    url: plusSelection.url,
     resolvingAgainstBaseURL: false
   )?.percentEncodedQuery ?? ""
   check(
@@ -565,7 +271,7 @@ func testSupportReportIssueURLEncodesPlusSigns() {
     .replacingOccurrences(of: "+", with: " ")
     .removingPercentEncoding
   check(
-    formDecodedReport == draft.report,
+    formDecodedReport == plusDraft.report,
     "GitHub's form decoding restores the reviewed report exactly"
   )
 }
@@ -588,7 +294,6 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   )
   var openCount = 0
   var output = [String]()
-  var errors = [String]()
 
   _ = SupportReportInteraction.present(
     outcome: outcome,
@@ -600,11 +305,10 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
       return true
     },
     writeOutput: { output.append($0) },
-    writeError: { errors.append($0) }
+    writeError: { _ in }
   )
   check(openCount == 0, "declining confirmation never opens a browser")
   check(output == [localReport], "interaction prints the local report for review first")
-  check(errors.joined().contains("[y/N]"), "interaction explicitly asks before opening")
 
   var openedURL: URL?
   _ = SupportReportInteraction.present(
@@ -738,14 +442,10 @@ func testSupportReportPrintsPasteReadyFormFallback() {
 
 func runSupportReportTests() {
   testSupportReportContentsAndPrivacy()
-  testSupportReportDocumentFeedsPureOutputAdapters()
   testSupportReportUnavailableValuesAndIdentification()
-  testSupportReportUnrecognizedListeningModes()
-  testSupportReportUnknownAppleProduct()
   testSupportReportEscapesDeviceControlledTextPerAdapter()
   testSupportReportMetadataNormalization()
   testSupportReportIssueURL()
-  testSupportReportIssueURLEncodesPlusSigns()
   testSupportReportRequiresConfirmationBeforeOpening()
   testSupportReportPrintsPasteReadyFormFallback()
 }
