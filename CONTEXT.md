@@ -143,11 +143,11 @@
   establish Allow Off availability. No operation adds an AV read solely to warm
   the cache.
 
-**HAL cache invalidation**
-: A HAL current-mode result never refreshes an AV-derived cache deadline. After
-  an accepted, cache-authorized Off write, a definitive non-Off final state over
-  the normal settling window deletes the positive entry. Setter rejection,
-  timeout, and read failure leave it unchanged.
+**Allow Off evidence invalidation**
+: An accepted Off write backed by fresh or cached positive AV-derived evidence
+  invalidates that positive after a definitive non-Off bounded readback. Setter
+  rejection, timeout, and read failure leave it unchanged; invalidation is not
+  a negative availability observation.
 
 **Cache-authorized Off mismatch**
 : An accepted HAL Off write whose definitive final state is non-Off. The command

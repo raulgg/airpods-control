@@ -251,9 +251,11 @@ Positive observations expire seven days after the AV observation. Use does not e
 .BR ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json .
 Deleting it safely restores the pre-cache HAL behavior.
 .PP
-An accepted cache-authorized Off write still requires bounded HAL readback. A definitive non-Off final state produces
+An accepted Off write backed by fresh or cached positive evidence invalidates that positive after a definitive non-Off bounded readback. This does not create a negative tombstone; only an eligible AV availability read that omits Off can do that. A rejected write, timeout, failed read, or unknown final state leaves the observation in place.
+.PP
+An accepted cache-authorized HAL Off write still requires bounded HAL readback. A definitive non-Off final state produces
 .B no-op
-with that actual state and deletes the observation. The command does not retry through AV, infer Transparency, or choose another cycle target. A rejected write, timeout, failed read, or unknown final state leaves the observation in place.
+with that actual state and deletes the observation. The command does not retry through AV, infer Transparency, or choose another cycle target.
 .SS CONVERSATION AWARENESS
 .TP
 .BR "conversation-awareness get" ", " "ca get"

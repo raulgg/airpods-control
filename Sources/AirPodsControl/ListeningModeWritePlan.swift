@@ -45,8 +45,7 @@ struct ListeningModeWritePlan {
       observation = transport.setListeningModeAndReadBack(target)
     }
     if target == .off,
-      authorizesHALOff,
-      allowOffAuthorization?.cachedEvidence != nil,
+      allowOffAuthorization != nil,
       observation.setterAccepted,
       let observed = observation.observed,
       observed != .off

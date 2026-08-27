@@ -254,7 +254,7 @@ func testListeningModeWritePlanOwnsHALAllowOffPolicy() {
   )
 }
 
-func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
+func testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() {
   let clock = Date(timeIntervalSince1970: 2_000_000_200)
   let backend = FakeHALRoutingBackend()
   backend.rawModeRead = .value(2)
@@ -311,11 +311,11 @@ func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
   let av = FakeListeningModeTransport(
     name: "Cached AirPods",
     kind: .av,
-    current: .noiseCancellation,
+    current: .transparency,
     appliesWrites: false
   )
   let avMismatch = coordinatorOutcome(
-    ["lm", "set", "off"],
+    ["lm", "set", "off", "--json"],
     candidates: [
       candidate(
         name: "Cached AirPods",
@@ -326,10 +326,80 @@ func testListeningModeAllowOffHALMismatchEvictsOnlyAcceptedEvidence() {
     ]
   )
   check(avMismatch.plain == "no-op", "a definitive non-Off AV readback is a no-op")
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
-    check(true, "an AV mismatch preserves its fresh availability evidence")
+  check(avMismatch.exitCode == 3, "a definitive AV mismatch exits three")
+  check(
+    avMismatch.payload["listeningMode"] as? String == "transparency",
+    "an AV mismatch reports the definitive final mode"
+  )
+  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "an accepted definitive AV mismatch evicts fresh positive evidence")
   } else {
-    check(false, "an AV mismatch preserves its fresh availability evidence")
+    check(false, "an accepted definitive AV mismatch evicts fresh positive evidence")
+  }
+
+  backend.writeResult = .success
+  backend.resetWrites()
+  let listAfterMismatch = coordinatorOutcome(
+    ["lm", "list", "--json"],
+    candidates: [halCandidate]
+  )
+  check(
+    (listAfterMismatch.payload["supportedListeningModes"] as? [String])?.contains("off")
+      == false,
+    "HAL list fails closed after an AV mismatch evicts positive evidence"
+  )
+
+  let setAfterMismatch = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [halCandidate]
+  )
+  check(setAfterMismatch.plain == "unsupported", "HAL Off is unsupported after AV eviction")
+  check(setAfterMismatch.exitCode == 4, "unsupported HAL Off exits four after AV eviction")
+  check(backend.writtenValues.isEmpty, "unsupported HAL Off does not invoke the setter")
+}
+
+func testListeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous() {
+  let clock = Date(timeIntervalSince1970: 2_000_000_250)
+  let backend = FakeHALRoutingBackend()
+  let fixture = allowOffCacheFixture(backend: backend, now: { clock })
+  let av = FakeListeningModeTransport(
+    name: "Ambiguous AirPods",
+    kind: .av,
+    current: .transparency,
+    acceptsWrites: false,
+    appliesWrites: false
+  )
+  let avCandidate = candidate(
+    name: "Ambiguous AirPods",
+    av: av,
+    route: .selected,
+    allowOffCorrelation: fixture.correlation
+  )
+
+  let rejected = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [avCandidate]
+  )
+  check(rejected.plain == "no-op", "a rejected AV Off setter remains a no-op")
+  check(rejected.exitCode == 3, "a rejected AV Off setter exits three")
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "a rejected AV setter preserves fresh positive evidence")
+  } else {
+    check(false, "a rejected AV setter preserves fresh positive evidence")
+  }
+
+  av.acceptsWrites = true
+  av.dropsWriteReadback = true
+  let unknown = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [avCandidate]
+  )
+  check(unknown.plain == "no-op", "an unknown AV Off readback remains a no-op")
+  check(unknown.exitCode == 3, "an unknown AV Off readback exits three")
+  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "an unknown AV readback preserves fresh positive evidence")
+  } else {
+    check(false, "an unknown AV readback preserves fresh positive evidence")
   }
 }
 

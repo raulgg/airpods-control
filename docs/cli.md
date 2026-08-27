@@ -212,15 +212,18 @@ evidence. If a negative write fails after taking the lock, the disposable cache
 is removed so stale positive evidence cannot remain reusable.
 
 This evidence may be stale if Allow Off changes before another eligible AV read
-or a HAL write disproves it. Observation timestamps prevent delayed older reads
+or an Off write disproves it. Observation timestamps prevent delayed older reads
 from overwriting newer reads, with a negative result winning equal timestamps.
-If an accepted cache-authorized Off write finishes
-with a definitive non-Off state, the command reports `no-op` with that actual
-state and deletes the observation. It does not retry through AV, infer a
-Transparency fallback, or choose a second cycle target. A rejected write,
-timeout, failed read, or unknown final state leaves the observation in place.
-As with every listening-mode readback, a match is macOS-reported state, not a
-direct AirPods acknowledgement.
+If an accepted Off write backed by fresh or cached positive evidence finishes
+with a definitive non-Off state, the CLI deletes that positive observation. It
+does not create a negative tombstone: only an eligible AV availability read that
+omits Off can do that. A rejected write, timeout, failed read, or unknown final
+state leaves the observation in place.
+
+A cache-authorized HAL mismatch reports `no-op` with the actual final state and
+does not retry through AV, infer a Transparency fallback, or choose a second
+cycle target. As with every listening-mode readback, a match is macOS-reported
+state, not a direct AirPods acknowledgement.
 
 ## Conversation Awareness
 

@@ -48,6 +48,15 @@ extra AV read solely to warm or refresh it, and a HAL current-mode observation
 never updates it. Fresh, successful AV evidence takes precedence over cached
 evidence in the same command.
 
+An accepted Off write backed by positive AV-derived evidence can disprove that
+positive even when AV still advertises Off. If the full bounded readback ends in
+a known non-Off mode, the coordinator removes the exact positive record that
+authorized the attempt, whether that record was refreshed by the same AV command
+or consumed later by HAL. This invalidation does not create a negative
+tombstone: the write mismatch is evidence that the positive is unsafe to reuse,
+not a successful availability observation that Off is absent. A rejected setter,
+timeout, failed read, or unknown final state leaves the record unchanged.
+
 ### Correlation and privacy
 
 The cache key is the full SHA-256 digest of a random per-cache salt followed by
@@ -104,8 +113,6 @@ still complete the normal bounded HAL readback. If the definitive final state
 is a known non-Off mode, the command reports the existing `no-op` result with
 that actual state, deletes the positive record, and does not retry through AV,
 fall back to an inferred Transparency state, or choose another cycle target.
-A rejected write, timeout, failed read, or unknown final state does not delete
-the record.
 
 ### Output and diagnostics
 
@@ -138,4 +145,6 @@ live device query.
 
 This decision supersedes only ADR 0001's interim Off limitation. It does not
 change target selection, provider routing, transport stickiness, or the meaning
-of a matching macOS readback.
+of a matching macOS readback. The stale gap can end through a newer AV
+availability observation or an accepted Off write with definitive non-Off
+readback; only the former can create a negative tombstone.
