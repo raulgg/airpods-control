@@ -87,6 +87,8 @@ device or capability status.
   codes.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in
   C.
+- `Tests/ReleasePleaseTests` verifies that a Release Please pull request body
+  still parses.
 - `version.txt` is the single source for the CLI and release version. The
   Makefile generates the corresponding Swift constant under `build/`.
 

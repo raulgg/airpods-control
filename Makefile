@@ -129,6 +129,7 @@ _build: $(VERSION_SOURCE)
 	echo "built: $(BINARY) ($$("$(LIPO)" -archs "$(BINARY)")) + avbypass.dylib"
 
 test: all
+	./Tests/ReleasePleaseTests/release-pr-body.sh
 	./Tests/CLIContractTests/cli.sh
 	"$(CLANG)" -O2 -pthread -DAIRPODS_CONTROL_SIGNAL_MONITOR_TESTING \
 		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \

@@ -13,7 +13,8 @@ Homebrew formula in
    `RELEASE_PLEASE_TOKEN` environment secret in `release-automation`.
 3. Allow squash merging. Set the default squash commit to the pull request title
    and description (`PR_TITLE` and `PR_BODY`).
-4. Require CI, Quality Checks, and PR Title on `main`.
+4. Require these status checks on `main`: `Build, test, and verify install`,
+   `rumdl`, and `Release PR body`.
 5. For tags matching `v*`, restrict updates and deletions but allow creation.
 6. Create the `tap-dispatch` environment. Allow deployments only from the
    selected branch `main`, and disable administrator bypass. Store a separate
@@ -37,15 +38,25 @@ the commit message.
 
 1. Merge normal pull requests into `main` using squash merge. Release Please
    opens or refreshes its release pull request when a releasable change lands.
-2. Review the proposed version and `CHANGELOG.md`. Merging this protected pull
-   request approves and publishes the release.
+2. Review the proposed version and `CHANGELOG.md` in the diff. Do not rewrite
+   the Release Please pull request description. After merge, Release Please
+   parses that live GitHub body to create the tag. Dropping the `---`
+   delimiter lines or the `## [VERSION]` notes heading skips the GitHub
+   release and opens the next version by mistake.
+
+   A short blurb is fine between the delimiters if `## [VERSION]` stays the
+   first notes heading. Change the robot header only through
+   `pull-request-header` in `release-please-config.json`. After the release
+   exists, edit the GitHub release notes rather than the merged pull request.
 3. Verify that Release Please created the `vVERSION` tag and public GitHub
    release. Use GitHub's automatic source archive; do not upload a duplicate
    source asset.
 
-If the workflow fails after the release pull request merges, rerun its failed
-job. Never move, delete, or recreate a published tag. Correct bad source with a
-new patch release.
+If the workflow fails after the release pull request merges, restore a
+parseable description on that merged pull request when the body was rewritten,
+then run the Release Please workflow from `main` with workflow dispatch. Never
+move, delete, or recreate a published tag. Correct bad source with a new patch
+release.
 
 ## Update the Homebrew tap
 

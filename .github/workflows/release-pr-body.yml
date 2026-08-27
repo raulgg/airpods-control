@@ -1,0 +1,33 @@
+name: Release PR body
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  body:
+    name: Release PR body
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        if: startsWith(github.head_ref, 'release-please--branches--')
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Release Please pull request body
+        if: startsWith(github.head_ref, 'release-please--branches--')
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n' "$BODY" | ./scripts/verify-release-pr-body.sh
+
+      - name: Skip non-release pull requests
+        if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
+        run: echo "Not a Release Please pull request"
