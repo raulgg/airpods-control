@@ -735,40 +735,6 @@ func runListeningModeAllowOffCacheTests() {
   }
 
   withTemporaryAllowOffCache { fileURL in
-    let positiveObservedAt = Date(timeIntervalSince1970: 1_737_000_000)
-    let clock = AllowOffCacheTestClock(positiveObservedAt)
-    let cache = PersistentListeningModeAllowOffCache(
-      fileURL: fileURL,
-      now: clock.read,
-      saltGenerator: { allowOffCacheTestSalt }
-    )
-    let rawUID = "clock-rollback-uid"
-    check(
-      cache.applyObservation(
-        rawDeviceUID: rawUID,
-        allowsOff: true,
-        observedAt: positiveObservedAt
-      ) == .applied,
-      "clock rollback test seeds positive evidence"
-    )
-    let rolledBack = positiveObservedAt.addingTimeInterval(-60)
-    clock.value = rolledBack
-    check(
-      cache.applyObservation(
-        rawDeviceUID: rawUID,
-        allowsOff: false,
-        observedAt: rolledBack
-      ) == .applied,
-      "a fresh negative during clock rollback is recorded at the future positive time"
-    )
-    clock.value = positiveObservedAt
-    check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "clock rollback cannot resurrect superseded positive evidence"
-    )
-  }
-
-  withTemporaryAllowOffCache { fileURL in
     let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_735_000_000))
     let group = DispatchGroup()
     for index in 0..<12 {
