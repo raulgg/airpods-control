@@ -7,6 +7,7 @@ final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
   var modes: [ListeningMode]
   var current: ListeningMode?
   var settable: Bool
+  var acceptsWrites: Bool
   var appliesWrites: Bool
   var availabilityObservation: ListeningModeAvailabilityObservation?
   var onAvailabilityRead: (() -> Void)?
@@ -23,6 +24,7 @@ final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
     modes: [ListeningMode] = ListeningMode.allCases,
     current: ListeningMode? = .transparency,
     settable: Bool = true,
+    acceptsWrites: Bool? = nil,
     appliesWrites: Bool = true
   ) {
     self.name = name
@@ -30,6 +32,7 @@ final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
     self.modes = modes
     self.current = current
     self.settable = settable
+    self.acceptsWrites = acceptsWrites ?? settable
     self.appliesWrites = appliesWrites
   }
 
@@ -74,7 +77,7 @@ final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
     setterTargets.append(target)
     if appliesWrites { current = target }
     return DeviceWriteObservation(
-      setterAccepted: settable,
+      setterAccepted: acceptsWrites,
       observed: dropsWriteReadback ? nil : current
     )
   }
