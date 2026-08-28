@@ -81,14 +81,24 @@ See the [security and trust model](SECURITY.md) before installing.
 If you do not use Homebrew, a tagged install script fetches that same release,
 ensures Command Line Tools, compiles, and installs. Re-running it replaces an
 existing install from this project at the same prefix. Pin the tag in the URL
-so the script and the software stay matched (`--version latest` is opt-in):
+so the script and the software stay matched (`--version latest` is opt-in).
+This one-liner works only after a release that contains the script. Replace
+`vVERSION` with that tag. Do not pin `main`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/raulgg/airpods-control/v0.3.0/scripts/install-from-source.sh | sh -s -- --prefix "$HOME/.local"
+base=https://raw.githubusercontent.com/raulgg/airpods-control/vVERSION
+curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
+  --prefix "$HOME/.local"
 ```
 
 Omit `--prefix` to install to `/usr/local` (may prompt for `sudo` only when
-copying files). Uninstall with `--uninstall` after `sh -s --`.
+copying files). Uninstall with the same `--prefix` used to install:
+
+```sh
+base=https://raw.githubusercontent.com/raulgg/airpods-control/vVERSION
+curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
+  --prefix "$HOME/.local" --uninstall
+```
 
 Contributors who already have a clone can compile it directly:
 

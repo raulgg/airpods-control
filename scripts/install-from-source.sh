@@ -82,6 +82,10 @@ install_from_source() {
 	if [ -n "$repo_root" ] && [ -x "$repo_root/scripts/resolve-prefix.sh" ]; then
 		resolve_prefix=$repo_root/scripts/resolve-prefix.sh
 	fi
+	if [ "$from_tree" -eq 1 ]; then
+		[ -n "$repo_root" ] ||
+			die "$E_USAGE" "error: --from-tree requires a clone (cannot run from a pipe)"
+	fi
 
 	plain_version() {
 		printf '%s\n' "$1" | sed 's/^v//'
@@ -118,8 +122,70 @@ install_from_source() {
 	is_semver "$requested" ||
 		die "$E_VERSION" "error: invalid version: $version_arg"
 
+	workdir=
+	src_tree=
+	build_dir=
+	host_arch=
+
+	ensure_workdir() {
+		[ -n "$workdir" ] && return 0
+		tmp_base=${TMPDIR:-/tmp}
+		tmp_base=${tmp_base%/}
+		workdir=$(mktemp -d "$tmp_base/airpods-control-install.XXXXXX")
+		workdir=$(CDPATH= cd -- "$workdir" && pwd)
+		cleanup() { rm -rf "$workdir"; }
+		trap cleanup EXIT HUP INT TERM
+	}
+
+	print_clone_err() {
+		if [ -n "$workdir" ] && [ -s "$workdir/clone.err" ]; then
+			cat "$workdir/clone.err" >&2
+		fi
+	}
+
+	fetch_tagged_src() {
+		ensure_workdir
+		mkdir -p "$workdir/src"
+		# Fetch the tag ref only. `git clone -b` prefers a branch named vX.Y.Z.
+		if GIT_TERMINAL_PROMPT=0 git -C "$workdir/src" init --quiet \
+			>/dev/null 2>"$workdir/clone.err" &&
+			GIT_TERMINAL_PROMPT=0 git -C "$workdir/src" remote add origin \
+				"$REPO_HTTPS" >/dev/null 2>>"$workdir/clone.err" &&
+			GIT_TERMINAL_PROMPT=0 git -C "$workdir/src" fetch --quiet --depth 1 \
+				origin "refs/tags/${tag}:refs/tags/${tag}" \
+				>/dev/null 2>>"$workdir/clone.err" &&
+			GIT_TERMINAL_PROMPT=0 git -C "$workdir/src" \
+				-c advice.detachedHead=false checkout --quiet --detach \
+				"refs/tags/${tag}" >/dev/null 2>>"$workdir/clone.err"; then
+			src_tree=$workdir/src
+			return 0
+		fi
+		print_clone_err
+		die "$E_FETCH" "error: git fetch of $tag failed"
+	}
+
+	require_installer_in_tree() {
+		if [ -x "$src_tree/scripts/resolve-prefix.sh" ] &&
+			[ -f "$src_tree/Makefile" ]; then
+			return 0
+		fi
+		die "$E_PREFIX" "error: this installer is not in $tag; pass --version after it is released, or use --from-tree / Homebrew"
+	}
+
+	developer_tools_ok() {
+		[ -x "$CLT_CLANG" ] && [ -x "$CLT_SWIFTC" ] || return 1
+		# /usr/bin/clang and /usr/bin/swiftc are Apple trampolines; they stay
+		# executable when Command Line Tools are not installed.
+		if [ "$CLT_CLANG" = "$CLANG" ] || [ "$CLT_SWIFTC" = "$SWIFTC" ]; then
+			xcode-select -p >/dev/null 2>&1 || return 1
+			xcrun --find clang >/dev/null 2>&1 || return 1
+			xcrun --find swiftc >/dev/null 2>&1 || return 1
+		fi
+		return 0
+	}
+
 	ensure_clt() {
-		if [ -x "$CLT_CLANG" ] && [ -x "$CLT_SWIFTC" ]; then
+		if developer_tools_ok; then
 			return 0
 		fi
 		printf 'Command Line Tools not found.\n' >&2
@@ -129,7 +195,7 @@ install_from_source() {
 		fi
 		elapsed=0
 		while [ "$elapsed" -lt "$CLT_WAIT_SECS" ]; do
-			if [ -x "$CLT_CLANG" ] && [ -x "$CLT_SWIFTC" ]; then
+			if developer_tools_ok; then
 				return 0
 			fi
 			sleep 2
@@ -138,36 +204,116 @@ install_from_source() {
 		die "$E_CLT" "error: Command Line Tools missing. Install them, then retry. xcode-select --install"
 	}
 
+	ensure_resolver() {
+		if [ -z "$resolve_prefix" ]; then
+			resolve_prefix=$src_tree/scripts/resolve-prefix.sh
+		fi
+		[ -x "$resolve_prefix" ] ||
+			die "$E_PREFIX" "error: missing resolve-prefix.sh"
+	}
+
+	refuse_foreign_command() {
+		command_path=$prefix/bin/airpods-control
+		if [ -e "$command_path" ] || [ -L "$command_path" ]; then
+			if [ ! -L "$command_path" ] ||
+				[ "$(readlink "$command_path")" != "$EXPECTED_SYMLINK" ]; then
+				die "$E_FOREIGN" "error: refusing to replace command not owned by this package: $command_path"
+			fi
+		fi
+	}
+
+	can_write_install_prefix() {
+		mkdir -p "$prefix/bin" "$prefix/libexec/airpods-control" \
+			"$prefix/share/man/man1" 2>/dev/null && [ -w "$prefix/bin" ]
+	}
+
+	can_write_uninstall_prefix() {
+		if [ -d "$prefix/bin" ]; then
+			[ -w "$prefix/bin" ]
+		elif [ -d "$prefix" ]; then
+			[ -w "$prefix" ]
+		else
+			return 0
+		fi
+	}
+
+	run_make() {
+		use_sudo=$1
+		target=$2
+		if [ -n "$build_dir" ]; then
+			set -- -C "$src_tree" \
+				"PREFIX=$prefix" \
+				"ARCHS=$host_arch" \
+				"BUILD_DIR=$build_dir" \
+				"CLANG=$CLANG" \
+				"SWIFTC=$SWIFTC" \
+				"LIPO=$LIPO" \
+				"CODESIGN=$CODESIGN" \
+				"$target"
+		else
+			set -- -C "$src_tree" \
+				"PREFIX=$prefix" \
+				"CLANG=$CLANG" \
+				"SWIFTC=$SWIFTC" \
+				"LIPO=$LIPO" \
+				"CODESIGN=$CODESIGN" \
+				"$target"
+		fi
+		if [ "$use_sudo" -eq 1 ]; then
+			command -v sudo >/dev/null 2>&1 ||
+				die "$E_PREFIX" "error: $prefix is not writable. Pass --prefix DIR or install sudo."
+			sudo make "$@" || return $?
+		else
+			make "$@" || return $?
+		fi
+	}
+
+	run_privileged() {
+		target=$1
+		if [ "$target" = uninstall ]; then
+			if can_write_uninstall_prefix; then
+				run_make 0 uninstall || return $?
+			else
+				run_make 1 uninstall || return $?
+			fi
+		elif can_write_install_prefix; then
+			run_make 0 "$target" || return $?
+		else
+			run_make 1 "$target" || return $?
+		fi
+	}
+
+	if [ "$do_uninstall" -eq 1 ]; then
+		if [ -n "$repo_root" ] && [ -f "$repo_root/Makefile" ]; then
+			src_tree=$repo_root
+		else
+			fetch_tagged_src
+			require_installer_in_tree
+		fi
+		ensure_resolver
+		prefix=$("$resolve_prefix" "$prefix_arg") || exit "$E_PREFIX"
+		refuse_foreign_command
+		run_privileged uninstall
+		printf 'uninstalled prefix=%s\n' "$prefix"
+		return 0
+	fi
+
 	ensure_clt
-
-	tmp_base=${TMPDIR:-/tmp}
-	tmp_base=${tmp_base%/}
-	workdir=$(mktemp -d "$tmp_base/airpods-control-install.XXXXXX")
-	cleanup() { rm -rf "$workdir"; }
-	trap cleanup EXIT HUP INT TERM
-
-	src_tree=
+	ensure_workdir
+	build_dir=$workdir/build
+	host_arch=$(uname -m)
 	if [ "$from_tree" -eq 1 ]; then
-		[ -n "$repo_root" ] ||
-			die "$E_USAGE" "error: --from-tree requires a clone (cannot run from a pipe)"
 		src_tree=$repo_root
 	else
-		if ! git clone --depth 1 --branch "$tag" "$REPO_HTTPS" "$workdir/src" \
-			>/dev/null 2>"$workdir/clone.err"; then
-			die "$E_FETCH" "error: git clone of $tag failed"
-		fi
-		src_tree=$workdir/src
+		fetch_tagged_src
+		require_installer_in_tree
 	fi
 
 	tree_version=$(tr -d '[:space:]' <"$src_tree/version.txt")
 	[ "$tree_version" = "$requested" ] ||
 		die "$E_VERSION" "error: version.txt is $tree_version, expected $requested"
 
-	if [ -z "$resolve_prefix" ]; then
-		resolve_prefix=$src_tree/scripts/resolve-prefix.sh
-	fi
-	[ -x "$resolve_prefix" ] ||
-		die "$E_PREFIX" "error: missing resolve-prefix.sh"
+	ensure_resolver
 	prefix=$("$resolve_prefix" "$prefix_arg") || exit "$E_PREFIX"
 
 	BREW=${BREW:-brew}
@@ -184,48 +330,16 @@ install_from_source() {
 		fi
 	fi
 
+	refuse_foreign_command
+
+	run_make 0 all ||
+		die "$E_BUILD" "error: build failed"
+
 	command_path=$prefix/bin/airpods-control
-	if [ -e "$command_path" ] || [ -L "$command_path" ]; then
-		if [ ! -L "$command_path" ] ||
-			[ "$(readlink "$command_path")" != "$EXPECTED_SYMLINK" ]; then
-			die "$E_FOREIGN" "error: refusing to replace command not owned by this package: $command_path"
-		fi
-	fi
-
-	host_arch=$(uname -m)
-	make_vars="PREFIX=$prefix ARCHS=$host_arch CLANG=$CLANG SWIFTC=$SWIFTC LIPO=$LIPO CODESIGN=$CODESIGN"
-
-	can_write_prefix() {
-		mkdir -p "$prefix/bin" "$prefix/libexec/airpods-control" \
-			"$prefix/share/man/man1" 2>/dev/null && [ -w "$prefix/bin" ]
-	}
-
-	run_privileged() {
-		if can_write_prefix; then
-			# shellcheck disable=SC2086
-			make -C "$src_tree" $make_vars "$@"
-		else
-			command -v sudo >/dev/null 2>&1 ||
-				die "$E_PREFIX" "error: $prefix is not writable. Pass --prefix DIR or install sudo."
-			# shellcheck disable=SC2086
-			sudo make -C "$src_tree" $make_vars "$@"
-		fi
-	}
-
-	if [ "$do_uninstall" -eq 1 ]; then
-		run_privileged uninstall
-		printf 'uninstalled prefix=%s\n' "$prefix"
-		return 0
-	fi
-
 	old_version=unknown
 	if [ -x "$command_path" ]; then
 		old_version=$("$command_path" --version 2>/dev/null) || old_version=unknown
 	fi
-
-	# shellcheck disable=SC2086
-	make -C "$src_tree" $make_vars all ||
-		die "$E_BUILD" "error: build failed"
 
 	run_privileged install ||
 		die "$E_BUILD" "error: install failed"

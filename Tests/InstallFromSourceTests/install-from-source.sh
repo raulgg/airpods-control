@@ -45,8 +45,93 @@ truncated=$TMP/truncated.sh
 sed '$d' "$SCRIPT" >"$truncated"
 expect_status 0 "truncated script is a no-op" sh "$truncated"
 
-PREFIX=$TMP/prefix
+git_stub=$TMP/git-stub
+mkdir -p "$git_stub"
+cat >"$git_stub/git" <<'EOF'
+#!/bin/sh
+repo=.
+while [ "$#" -gt 0 ]; do
+	case $1 in
+		-C)
+			repo=$2
+			shift 2
+			;;
+		-c)
+			shift 2
+			;;
+		-q | --quiet)
+			shift
+			;;
+		*)
+			break
+			;;
+	esac
+done
+cmd=${1:-}
+[ "$#" -gt 0 ] && shift
+case $cmd in
+	init)
+		mkdir -p "$repo/.git"
+		exit 0
+		;;
+	remote)
+		exit 0
+		;;
+	fetch)
+		if [ "${FAKE_GIT_MODE-}" = fail-fetch ]; then
+			printf 'fatal: fake clone failure\n' >&2
+			exit 1
+		fi
+		mkdir -p "$repo/scripts"
+		printf '0.3.0\n' >"$repo/version.txt"
+		exit 0
+		;;
+	checkout)
+		exit 0
+		;;
+	*)
+		printf 'unexpected git command: %s\n' "$cmd" >&2
+		exit 1
+		;;
+esac
+EOF
+chmod +x "$git_stub/git"
+
+set +e
+output=$(
+	PATH="$git_stub:$PATH" FAKE_GIT_MODE=fail-fetch \
+		"$SCRIPT" --prefix "$TMP/fetch-fail" 2>&1
+)
+status=$?
+set -e
+[ "$status" -eq 6 ] ||
+	fail "clone failure surfaces git stderr: expected exit 6, got $status (${output})"
+printf '%s\n' "$output" | grep -q "fatal: fake clone failure" ||
+	fail "clone.err was not printed: $output"
+printf '%s\n' "$output" | grep -q "git fetch of v0.3.0 failed" ||
+	fail "fetch failure message missing: $output"
+
+set +e
+output=$(
+	PATH="$git_stub:$PATH" "$SCRIPT" --prefix "$TMP/from-clone" 2>&1
+)
+status=$?
+set -e
+[ "$status" -eq 8 ] ||
+	fail "clone missing resolver: expected exit 8, got $status (${output})"
+printf '%s\n' "$output" | grep -q "this installer is not in v0.3.0" ||
+	fail "missing-installer message missing: $output"
+
+PREFIX="$TMP/nested install"
 mkdir -p "$PREFIX"
+
+repo_binary=$ROOT/build/airpods-control
+repo_binary_existed=0
+before_sum=
+if [ -f "$repo_binary" ]; then
+	repo_binary_existed=1
+	before_sum=$(cksum <"$repo_binary")
+fi
 
 "$SCRIPT" --from-tree --prefix "$PREFIX" >/dev/null
 [ -L "$PREFIX/bin/airpods-control" ] || fail "install did not create symlink"
@@ -54,6 +139,15 @@ expected_version=$(tr -d '[:space:]' <"$ROOT/version.txt")
 got=$("$PREFIX/bin/airpods-control" --version) || fail "installed binary did not run"
 [ "$got" = "$expected_version" ] ||
 	fail "installed version $got, expected $expected_version"
+
+if [ "$repo_binary_existed" -eq 1 ]; then
+	after_sum=$(cksum <"$repo_binary")
+	[ "$before_sum" = "$after_sum" ] ||
+		fail "installer clobbered $repo_binary"
+else
+	[ ! -f "$repo_binary" ] ||
+		fail "installer created $repo_binary"
+fi
 
 # Upgrade over an owned install whose binary cannot report a version.
 mv "$PREFIX/libexec/airpods-control/airpods-control" \
@@ -95,7 +189,21 @@ printf '%s\n' "$output" | grep -q "warning: Homebrew has airpods-control" ||
 	fail "expected brew warning: $output"
 
 rm -f "$PREFIX/libexec/airpods-control/airpods-control.real"
-"$SCRIPT" --from-tree --prefix "$PREFIX" --uninstall >/dev/null
+output=$(
+	export CLT_CLANG=/nonexistent/clang
+	export CLT_SWIFTC=/nonexistent/swiftc
+	export CLT_WAIT_SECS=0
+	export BREW="$stub/brew"
+	"$SCRIPT" --from-tree --prefix "$PREFIX" --uninstall 2>&1
+) || fail "uninstall without CLT failed: $output"
+printf '%s\n' "$output" | grep -q "uninstalled prefix=" ||
+	fail "uninstall success line missing: $output"
+if printf '%s\n' "$output" | grep -qi "Command Line Tools"; then
+	fail "uninstall probed CLT: $output"
+fi
+if printf '%s\n' "$output" | grep -q "installing to"; then
+	fail "uninstall warned about Homebrew: $output"
+fi
 [ ! -e "$PREFIX/bin/airpods-control" ] || fail "uninstall left the command"
 
 echo "ok: install-from-source fixtures"
