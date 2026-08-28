@@ -91,6 +91,7 @@ device or capability status.
 - `Tests/ReleasePleaseTests` verifies that a Release Please pull request body
   still parses.
 - `Tests/ResolvePrefixTests` verifies install-prefix path rules.
+- `Tests/InstallFromSourceTests` verifies the source install script.
 - `version.txt` is the single source for the CLI and release version. The
   Makefile generates the corresponding Swift constant under `build/`.
 
