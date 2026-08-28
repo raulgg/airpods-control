@@ -14,7 +14,8 @@ Homebrew formula in
 3. Allow squash merging. Set the default squash commit to the pull request title
    and description (`PR_TITLE` and `PR_BODY`).
 4. Require these status checks on `main`: `Build, test, and verify install`,
-   `rumdl`, and `Release PR body`.
+   `Build, test, and verify runtime (macOS 26)`,
+   `Build, test, and verify runtime (Intel)`, `rumdl`, and `Release PR body`.
 5. For tags matching `v*`, restrict updates and deletions but allow creation.
 6. Create the `tap-dispatch` environment. Allow deployments only from the
    selected branch `main`, and disable administrator bypass. Store a separate
@@ -67,36 +68,11 @@ release.
 4. If dispatch fails, run the tap workflow manually with the existing release
    tag.
 
-## Experimental binary bundle
+User-facing Homebrew commands in [README.md](README.md) must stay aligned
+with the tap formula name `raulgg/tap/airpods-control`:
 
-1. Run the `Experimental Binary Bundle` workflow.
-2. Verify that its Apple Silicon and Intel jobs pass.
-3. Verify that each artifact name includes the checked-out commit and that its
-   `BUILD.txt` identifies the same commit, native runner, and toolchain.
-4. Download the seven-day Actions artifact if the package needs inspection and
-   verify `SHA256SUMS` before extracting it.
-
-Do not attach the ad-hoc-signed experimental artifact to a GitHub release.
-
-## Optional signed binary release
-
-1. Keep the repository variable `PUBLISH_BINARY_RELEASES` set to `false` until
-   the binary-release pull request is approved.
-2. Create a `binary-release` environment restricted to `main` and require the
-   maintainer's approval for each deployment.
-3. Store these secrets in the `binary-release` environment:
-   - `DEVELOPER_ID_APPLICATION_CERTIFICATE`: base64-encoded Developer ID
-     Application `.p12`;
-   - `DEVELOPER_ID_APPLICATION_PASSWORD`: password for the `.p12`;
-   - `APPLE_API_ISSUER`;
-   - `APPLE_API_KEY_ID`;
-   - `APPLE_API_PRIVATE_KEY`.
-4. After a stable release contains this workflow, run `Publish Binary Release`
-   manually from `main` for the latest stable tag. Leave asset publication
-   disabled.
-5. Verify signing, notarization, Apple Silicon, and Intel jobs. Install the
-   archive on a clean machine.
-6. Set `PUBLISH_BINARY_RELEASES` to `true` for subsequent releases.
-
-If binary publication fails, fix it with a new patch release. Never overwrite a
-published asset.
+```sh
+brew install raulgg/tap/airpods-control
+brew upgrade airpods-control
+brew uninstall airpods-control
+```

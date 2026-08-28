@@ -57,64 +57,28 @@ without polling in the background or automating the UI.
   interface or an eligible mapped Core Audio HAL output endpoint. Conversation
   Awareness and `support-report` still require the private AV interface
   described in [device compatibility](docs/compatibility.md).
-- Command Line Tools (`clang` and `swiftc`) for Homebrew or source installs.
-  Install them with `xcode-select --install`; full Xcode is not required. The
-  optional signed binary archive does not require a compiler.
+- Command Line Tools (`clang` and `swiftc`). Install them with
+  `xcode-select --install`; full Xcode is not required. Homebrew and source
+  installs both compile on your Mac.
 
 ## Install
 
-### Homebrew
+Homebrew is the recommended path. The
+[formula](https://github.com/raulgg/homebrew-tap/blob/main/Formula/airpods-control.rb)
+downloads the tagged source and compiles the native architecture with your
+Command Line Tools.
 
 ```sh
 brew install raulgg/tap/airpods-control
+brew upgrade airpods-control
+brew uninstall airpods-control
 ```
 
-The formula downloads the source and compiles the native architecture locally.
-It does not consume either binary bundle described below and remains the
-recommended installation path.
-
-### Signed binary archive
-
-Each GitHub release can also include an optional universal macOS archive for a
-faster install without Command Line Tools. Download the archive and
-`SHA256SUMS` from the release. GitHub CLI authentication is required to verify
-who built the archive before extracting or installing it:
-
-```sh
-(
-set -eu
-VERSION=x.y.z
-curl -fLO "https://github.com/raulgg/airpods-control/releases/download/v$VERSION/airpods-control-$VERSION-macos-universal.tar.gz"
-curl -fLO "https://github.com/raulgg/airpods-control/releases/download/v$VERSION/SHA256SUMS"
-shasum -a 256 -c SHA256SUMS
-SOURCE_DIGEST=$(gh api \
-  "repos/raulgg/airpods-control/commits/refs/tags/v$VERSION" \
-  --jq .sha)
-gh attestation verify \
-  "airpods-control-$VERSION-macos-universal.tar.gz" \
-  --repo raulgg/airpods-control \
-  --signer-workflow \
-    raulgg/airpods-control/.github/workflows/binary-release.yml \
-  --source-ref refs/heads/main \
-  --source-digest "$SOURCE_DIGEST" \
-  --deny-self-hosted-runners
-tar -xzf "airpods-control-$VERSION-macos-universal.tar.gz"
-sudo "./airpods-control-$VERSION-macos-universal/install.sh"
-)
-```
-
-The executable and its companion dylib are signed with the same Developer ID,
-submitted to Apple's notarization service, and covered by a GitHub artifact
-attestation. The checksum detects download corruption; the required attestation
-check authenticates the producing repository, workflow, protected source ref,
-exact tagged source commit, and use of GitHub-hosted runners. Do not run
-`install.sh` if either check fails.
-
-Run `sudo ./uninstall.sh` from the extracted archive to remove this install.
-See the [security and trust model](SECURITY.md) before choosing between a local
-source build and a published binary.
+See the [security and trust model](SECURITY.md) before installing.
 
 ### From source
+
+If you do not use Homebrew, clone the tagged source and compile it yourself:
 
 ```sh
 git clone https://github.com/raulgg/airpods-control
@@ -130,32 +94,9 @@ so a user-local installation needs no `sudo`:
 make install PREFIX="$HOME/.local"
 ```
 
-The build produces a universal (arm64 + x86_64), ad-hoc-signed executable and
-its companion `avbypass.dylib`. Run `sudo make uninstall` to remove them.
-
-### Experimental binary bundle
-
-The `Experimental Binary Bundle` workflow publishes seven-day artifacts for
-testing. They are not GitHub release assets, Developer ID signed, or notarized;
-prefer Homebrew or a source build for normal installation.
-
-Before using an artifact, confirm that its name and `BUILD.txt` identify the
-commit and native runner from the originating workflow run. Then verify and
-install it into a user-owned prefix:
-
-```sh
-shasum -a 256 -c SHA256SUMS
-tar -xzf airpods-control-x.y.z-macos-universal.tar.gz
-cd airpods-control-x.y.z-macos-universal
-./install.sh "$HOME/.local"
-```
-
-Use `./uninstall.sh "$HOME/.local"` from the same extracted directory to remove
-it. The checksum verifies that the archive matches the manifest in the
-artifact; the originating GitHub workflow run and commit establish who produced
-it. Because the bundle is ad-hoc signed and unnotarized, Gatekeeper may block a
-quarantined download. Do not disable Gatekeeper globally; use Homebrew or build
-from source instead.
+The build produces an ad-hoc-signed executable and its companion
+`avbypass.dylib`. Run `sudo make uninstall` to remove a default-prefix
+install, or `make uninstall PREFIX="$HOME/.local"` for a user-local one.
 
 ## Quick start
 
@@ -280,11 +221,7 @@ one private entitlement check inside that process and passes every other
 entitlement query through unchanged. It does not elevate privileges or affect
 other processes.
 
-Source builds and experimental CI bundles use ad-hoc signatures. Optional
-release archives instead sign the executable and dylib with the same Developer
-ID and grant only the narrow hardened-runtime entitlement needed to read DYLD
-environment variables. Library validation remains enabled and accepts the
-same-team companion library. Review the
+Source builds ad-hoc-sign the executable and companion dylib. Review the
 [security documentation](SECURITY.md) before choosing an installation path.
 
 ## Compatibility

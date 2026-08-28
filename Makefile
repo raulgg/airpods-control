@@ -1,7 +1,6 @@
 PREFIX ?= /usr/local
 DESTDIR ?=
 BUILD_DIR ?= build
-DIST_DIR ?= dist
 DEPLOYMENT_TARGET ?= 12.0
 ARCHS ?= arm64 x86_64
 
@@ -40,7 +39,7 @@ LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
-.PHONY: all _build test verify-catalog package verify-package install uninstall clean
+.PHONY: all _build test verify-catalog verify-runtime install uninstall clean
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
@@ -130,6 +129,7 @@ _build: $(VERSION_SOURCE)
 
 test: all
 	./Tests/ReleasePleaseTests/release-pr-body.sh
+	./Tests/ResolvePrefixTests/resolve-prefix.sh
 	./Tests/CLIContractTests/cli.sh
 	"$(CLANG)" -O2 -pthread -DAIRPODS_CONTROL_SIGNAL_MONITOR_TESTING \
 		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
@@ -153,21 +153,12 @@ test: all
 verify-catalog:
 	./scripts/verify-catalog.sh
 
-package: all
-	BUILD_DIR="$(abspath $(BUILD_DIR))" \
-		DIST_DIR="$(abspath $(DIST_DIR))" \
-		VERSION_FILE="$(abspath $(VERSION_FILE))" \
-		MAKE="$(MAKE)" \
-		SWIFTC="$(SWIFTC)" \
-		CLANG="$(CLANG)" \
-		./scripts/package-binary.sh
-
-verify-package: package
+# Deliberately outside `test`: the check launches the CLI and requires the
+# interpose to report active, so a future macOS change would fail the suite
+# for no fault of the code under edit.
+verify-runtime: all
 	./Tests/PackagingTests/bypass-runtime.sh \
 		"$(abspath $(BINARY))" "$(abspath $(DYLIB))"
-	cd "$(abspath $(DIST_DIR))" && shasum -a 256 -c SHA256SUMS
-	./scripts/verify-binary-package.sh \
-		"$(abspath $(DIST_DIR))/airpods-control-$$(cat "$(abspath $(VERSION_FILE))")-macos-universal.tar.gz"
 
 install: all
 	@set -eu; \

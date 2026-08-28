@@ -43,11 +43,12 @@ them. It then runs the shell CLI contract tests, the C signal-monitor race test,
 and the Swift unit tests. Tests must not require AirPods or write device
 settings.
 
-For packaging, installer, or runtime-bypass changes, build and verify the
-complete archive:
+For runtime-bypass changes, launch the built CLI and confirm the interpose
+reports active. This stays out of `make test` because it depends on the
+installed macOS:
 
 ```sh
-make verify-package
+make verify-runtime
 ```
 
 Check the product-name catalog against the pairings macOS itself publishes:
@@ -89,12 +90,13 @@ device or capability status.
   C.
 - `Tests/ReleasePleaseTests` verifies that a Release Please pull request body
   still parses.
+- `Tests/ResolvePrefixTests` verifies install-prefix path rules.
 - `version.txt` is the single source for the CLI and release version. The
   Makefile generates the corresponding Swift constant under `build/`.
 
-The names follow Swift target conventions. The Makefile is still the source of
-truth for builds because release builds combine architectures, sign both
-artifacts, and install them together.
+The names follow Swift target conventions. The Makefile is the source of
+truth for builds: it compiles architectures the toolchain supports, ad-hoc
+signs both artifacts, and installs them together.
 
 ### Documentation
 

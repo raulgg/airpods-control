@@ -62,7 +62,7 @@ verify_ad_hoc_signature() {
   }
   case "$flags" in
     *runtime*)
-      echo "error: experimental binary must not enable hardened runtime: $candidate" >&2
+      echo "error: ad-hoc binary must not enable hardened runtime: $candidate" >&2
       exit 1
       ;;
   esac
