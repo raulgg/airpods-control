@@ -41,6 +41,9 @@ jobs:
           # Parser tests never access the device or load the bypass dylib.
           make test
 
+      - name: Verify DYLD interpose runtime
+        run: make verify-runtime
+
       - name: Verify install layout
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
@@ -76,3 +79,75 @@ jobs:
           make uninstall DESTDIR="$stage" PREFIX=/usr/local
           test ! -e "$stage/usr/local/bin/airpods-control"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
+
+  macos-26:
+    name: Build, test, and verify runtime (macOS 26)
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Show toolchain
+        run: |
+          swiftc --version
+          clang --version
+
+      - name: Build
+        run: |
+          make
+          lipo build/airpods-control -verify_arch arm64 x86_64
+          lipo build/avbypass.dylib -verify_arch arm64 x86_64
+          codesign --verify --verbose build/airpods-control
+          codesign --verify --verbose build/avbypass.dylib
+
+      - name: Verify DYLD interpose runtime
+        run: make verify-runtime
+
+      - name: Verify install layout
+        run: |
+          stage="$RUNNER_TEMP/airpods-control-install"
+          expected_version=$(cat version.txt)
+          make install DESTDIR="$stage" PREFIX=/usr/local
+          test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
+            "../libexec/airpods-control/airpods-control"
+          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
+            "$expected_version"
+
+  intel:
+    name: Build, test, and verify runtime (Intel)
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Show toolchain
+        run: |
+          swiftc --version
+          clang --version
+          uname -m
+
+      - name: Build
+        run: |
+          make
+          host_arch=$(uname -m)
+          lipo build/airpods-control -verify_arch "$host_arch"
+          lipo build/avbypass.dylib -verify_arch "$host_arch"
+          codesign --verify --verbose build/airpods-control
+          codesign --verify --verbose build/avbypass.dylib
+
+      - name: Verify DYLD interpose runtime
+        run: make verify-runtime
+
+      - name: Verify install layout
+        run: |
+          stage="$RUNNER_TEMP/airpods-control-install"
+          expected_version=$(cat version.txt)
+          make install DESTDIR="$stage" PREFIX=/usr/local
+          test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
+            "../libexec/airpods-control/airpods-control"
+          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
+            "$expected_version"
