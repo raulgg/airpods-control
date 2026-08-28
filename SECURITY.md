@@ -90,7 +90,8 @@ Both supported install paths compile on your Mac with Command Line Tools and
 ad-hoc-sign the executable and companion dylib. Homebrew is the recommended
 path: the formula downloads the tagged source archive, pins its SHA-256, and
 builds the native architecture. A local `make install` is the same compile
-from a clone or tagged tree.
+from a clone or tagged tree. The optional source script compiles a tagged git
+checkout, a weaker pin than Homebrew's SHA-256.
 
 This project does not publish compiled binaries. GitHub Releases are the
 source tag and notes. Trusting an install means reviewing the source,

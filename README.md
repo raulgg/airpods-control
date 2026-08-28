@@ -78,7 +78,29 @@ See the [security and trust model](SECURITY.md) before installing.
 
 ### From source
 
-If you do not use Homebrew, clone the tagged source and compile it yourself:
+If you do not use Homebrew, a tagged install script fetches that same release,
+ensures Command Line Tools, compiles, and installs. Re-running it replaces an
+existing install from this project at the same prefix. Pin the tag in the URL
+so the script and the software stay matched (`--version latest` is opt-in).
+This one-liner works only after a release that contains the script. Replace
+`vVERSION` with that tag. Do not pin `main`.
+
+```sh
+base=https://raw.githubusercontent.com/raulgg/airpods-control/vVERSION
+curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
+  --prefix "$HOME/.local"
+```
+
+Omit `--prefix` to install to `/usr/local` (may prompt for `sudo` only when
+copying files). Uninstall with the same `--prefix` used to install:
+
+```sh
+base=https://raw.githubusercontent.com/raulgg/airpods-control/vVERSION
+curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
+  --prefix "$HOME/.local" --uninstall
+```
+
+Contributors who already have a clone can compile it directly:
 
 ```sh
 git clone https://github.com/raulgg/airpods-control
@@ -87,16 +109,8 @@ make
 sudo make install
 ```
 
-By default, `make install` uses `/usr/local`. It honors `PREFIX` and `DESTDIR`,
-so a user-local installation needs no `sudo`:
-
-```sh
-make install PREFIX="$HOME/.local"
-```
-
-The build produces an ad-hoc-signed executable and its companion
-`avbypass.dylib`. Run `sudo make uninstall` to remove a default-prefix
-install, or `make uninstall PREFIX="$HOME/.local"` for a user-local one.
+`make install` defaults to `/usr/local` and honors `PREFIX` and `DESTDIR`.
+The build produces an ad-hoc-signed executable and `avbypass.dylib`.
 
 ## Quick start
 
