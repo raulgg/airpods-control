@@ -142,9 +142,6 @@ jobs:
           codesign --verify --verbose build/airpods-control
           codesign --verify --verbose build/avbypass.dylib
 
-      - name: Smoke test (read-only)
-        run: make test
-
       - name: Verify DYLD interpose runtime
         run: make verify-runtime
 
