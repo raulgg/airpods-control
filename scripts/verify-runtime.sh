@@ -7,7 +7,6 @@ if [ "$#" -ne 1 ]; then
 fi
 
 BINARY=$1
-SIGNATURE_POLICY=${VERIFY_SIGNATURE_POLICY:-adhoc}
 TMP_BASE=${TMPDIR:-/tmp}
 TMP=$(mktemp -d "${TMP_BASE%/}/airpods-control-runtime.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
@@ -68,17 +67,8 @@ verify_ad_hoc_signature() {
   esac
 }
 
-case "$SIGNATURE_POLICY" in
-  adhoc)
-    verify_ad_hoc_signature "$RESOLVED_BINARY"
-    verify_ad_hoc_signature "$DYLIB"
-    ;;
-  external) ;;
-  *)
-    echo "error: unknown signature policy: $SIGNATURE_POLICY" >&2
-    exit 1
-    ;;
-esac
+verify_ad_hoc_signature "$RESOLVED_BINARY"
+verify_ad_hoc_signature "$DYLIB"
 
 set +e
 "$BINARY" --debug listening-mode list \
@@ -98,8 +88,4 @@ esac
 grep -Fq 'bypass.status="reexec"' "$TMP/stderr"
 grep -Fq 'bypass.status="active"' "$TMP/stderr"
 
-if [ "$SIGNATURE_POLICY" = adhoc ]; then
-  echo "Verified ad-hoc-signed DYLD interposition"
-else
-  echo "Verified DYLD interposition"
-fi
+echo "Verified ad-hoc-signed DYLD interposition"

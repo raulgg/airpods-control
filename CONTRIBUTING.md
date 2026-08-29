@@ -92,6 +92,7 @@ device or capability status.
   still parses.
 - `Tests/ResolvePrefixTests` verifies install-prefix path rules.
 - `Tests/InstallFromSourceTests` verifies the source install script.
+- `Tests/VerifyRuntimeTests` verifies the DYLD interpose on a built CLI.
 - `version.txt` is the single source for the CLI and release version. The
   Makefile generates the corresponding Swift constant under `build/`.
 

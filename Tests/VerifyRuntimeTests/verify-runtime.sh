@@ -16,13 +16,13 @@ trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 cp "$BINARY" "$TMP/airpods-control"
 cp "$DYLIB" "$TMP/avbypass.dylib"
 
-"$ROOT/scripts/verify-binary-runtime.sh" "$TMP/airpods-control"
+"$ROOT/scripts/verify-runtime.sh" "$TMP/airpods-control"
 
 mkdir "$TMP/hardened"
 cp "$BINARY" "$TMP/hardened/airpods-control"
 cp "$DYLIB" "$TMP/hardened/avbypass.dylib"
 codesign --force --sign - --options runtime "$TMP/hardened/airpods-control"
-if "$ROOT/scripts/verify-binary-runtime.sh" \
+if "$ROOT/scripts/verify-runtime.sh" \
   "$TMP/hardened/airpods-control" >/dev/null 2>&1; then
   echo "error: runtime verifier accepted a hardened-runtime binary" >&2
   exit 1
@@ -32,13 +32,13 @@ inputs=
 for arch in arm64 x86_64; do
   clang -O2 -arch "$arch" -mmacosx-version-min=12.0 -dynamiclib \
     -o "$TMP/empty-$arch.dylib" \
-    "$ROOT/Tests/PackagingTests/empty_dylib.c"
+    "$ROOT/Tests/VerifyRuntimeTests/empty_dylib.c"
   inputs="$inputs $TMP/empty-$arch.dylib"
 done
 lipo -create $inputs -output "$TMP/avbypass.dylib"
 codesign --force --sign - "$TMP/avbypass.dylib"
 
-if "$ROOT/scripts/verify-binary-runtime.sh" "$TMP/airpods-control" >/dev/null 2>&1; then
+if "$ROOT/scripts/verify-runtime.sh" "$TMP/airpods-control" >/dev/null 2>&1; then
   echo "error: runtime verifier accepted a non-interposing dylib" >&2
   exit 1
 fi

@@ -158,7 +158,7 @@ verify-catalog:
 # interpose to report active, so a future macOS change would fail the suite
 # for no fault of the code under edit.
 verify-runtime: all
-	./Tests/PackagingTests/bypass-runtime.sh \
+	./Tests/VerifyRuntimeTests/verify-runtime.sh \
 		"$(abspath $(BINARY))" "$(abspath $(DYLIB))"
 
 install: all
