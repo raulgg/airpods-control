@@ -5,6 +5,8 @@ private enum StatusFieldKey: String {
   case conversationAwareness
   case isSelectedAudioOutput
   case isSelectedAudioInput
+  case leftEarPlacement
+  case rightEarPlacement
 
   var plainLabel: String {
     switch self {
@@ -12,6 +14,8 @@ private enum StatusFieldKey: String {
     case .conversationAwareness: return "Conversation Awareness"
     case .isSelectedAudioOutput: return "Audio output selection"
     case .isSelectedAudioInput: return "Audio input selection"
+    case .leftEarPlacement: return "Left ear placement"
+    case .rightEarPlacement: return "Right ear placement"
     }
   }
 }
@@ -22,6 +26,7 @@ private struct DeviceStatusSnapshot {
   let conversationAwareness: DeviceStatusField<Bool>
   let audioOutputSelection: AudioDeviceSelectionObservation
   let audioInputSelection: AudioDeviceSelectionObservation
+  let inEarPlacement: DeviceStatusField<BluetoothEarPlacement>
 
   static func capture(_ device: any CompatibleAudioDevice) -> DeviceStatusSnapshot? {
     guard let deviceName = device.name else { return nil }
@@ -30,7 +35,8 @@ private struct DeviceStatusSnapshot {
       listeningMode: device.readListeningModeStatus(),
       conversationAwareness: device.readConversationAwarenessStatus(),
       audioOutputSelection: device.readAudioOutputSelectionStatus(),
-      audioInputSelection: device.readAudioInputSelectionStatus()
+      audioInputSelection: device.readAudioInputSelectionStatus(),
+      inEarPlacement: device.readInEarPlacementStatus()
     )
   }
 
@@ -39,6 +45,7 @@ private struct DeviceStatusSnapshot {
       || !conversationAwareness.isReadError
       || !audioOutputSelection.isReadError
       || !audioInputSelection.isReadError
+      || !inEarPlacement.isReadError
   }
 
   var readErrorFields: [StatusFieldKey] {
@@ -47,6 +54,10 @@ private struct DeviceStatusSnapshot {
     if conversationAwareness.isReadError { fields.append(.conversationAwareness) }
     if audioOutputSelection.isReadError { fields.append(.isSelectedAudioOutput) }
     if audioInputSelection.isReadError { fields.append(.isSelectedAudioInput) }
+    if inEarPlacement.isReadError {
+      fields.append(.leftEarPlacement)
+      fields.append(.rightEarPlacement)
+    }
     return fields
   }
 
@@ -78,6 +89,17 @@ private struct DeviceStatusSnapshot {
       "  Selected as audio input: \(audioInputSelection.plainValue)"
     )
 
+    switch inEarPlacement {
+    case let .value(placement):
+      lines.append("  Left ear placement: \(placement.left.statusToken)")
+      lines.append("  Right ear placement: \(placement.right.statusToken)")
+    case .unsupported:
+      break
+    case .unresolved, .readError:
+      lines.append("  Left ear placement: unknown")
+      lines.append("  Right ear placement: unknown")
+    }
+
     let errors = readErrorFields
     if !errors.isEmpty {
       lines.append("  Read errors: \(errors.map(\.plainLabel).joined(separator: ", "))")
@@ -108,6 +130,17 @@ private struct DeviceStatusSnapshot {
 
     payload[StatusFieldKey.isSelectedAudioOutput.rawValue] = audioOutputSelection.jsonValue
     payload[StatusFieldKey.isSelectedAudioInput.rawValue] = audioInputSelection.jsonValue
+
+    switch inEarPlacement {
+    case let .value(placement):
+      payload[StatusFieldKey.leftEarPlacement.rawValue] = placement.left.statusToken
+      payload[StatusFieldKey.rightEarPlacement.rawValue] = placement.right.statusToken
+    case .unsupported:
+      break
+    case .unresolved, .readError:
+      payload[StatusFieldKey.leftEarPlacement.rawValue] = NSNull()
+      payload[StatusFieldKey.rightEarPlacement.rawValue] = NSNull()
+    }
 
     let errors = readErrorFields
     if !errors.isEmpty {
@@ -145,6 +178,16 @@ private extension AudioDeviceSelectionObservation {
     case .selected: return true
     case .notSelected: return false
     case .unresolved, .readError: return NSNull()
+    }
+  }
+}
+
+private extension BluetoothEarPlacementState {
+  var statusToken: String {
+    switch self {
+    case .inEar: return "in-ear"
+    case .outOfEar: return "out-of-ear"
+    case .inCase: return "in-case"
     }
   }
 }

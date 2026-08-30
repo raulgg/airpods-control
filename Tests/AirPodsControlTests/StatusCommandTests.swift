@@ -23,6 +23,9 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
     audioOutputSelectionStatus: .selected,
     audioInputSelectionStatus: .notSelected
   )
+  bedroom.inEarPlacementStatus = .value(
+    BluetoothEarPlacement(left: .inEar, right: .outOfEar)
+  )
   let studio = FakeCompatibleAudioDevice(
     name: "Studio Beats",
     listeningMode: .noiseCancellation,
@@ -40,6 +43,8 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
       Conversation Awareness: on
       Selected as audio output: yes
       Selected as audio input: no
+      Left ear placement: in-ear
+      Right ear placement: out-of-ear
 
     Studio Beats:
       Listening mode: noise-cancellation
@@ -60,6 +65,11 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
     records[0]["listeningMode"] as? String == "transparency"
       && records[0]["conversationAwareness"] as? String == "on",
     "available status fields use canonical values"
+  )
+  check(
+    records[0]["leftEarPlacement"] as? String == "in-ear"
+      && records[0]["rightEarPlacement"] as? String == "out-of-ear",
+    "known placement states use canonical JSON strings"
   )
   check(
     records[1]["conversationAwareness"] == nil,
@@ -90,6 +100,7 @@ func testStatusPreservesExistingUnresolvedGetFallbacks() {
     conversationAwarenessSupported: nil,
     conversationAwarenessEnabled: nil
   )
+  unresolved.inEarPlacementStatus = .unresolved
   let outcome = statusOutcome(devices: [unresolved])
   check(outcome.exitCode == 0, "unresolved reads still produce a successful status")
   check(
@@ -99,6 +110,8 @@ func testStatusPreservesExistingUnresolvedGetFallbacks() {
       Conversation Awareness: unknown
       Selected as audio output: no
       Selected as audio input: no
+      Left ear placement: unknown
+      Right ear placement: unknown
     """,
     "unresolved status uses individual-get plain fallbacks"
   )
@@ -108,6 +121,8 @@ func testStatusPreservesExistingUnresolvedGetFallbacks() {
   }
   check(record["listeningMode"] is NSNull, "unresolved listening mode is JSON null")
   check(record["conversationAwareness"] is NSNull, "unresolved CA is JSON null")
+  check(record["leftEarPlacement"] is NSNull, "unresolved left placement is JSON null")
+  check(record["rightEarPlacement"] is NSNull, "unresolved right placement is JSON null")
   check(record["errors"] == nil, "unresolved values are not read errors")
 
   let missingState = FakeCompatibleAudioDevice(
@@ -122,6 +137,30 @@ func testStatusPreservesExistingUnresolvedGetFallbacks() {
     "supported CA with unresolved state keeps the existing null fallback"
   )
   check(missingStateRecord?["errors"] == nil, "nil fake CA state is unresolved by default")
+}
+
+func testStatusRendersInCasePlacementToken() {
+  let device = FakeCompatibleAudioDevice(name: "Case AirPods")
+  device.inEarPlacementStatus = .value(
+    BluetoothEarPlacement(left: .inCase, right: .inEar)
+  )
+  let outcome = statusOutcome(devices: [device])
+  check(
+    outcome.plain == """
+    Case AirPods:
+      Listening mode: transparency
+      Conversation Awareness: off
+      Selected as audio output: no
+      Selected as audio input: no
+      Left ear placement: in-case
+      Right ear placement: in-ear
+    """,
+    "status renders the in-case placement token"
+  )
+  check(
+    statusRecords(outcome)?.first?["leftEarPlacement"] as? String == "in-case",
+    "JSON preserves the in-case placement token"
+  )
 }
 
 func testStatusReportsReadErrorsAndAggregateExitPolicy() {
@@ -175,6 +214,7 @@ func testStatusReportsReadErrorsAndAggregateExitPolicy() {
   )
   failed.listeningModeStatusOverride = .readError
   failed.conversationAwarenessStatusOverride = .readError
+  failed.inEarPlacementStatus = .readError
   let failedOutcome = statusOutcome(devices: [failed])
   check(failedOutcome.exitCode == 5, "all-read-error status uses exit five")
   check(failedOutcome.payload["result"] as? String == "error", "all-read-error result is error")
@@ -186,7 +226,9 @@ func testStatusReportsReadErrorsAndAggregateExitPolicy() {
       Conversation Awareness: unknown
       Selected as audio output: unknown
       Selected as audio input: unknown
-      Read errors: Listening mode, Conversation Awareness, Audio output selection, Audio input selection
+      Left ear placement: unknown
+      Right ear placement: unknown
+      Read errors: Listening mode, Conversation Awareness, Audio output selection, Audio input selection, Left ear placement, Right ear placement
     """,
     "plain all-read-error lists every field in presentation order"
   )
@@ -197,6 +239,8 @@ func testStatusReportsReadErrorsAndAggregateExitPolicy() {
       "conversationAwareness": "read-error",
       "isSelectedAudioOutput": "read-error",
       "isSelectedAudioInput": "read-error",
+      "leftEarPlacement": "read-error",
+      "rightEarPlacement": "read-error",
     ],
     "JSON all-read-error map names every canonical field"
   )
@@ -272,6 +316,10 @@ func testStatusIsOnePassAndReadOnly() {
       device.audioInputSelectionStatusReadCount == 1,
       "status samples audio input selection once"
     )
+    check(
+      device.inEarPlacementStatusReadCount == 1,
+      "status samples ear placement once"
+    )
     check(device.listeningModeSetCount == 0, "status never sets listening mode")
     check(device.conversationAwarenessSetCount == 0, "status never sets CA")
     check(device.settleIntervals.isEmpty, "status never settles or polls")
@@ -319,6 +367,7 @@ func testStatusNoDeviceContractAndResolutionPolicy() {
 func runStatusCommandTests() {
   testStatusRendersOneOrManyDevicesInResolverOrder()
   testStatusPreservesExistingUnresolvedGetFallbacks()
+  testStatusRendersInCasePlacementToken()
   testStatusReportsReadErrorsAndAggregateExitPolicy()
   testStatusDistinguishesUnresolvedSelectionFromReadErrors()
   testStatusEscapesPlainHeadingsWithoutChangingJSONNames()

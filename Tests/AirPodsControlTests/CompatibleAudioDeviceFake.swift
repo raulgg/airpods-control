@@ -29,6 +29,7 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var appliesConversationAwarenessWrite: Bool
   var listeningModeStatusOverride: DeviceStatusField<ListeningMode>?
   var conversationAwarenessStatusOverride: DeviceStatusField<Bool>?
+  var inEarPlacementStatus: DeviceStatusField<BluetoothEarPlacement> = .unsupported
   var audioOutputSelectionStatus: AudioDeviceSelectionObservation
   var audioInputSelectionStatus: AudioDeviceSelectionObservation
   var reportMetadata: SupportReportDeviceMetadata
@@ -53,6 +54,7 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
   var conversationAwarenessSupportReadCount = 0
   var conversationAwarenessStateReadCount = 0
   var conversationAwarenessStatusReadCount = 0
+  var inEarPlacementStatusReadCount = 0
   var audioOutputSelectionStatusReadCount = 0
   var audioInputSelectionStatusReadCount = 0
 
@@ -151,6 +153,11 @@ final class FakeCompatibleAudioDevice: CompatibleAudioDevice {
     guard let supported = supportsConversationAwareness() else { return .unresolved }
     guard supported else { return .unsupported }
     return conversationAwarenessState().map(DeviceStatusField.value) ?? .unresolved
+  }
+
+  func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement> {
+    inEarPlacementStatusReadCount += 1
+    return inEarPlacementStatus
   }
 
   func canSetConversationAwareness() -> Bool {

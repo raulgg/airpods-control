@@ -47,10 +47,10 @@ output device's customizable name and requested audio state; setters can change
 that state. `status` starts with the public list of available Core Audio
 devices. For each candidate, it checks that the endpoint is ordinary and
 nonaggregate, then reads the transport, alive and ready state, stream presence,
-name, and runtime-gated HAL Apple-audio and listening-mode properties. It checks
-the manufacturer against an allowlist only when the HAL Apple-audio property is
-unavailable. Eligible classic-Bluetooth handles pass unchanged to macOS's
-audio-to-Bluetooth mapper.
+name, and runtime-gated HAL Apple-audio, listening-mode, and ear-placement
+properties. It checks the manufacturer against an allowlist only when the HAL
+Apple-audio property is unavailable. Eligible classic-Bluetooth handles pass
+unchanged to macOS's audio-to-Bluetooth mapper.
 
 `status` checks the mapped object's type and combines endpoints only when their
 objects compare equal in both directions. A name is used for display and exact

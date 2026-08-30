@@ -15,6 +15,7 @@ struct TestRunner {
     runCommandExecutionTests()
     runPrivateAudioDiscoveryTests()
     runCoreAudioListeningModePropertyTests()
+    runCoreAudioInEarPlacementPropertyTests()
     runHALListeningModeCandidateTests()
     runAudioRoutingTests()
     runStatusCommandTests()

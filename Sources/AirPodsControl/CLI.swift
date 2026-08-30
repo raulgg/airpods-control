@@ -105,8 +105,8 @@ Usage:
   airpods-control status [--device NAME] [--json] [--debug]
 
 Read the status of every compatible AirPods or Beats device without changing
-anything: listening mode, Conversation Awareness, and whether it is selected as
-the macOS audio output or input.
+anything: listening mode, Conversation Awareness, left/right ear placement, and
+whether it is selected as the macOS audio output or input.
 "Selected" means that the device matches the ordinary default route. It does
 not mean that audio is playing or recording. App routes, the alert route, and
 membership in a composite route do not count.
@@ -137,16 +137,23 @@ associatedAudioDeviceID through Core Audio and compares the result with the
 default output ID. It samples the private AVOutputDevice deviceID before and
 after to reject a route change.
 
+When macOS exposes the runtime-gated HAL ear-detection properties, status also
+reports the left and right placement as `in-ear`, `out-of-ear`, or `in-case`.
+The placement read is one-pass and read-only. If those properties are missing,
+unsupported placement is omitted; unknown or conflicting evidence is `unknown`.
+This status path does not scan BLE advertisements or change Conversation
+Awareness.
+
 Core Audio handles are passed unchanged to macOS and never parsed. They and the
 enrichment identifiers stay inside the process and are never printed or logged.
 Inventory and selection do not read Bluetooth/MAC addresses, Core Audio UIDs,
 or private route identifiers. Raw HAL values are not emitted, and support-report
 does not use this status path.
 
-Plain selection values are yes, no, or unknown; the selection fields follow the
-listening-mode and Conversation Awareness fields, with read errors last. An
-unresolved or failed feature read is also unknown; a feature proven unsupported
-is omitted.
+Plain selection values are yes, no, or unknown; fields follow listening mode,
+Conversation Awareness, audio output selection, audio input selection, left/right
+ear placement, and read errors. An unresolved or failed feature read is also
+unknown; a feature proven unsupported is omitted.
 
 If no compatible device is connected, or the requested name is not unique,
 print 'No compatible AirPods or Beats device is connected.' and exit 1.
@@ -155,7 +162,8 @@ Options:
   --device NAME
                Return only the uniquely named compatible device.
   --json       Emit a top-level devices array; selection values are Boolean or
-               null when they cannot be determined safely.
+               null when they cannot be determined safely, and known ear
+               placement values are canonical strings.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing any device.
 """

@@ -239,11 +239,12 @@ exits `4`.
 
 ## Status
 
-`status` reads the listening mode, Conversation Awareness state, and whether
-each compatible device is selected as the macOS audio output or input. It does
-not report battery levels, device metadata beyond the name required to identify
-each record, or other settings. Compatibility metadata and consented write tests
-remain the separate responsibility of `support-report`.
+`status` reads the listening mode, Conversation Awareness state, left/right ear
+placement, and whether each compatible device is selected as the macOS audio
+output or input. It does not report battery levels, device metadata beyond the
+name required to identify each record, or other settings. Compatibility metadata
+and consented write tests remain the separate responsibility of
+`support-report`.
 
 `status` starts with the public `kAudioHardwarePropertyDevices` list. To become
 a record, an endpoint must be ordinary and nonaggregate, use classic Bluetooth,
@@ -284,6 +285,8 @@ My AirPods Pro:
   Conversation Awareness: on
   Selected as audio output: yes
   Selected as audio input: no
+  Left ear placement: in-ear
+  Right ear placement: out-of-ear
 
 Studio Beats:
   Listening mode: adaptive
@@ -298,9 +301,10 @@ and the Unicode line and paragraph separators use `\u{XXXX}` form, so a device
 name cannot alter the record layout. This applies only to the plain heading.
 JSON retains the original name and uses normal JSON string escaping. Plain
 fields appear beneath the heading in Listening mode, Conversation Awareness,
-Selected as audio output, Selected as audio input, and Read errors order.
-Inapplicable feature lines are omitted, and records are separated by one blank
-line. JSON object keys remain alphabetically sorted and carry no semantic order.
+Selected as audio output, Selected as audio input, left/right ear placement, and
+Read errors order. Inapplicable feature lines are omitted, and records are
+separated by one blank line. JSON object keys remain alphabetically sorted and
+carry no semantic order.
 
 Listening mode is read from three sources in order. The active AV endpoint comes
 first, followed by one consistent HAL value from the mapped endpoints. The
@@ -317,6 +321,18 @@ Conversation Awareness requires the active AV endpoint to remain stable, bind
 to the default Core Audio output, and map to the record's Bluetooth object.
 Without that join, the value is `unknown`. A name or another endpoint is not
 used as a substitute.
+
+When macOS exposes the runtime-gated HAL ear-detection properties, the status
+adapter reads one typed placement pair for each eligible endpoint. The pair is
+joined by the physical primary-ear property, then grouped only with endpoint
+observations for the same mapped Bluetooth object. The JSON keys are
+`leftEarPlacement` and `rightEarPlacement`; known values are `in-ear`,
+`out-of-ear`, or `in-case`. Plain output uses `Left ear placement` and
+`Right ear placement` labels. Missing or disabled HAL placement is unsupported
+and omits both fields. Unknown or conflicting evidence is shown as `unknown`
+and JSON `null`; a genuine read failure keeps those fallbacks and names both
+fields in `errors`. This status path is one-pass and read-only and does not scan
+BLE advertisements or change Conversation Awareness.
 
 A feature field is omitted only when the device is known not to support that
 feature. An unresolved listening-mode or Conversation Awareness read appears as
@@ -343,9 +359,10 @@ A genuine read failure keeps the field's unresolved fallback and also adds a
 plain summary such as `Read errors: Listening mode, Audio input selection`,
 indented by two spaces, or an `errors` object in that device's JSON record.
 Errored labels use the fixed field order Listening mode, Conversation Awareness,
-Audio output selection, Audio input selection. One failed field does not hide a
-successfully read field or stop the remaining fields and devices from being
-sampled. Input and output selection failures are isolated from each other.
+Audio output selection, Audio input selection, Left ear placement, Right ear
+placement. One failed field does not hide a successfully read field or stop the
+remaining fields and devices from being sampled. Input and output selection
+failures are isolated from each other.
 
 For example, when both feature reads and the input-selection read genuinely
 fail, the record retains their fallback states and names all three errors:
@@ -380,8 +397,9 @@ applies when `--device` has no unique match.
 
 Each `status` invocation reads the available Core Audio inventory once and
 shares the same default-route observations across its records. Input and output
-are read independently, so the pair is not an atomic system-wide snapshot. The
-selected defaults do not affect inventory or deduplication.
+are read independently, so the pair is not an atomic system-wide snapshot. HAL
+placement is captured during inventory and the status accessor does not reread
+the device. The selected defaults do not affect inventory or deduplication.
 
 An `AudioDeviceID` is an opaque Core Audio handle. `status` passes it unchanged
 to Core Audio and the system mapper. Its numeric value is not parsed, logged,

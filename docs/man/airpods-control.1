@@ -82,7 +82,7 @@ provides that result. See the project README and SECURITY document for the full 
 .SS STATUS
 .TP
 .B status
-Read the listening mode, Conversation Awareness state, and whether each compatible device is selected as the macOS audio output or input. There is no alias. The output excludes battery information and device metadata other than the name used to identify each record. Compatibility metadata and consented write tests are handled by the separate
+Read the listening mode, Conversation Awareness state, left/right ear placement, and whether each compatible device is selected as the macOS audio output or input. There is no alias. The output excludes battery information and device metadata other than the name used to identify each record. Compatibility metadata and consented write tests are handled by the separate
 .B support-report
 command.
 .IP
@@ -104,7 +104,7 @@ print one record for every eligible canonical device derived from the Core Audio
 print only the unique case-insensitive whole-name match; no match or an ambiguous match produces
 .BR no-device .
 .IP
-Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in Listening mode, Conversation Awareness, Selected as audio output, Selected as audio input, and Read errors order. Inapplicable feature lines are omitted, and records are separated by one blank line. For example:
+Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in this order: Listening mode, Conversation Awareness, Selected as audio output, Selected as audio input, left/right ear placement, and Read errors. Inapplicable feature lines are omitted, and records are separated by one blank line. For example:
 .nf
 .RS
 My AirPods Pro:
@@ -112,6 +112,8 @@ My AirPods Pro:
   Conversation Awareness: on
   Selected as audio output: yes
   Selected as audio input: no
+  Left ear placement: in-ear
+  Right ear placement: out-of-ear
 
 Studio Beats:
   Listening mode: adaptive
@@ -130,6 +132,19 @@ and is included under Read errors.
 Conversation Awareness requires the active endpoint to remain stable, bind to the default Core Audio output, and map to the record's Bluetooth object. Without this join, Conversation Awareness is
 .BR unknown .
 .IP
+When macOS exposes the runtime-gated HAL ear-detection properties, status reads one typed left/right placement pair for each eligible endpoint. Known values are
+.BR in-ear ,
+.BR out-of-ear ,
+or
+.BR in-case .
+Missing or disabled placement is unsupported and omits both fields. Unknown or conflicting evidence is displayed as
+.BR unknown
+and encoded as JSON
+.BR null ;
+a genuine read failure keeps those fallbacks and names both placement keys in the
+.B errors
+object. The placement read is one-pass and read-only; this status path does not scan BLE advertisements or change Conversation Awareness.
+.IP
 A feature field is omitted only when the feature is known to be unsupported. An unresolved or failed listening-mode or Conversation Awareness read is displayed as
 .BR unknown .
 This differs from an individual Conversation Awareness command, whose unsupported fallback remains
@@ -138,7 +153,7 @@ Unresolved and failed status fields are JSON
 .BR null ,
 with the canonical field key still present. A genuine read failure retains that fallback state and adds a
 .B Read errors:
-line whose errored labels appear in fixed Listening mode, Conversation Awareness, Audio output selection, Audio input selection order. In JSON, the record instead gains an
+line whose errored labels appear in fixed Listening mode, Conversation Awareness, Audio output selection, Audio input selection, Left ear placement, Right ear placement order. In JSON, the record instead gains an
 .B errors
 object mapping each affected canonical key to
 .BR read-error .

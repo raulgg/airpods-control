@@ -122,6 +122,44 @@ The captures contain the customizable device name and can contain source-build
 or home paths. Review and redact them before sharing, then delete the private
 capture directory after recording the Boolean outcomes.
 
+## Left/right ear placement status check
+
+This check verifies the additive placement fields on the AirPods Pro 3 baseline.
+It is read-only and does not require the AirPods to be the selected audio
+output. Build once with `make`, then run `status` in each state below:
+
+| State | Left bud | Right bud |
+| --- | --- | --- |
+| Both worn | in ear | in ear |
+| Left removed | out of ear or in case | in ear |
+| Right removed | in ear | out of ear or in case |
+| Both in case | in case | in case |
+
+Capture plain and JSON output for every state, allowing a short pause after
+each placement change for macOS to publish the state:
+
+```sh
+build/airpods-control status --device "My AirPods" \
+  >"$capture_dir/placement-both.txt"
+build/airpods-control status --device "My AirPods" --json \
+  >"$capture_dir/placement-both.json"
+```
+
+Replace the suffix for the remaining states. The two fields must use the
+canonical `in-ear`, `out-of-ear`, and `in-case` values in both plain and JSON
+output. Missing HAL placement support may omit the fields, but an unknown or
+conflicting result on baseline hardware is a failed verification, not evidence
+of a placement state. Core Audio endpoint presence is route- and session-
+dependent: macOS can retain the Bluetooth control and battery connection while
+removing the AirPods audio endpoints. In that case `status` returns
+`no-device`; record the endpoint absence rather than inferring a placement from
+Bluetooth connectivity. Forcing AirPods as output can create or retain the
+endpoints, and switching back to MacBook output may leave them present
+temporarily before macOS tears them down. Repeat the capture after settling and
+keep the compatibility entry Pending until endpoint-absent states have a safe
+BLE/AAP implementation. Do not record raw HAL values, Core Audio handles, or
+Bluetooth addresses in the capture or issue.
+
 ## One-earbud feature-control regression check
 
 Individual resource commands still use the private AV output context for feature

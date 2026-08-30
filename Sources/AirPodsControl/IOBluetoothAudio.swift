@@ -204,10 +204,19 @@ private enum CoreAudioListeningModeObservation {
   case readFailure
 }
 
+private enum CoreAudioInEarPlacementObservation {
+  case value(BluetoothEarPlacement)
+  case unavailable
+  case unknown
+  case conflict
+  case readFailure
+}
+
 final class IOBluetoothStatusDevice: CompatibleAudioDevice {
   let object: AnyObject
   let name: String?
   private let coreAudioListeningMode: CoreAudioListeningModeObservation
+  private let coreAudioInEarPlacement: CoreAudioInEarPlacementObservation
   private let runtime: any BluetoothAudioRuntime
   private let routingObserver: AudioRoutingObserver
 
@@ -215,12 +224,14 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     object: AnyObject,
     name: String,
     coreAudioListeningMode: CoreAudioListeningModeObservation,
+    coreAudioInEarPlacement: CoreAudioInEarPlacementObservation,
     runtime: any BluetoothAudioRuntime,
     routingObserver: AudioRoutingObserver
   ) {
     self.object = object
     self.name = name
     self.coreAudioListeningMode = coreAudioListeningMode
+    self.coreAudioInEarPlacement = coreAudioInEarPlacement
     self.runtime = runtime
     self.routingObserver = routingObserver
   }
@@ -314,6 +325,15 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     return .value(state.conversationAwarenessEnabled())
   }
 
+  func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement> {
+    switch coreAudioInEarPlacement {
+    case let .value(placement): return .value(placement)
+    case .unavailable: return .unsupported
+    case .unknown, .conflict: return .unresolved
+    case .readFailure: return .readError
+    }
+  }
+
   func canSetConversationAwareness() -> Bool { false }
 
   func setConversationAwarenessAndReadBack(
@@ -357,6 +377,7 @@ private struct CoreAudioBluetoothEndpoint {
   let name: String?
   let appleAudioAdmission: AppleAudioAdmission
   let listeningMode: AudioRoutingRead<UInt32>
+  let inEarPlacement: BluetoothEarPlacementRead
 }
 
 private struct CoreAudioBluetoothDeviceGroup {
@@ -382,6 +403,7 @@ final class IOBluetoothStatusController {
     logger: DebugLogger,
     activeOutputContext: AnyObject?,
     readStatusListeningMode: Bool = true,
+    readStatusInEarPlacement: Bool = true,
     allowOffCache: (any ListeningModeAllowOffCaching)? = nil
   ) {
     let runtime = SystemBluetoothAudioRuntime(logger: logger)
@@ -390,6 +412,7 @@ final class IOBluetoothStatusController {
       routingBackend: CoreAudioRoutingBackend(),
       activeEndpointProbe: activeOutputContext.map(SystemActiveAudioEndpointProbe.init),
       readStatusListeningMode: readStatusListeningMode,
+      readStatusInEarPlacement: readStatusInEarPlacement,
       allowOffCache: allowOffCache,
       logger: logger
     )
@@ -400,6 +423,7 @@ final class IOBluetoothStatusController {
     routingBackend: any AudioRoutingBackend,
     activeEndpointProbe: (any ActiveAudioEndpointProbing)? = nil,
     readStatusListeningMode: Bool = true,
+    readStatusInEarPlacement: Bool = false,
     allowOffCache: (any ListeningModeAllowOffCaching)? = nil,
     logger: DebugLogger
   ) {
@@ -551,6 +575,20 @@ final class IOBluetoothStatusController {
         logger.debug("\(prefix).listening_mode", "read-error")
         logger.debug("\(prefix).listening_mode_error", status)
       }
+      let inEarPlacementRead: BluetoothEarPlacementRead = readStatusInEarPlacement
+        ? routingBackend.readBluetoothInEarPlacement(for: audioDeviceID)
+        : .unavailable
+      switch inEarPlacementRead {
+      case .value:
+        logger.debug("\(prefix).in_ear_placement", "available")
+      case .unavailable:
+        logger.debug("\(prefix).in_ear_placement", "unavailable")
+      case .unknown:
+        logger.debug("\(prefix).in_ear_placement", "unknown")
+      case let .failure(status):
+        logger.debug("\(prefix).in_ear_placement", "read-error")
+        logger.debug("\(prefix).in_ear_placement_error", status)
+      }
       logger.debug("\(prefix).name_available", name != nil)
       logger.debug("\(prefix).eligible", appleAudioAdmission == .positive)
       mappedEndpointCount += 1
@@ -560,7 +598,8 @@ final class IOBluetoothStatusController {
         hasOutput: hasOutput,
         name: name,
         appleAudioAdmission: appleAudioAdmission,
-        listeningMode: listeningModeRead
+        listeningMode: listeningModeRead,
+        inEarPlacement: inEarPlacementRead
       )
       if let groupIndex = groups.firstIndex(where: {
         bluetoothDevicesAreExactlyEqual($0.equalityAnchor, bluetoothDevice)
@@ -598,6 +637,10 @@ final class IOBluetoothStatusController {
         object: primary.bluetoothDevice,
         name: name,
         coreAudioListeningMode: Self.resolveListeningMode(
+          from: group.endpoints,
+          logger: logger
+        ),
+        coreAudioInEarPlacement: Self.resolveInEarPlacement(
           from: group.endpoints,
           logger: logger
         ),
@@ -790,6 +833,36 @@ final class IOBluetoothStatusController {
     if sawReadFailure {
       logger.debug("bluetooth.listening_mode_consistency", "read-error")
       return .readFailure
+    }
+    return .unavailable
+  }
+
+  private static func resolveInEarPlacement(
+    from endpoints: [CoreAudioBluetoothEndpoint],
+    logger: DebugLogger
+  ) -> CoreAudioInEarPlacementObservation {
+    var recognizedPlacements: Set<BluetoothEarPlacement> = []
+    var sawUnknown = false
+    for endpoint in endpoints {
+      switch endpoint.inEarPlacement {
+      case let .value(placement): recognizedPlacements.insert(placement)
+      case .unavailable: break
+      case .unknown: sawUnknown = true
+      case .failure:
+        logger.debug("bluetooth.in_ear_placement_consistency", "read-error")
+        return .readFailure
+      }
+    }
+    if recognizedPlacements.count > 1 {
+      logger.debug("bluetooth.in_ear_placement_consistency", "conflict")
+      return .conflict
+    }
+    if sawUnknown {
+      logger.debug("bluetooth.in_ear_placement_consistency", "unknown")
+      return .unknown
+    }
+    if let placement = recognizedPlacements.first {
+      return .value(placement)
     }
     return .unavailable
   }
