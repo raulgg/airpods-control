@@ -1,6 +1,6 @@
 # Agent instructions
 
-Follow [CONTRIBUTING.md](CONTRIBUTING.md). Agent failure modes only.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md). Usual mistakes only.
 
 ## Quality checks
 
