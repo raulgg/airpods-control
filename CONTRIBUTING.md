@@ -106,7 +106,7 @@ Markdown files in the repository follow rumdl's standard 80-column wrapping.
 Do not wrap GitHub pull request descriptions. rumdl never sees them. Install
 [pre-commit](https://pre-commit.com), then run `pre-commit install` once per
 clone. Use `pre-commit run --all-files` to format and check the full Markdown
-set. Agents read [AGENTS.md](AGENTS.md). `CLAUDE.md` points at it.
+set.
 
 ## Pull requests
 
