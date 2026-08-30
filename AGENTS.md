@@ -1,6 +1,7 @@
 # Agent instructions
 
-Follow [CONTRIBUTING.md](CONTRIBUTING.md). Usual mistakes only.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md). Register common pitfalls
+here and avoid them.
 
 ## Quality checks
 
