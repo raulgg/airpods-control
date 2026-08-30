@@ -843,18 +843,15 @@ final class IOBluetoothStatusController {
   ) -> CoreAudioInEarPlacementObservation {
     var recognizedPlacements: Set<BluetoothEarPlacement> = []
     var sawUnknown = false
-    var sawReadFailure = false
     for endpoint in endpoints {
       switch endpoint.inEarPlacement {
       case let .value(placement): recognizedPlacements.insert(placement)
       case .unavailable: break
       case .unknown: sawUnknown = true
-      case .failure: sawReadFailure = true
+      case .failure:
+        logger.debug("bluetooth.in_ear_placement_consistency", "read-error")
+        return .readFailure
       }
-    }
-    if sawReadFailure {
-      logger.debug("bluetooth.in_ear_placement_consistency", "read-error")
-      return .readFailure
     }
     if recognizedPlacements.count > 1 {
       logger.debug("bluetooth.in_ear_placement_consistency", "conflict")
