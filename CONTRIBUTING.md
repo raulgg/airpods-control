@@ -103,8 +103,7 @@ signs both artifacts, and installs them together.
 ### Documentation
 
 Markdown files in the repository follow rumdl's standard 80-column wrapping.
-Do not wrap GitHub pull request descriptions, issue comments, or review
-comments. Those are GitHub Markdown. rumdl never sees them. Install
+Do not wrap GitHub pull request descriptions. rumdl never sees them. Install
 [pre-commit](https://pre-commit.com), then run `pre-commit install` once per
 clone. Use `pre-commit run --all-files` to format and check the full Markdown
 set. Coding agents should follow [AGENTS.md](AGENTS.md) (`CLAUDE.md` is a

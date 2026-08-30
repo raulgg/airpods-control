@@ -3,17 +3,16 @@
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) for development, tests, and pull
 requests. This file only records rules coding agents get wrong.
 
-## GitHub Markdown is not rumdl Markdown
+## Pull request descriptions
 
-Wrap Markdown files in this git tree to rumdl's 80-column limit.
-`pre-commit` and CI rumdl only lint those files.
+Wrap Markdown files in this git tree to 80 columns. rumdl runs in
+`pre-commit` and in CI. It does not lint GitHub.
 
-Do not wrap GitHub pull request bodies, issue comments, or review comments.
-Leave the lines long. GitHub wraps them in the UI. Do not wrap the `--body`
-of `gh pr create`, `gh pr comment`, or `gh issue comment`. Use
-[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Keep
-the Summary, Testing, and Checklist headings, and write normal prose under
-them.
+Do not wrap GitHub pull request descriptions. Leave the lines long. GitHub
+wraps them in the browser. Do not wrap `gh pr create --body` either.
+
+Use [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md).
+Keep the Summary, Testing, and Checklist headings.
 
 Never wrap or rewrite a Release Please pull request body.
 
