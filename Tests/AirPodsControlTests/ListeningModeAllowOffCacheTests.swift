@@ -869,16 +869,28 @@ func runListeningModeAllowOffCacheTests() {
       observedAt: observedAt
     )
 
-    withHeldAllowOffCacheFileLock(fileURL: fileURL, holdFor: "0.15") {
-      check(
-        cache.applyObservation(
-          rawDeviceUID: "delayed",
-          allowsOff: true,
-          observedAt: observedAt
-        ) == .applied,
-        "positive observation waits for brief lock contention"
+    var result: AllowOffCacheMutation = .unavailable
+    let waiter = Thread {
+      result = cache.applyObservation(
+        rawDeviceUID: "delayed",
+        allowsOff: true,
+        observedAt: observedAt
       )
     }
+    withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+      waiter.start()
+      _ = Darwin.usleep(50_000)
+    }
+    let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+    while !waiter.isFinished,
+      DispatchTime.now().uptimeNanoseconds < deadline
+    {
+      _ = Darwin.usleep(1_000)
+    }
+    check(
+      result == .applied,
+      "positive observation waits for brief lock contention"
+    )
     check(
       allowOffRecord(from: cache.lookup(rawDeviceUID: "delayed"))?.evidence.observedAt
         == observedAt,
