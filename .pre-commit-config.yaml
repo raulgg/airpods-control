@@ -1,4 +1,4 @@
-exclude: ^\.github/PULL_REQUEST_TEMPLATE\.md$
+exclude: ^(\.github/PULL_REQUEST_TEMPLATE\.md|CLAUDE\.md)$
 
 repos:
   - repo: https://github.com/rvben/rumdl-pre-commit
