@@ -149,7 +149,15 @@ Replace the suffix for the remaining states. The two fields must use the
 canonical `in-ear`, `out-of-ear`, and `in-case` values in both plain and JSON
 output. Missing HAL placement support may omit the fields, but an unknown or
 conflicting result on baseline hardware is a failed verification, not evidence
-of a placement state. Do not record raw HAL values, Core Audio handles, or
+of a placement state. Core Audio endpoint presence is route- and session-
+dependent: macOS can retain the Bluetooth control and battery connection while
+removing the AirPods audio endpoints. In that case `status` returns
+`no-device`; record the endpoint absence rather than inferring a placement from
+Bluetooth connectivity. Forcing AirPods as output can create or retain the
+endpoints, and switching back to MacBook output may leave them present
+temporarily before macOS tears them down. Repeat the capture after settling and
+keep the compatibility entry Pending until endpoint-absent states have a safe
+BLE/AAP implementation. Do not record raw HAL values, Core Audio handles, or
 Bluetooth addresses in the capture or issue.
 
 ## One-earbud feature-control regression check
