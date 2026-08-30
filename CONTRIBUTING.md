@@ -102,7 +102,8 @@ signs both artifacts, and installs them together.
 
 ### Documentation
 
-Markdown prose follows rumdl's standard 80-column wrapping. Install
+Markdown files in the repository follow rumdl's standard 80-column wrapping.
+Do not wrap GitHub pull request descriptions. rumdl never sees them. Install
 [pre-commit](https://pre-commit.com), then run `pre-commit install` once per
 clone. Use `pre-commit run --all-files` to format and check the full Markdown
 set.
@@ -112,6 +113,7 @@ set.
 - Use a [Conventional Commit](https://www.conventionalcommits.org/) pull request
   title. The repository squash-merges pull requests, so that title becomes the
   commit used to generate versions and release notes.
+- Fill the pull request template. Do not wrap the description to 80 columns.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.
 - Update CLI help and the affected user-facing documentation when the interface
