@@ -156,6 +156,7 @@ func bootstrapAndResolveListeningMode(
     logger: logger,
     activeOutputContext: outputContext,
     readStatusListeningMode: false,
+    readStatusInEarPlacement: false,
     allowOffCache: allowOffCache
   )?.listeningModeCandidates() ?? []
   let coordinator = ListeningModeCoordinator(

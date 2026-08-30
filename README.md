@@ -26,6 +26,8 @@ My AirPods Pro:
   Conversation Awareness: off
   Selected as audio output: yes
   Selected as audio input: no
+  Left ear placement: in-ear
+  Right ear placement: out-of-ear
 $ airpods-control listening-mode set noise-cancellation
 ok
 ```
@@ -41,9 +43,10 @@ without polling in the background or automating the UI.
 - Read, set, list, or cycle the `off`, `transparency`, `adaptive`, and
   `noise-cancellation` listening modes.
 - Read or set Conversation Awareness.
-- Report listening mode, Conversation Awareness, and whether each eligible
-  connected AirPods or Beats device represented by Core Audio is selected as
-  the macOS audio output or input with one `status` command.
+- Report listening mode, Conversation Awareness, left/right ear placement, and
+  whether each eligible connected AirPods or Beats device represented by Core
+  Audio is selected as the macOS audio output or input with one `status`
+  command.
 - Select a compatible output device by exact name.
 - Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`.
   Operational commands have stable stdout, documented exit codes, JSON output,
@@ -217,6 +220,13 @@ result with the stable default output. That output's mapped Bluetooth object
 must match the status record. The probe also samples `AVOutputDevice.deviceID`
 before and after to catch a route change. Conversation Awareness is `unknown`
 when this join is unavailable.
+
+When macOS exposes the runtime-gated ear-detection properties, `status` also
+reports `leftEarPlacement` and `rightEarPlacement` as `in-ear`, `out-of-ear`, or
+`in-case`. The read is one-pass and read-only; missing placement properties omit
+the fields, while unknown or conflicting evidence is rendered as `unknown` (or
+JSON `null`). This status path does not scan BLE advertisements or change
+Conversation Awareness.
 
 Core Audio handles and the identifiers used by the enrichment probe stay inside
 the process. The CLI does not parse or log them. Status inventory and target

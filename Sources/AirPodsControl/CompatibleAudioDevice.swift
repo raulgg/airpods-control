@@ -60,6 +60,8 @@ protocol CompatibleAudioDevice {
     _ target: Bool
   ) -> DeviceWriteObservation<Bool>
 
+  func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement>
+
   func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation
   func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation
 
@@ -67,4 +69,10 @@ protocol CompatibleAudioDevice {
   // adapter must keep pumping the main run loop while it waits. How long to
   // wait is the caller's policy, not the device's.
   func settle(for interval: TimeInterval)
+}
+
+extension CompatibleAudioDevice {
+  func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement> {
+    .unresolved
+  }
 }

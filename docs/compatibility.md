@@ -22,6 +22,7 @@ Use the matrix below to track compatibility per device and capability.
 | Device discovery | Verified | Pending | Pending | Exploratory |
 | One-earbud discovery and control | Verified | Pending | Pending | Exploratory |
 | `status` | Pending | Pending | Pending | Exploratory |
+| Left/right ear placement | Pending | Pending | Pending | Exploratory |
 | Selected audio output observation | Pending | Pending | Pending | Exploratory |
 | Selected audio input observation | Pending | Pending | Pending | Exploratory |
 | `listening-mode get` | Verified | Verified | Pending | Exploratory |
@@ -77,6 +78,14 @@ they do not determine Bluetooth identity or selection.
 `support-report` remains a separate private-output compatibility path. It does
 not enumerate the Core Audio status inventory, inspect default routes, call the
 selection mapper, or run active-output enrichment.
+
+The status adapter can read left and right ear placement from three
+runtime-gated HAL properties (`iesb`, `pris`, and `iede`) when macOS exposes
+them. It reports `in-ear`, `out-of-ear`, or `in-case` without changing settings.
+Missing or disabled properties are unsupported; unknown or conflicting evidence
+is unresolved. This implementation does not use BLE advertisements as a
+fallback, because a scan cannot safely join a rotating advertisement to the
+already-resolved `IOBluetoothDevice` without heuristic identity matching.
 
 ## Candidates pending verification
 

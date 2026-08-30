@@ -56,6 +56,10 @@ func testSupportReportContentsAndPrivacy() {
     device.conversationAwarenessSetCount == 0,
     "report does not write Conversation Awareness"
   )
+  check(
+    device.inEarPlacementStatusReadCount == 0,
+    "report does not read ear placement"
+  )
   let invocation = try! parseInvocation(["support-report"])
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
   check(outcome.exitCode == 0, "supported-device command path succeeds")

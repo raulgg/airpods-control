@@ -15,6 +15,12 @@ private let appleAudioDeviceProperty: AudioObjectPropertySelector = 0x6961_6170 
 private let bluetoothListeningModeProperty: AudioObjectPropertySelector = 0x6C73_746D // lstm
 private let bluetoothListeningModeSupportProperty: AudioObjectPropertySelector =
   0x6C73_6D73 // lsms
+private let bluetoothInEarPlacementProperty: AudioObjectPropertySelector =
+  0x6965_7362 // iesb
+private let bluetoothPrimaryEarProperty: AudioObjectPropertySelector =
+  0x7072_6973 // pris
+private let bluetoothInEarDetectionEnabledProperty: AudioObjectPropertySelector =
+  0x6965_6465 // iede
 
 enum AudioRoutingDirection: CaseIterable {
   case output
@@ -45,6 +51,24 @@ enum AudioRoutingDirection: CaseIterable {
 enum AudioRoutingRead<Value> {
   case value(Value)
   case unavailable
+  case failure(OSStatus)
+}
+
+enum BluetoothEarPlacementState: Hashable {
+  case inEar
+  case outOfEar
+  case inCase
+}
+
+struct BluetoothEarPlacement: Hashable {
+  let left: BluetoothEarPlacementState
+  let right: BluetoothEarPlacementState
+}
+
+enum BluetoothEarPlacementRead {
+  case value(BluetoothEarPlacement)
+  case unavailable
+  case unknown
   case failure(OSStatus)
 }
 
@@ -169,6 +193,17 @@ protocol AudioRoutingBackend {
     _ rawValue: UInt32,
     for deviceID: AudioDeviceID
   ) -> AudioRoutingWrite
+  func readBluetoothInEarPlacement(
+    for deviceID: AudioDeviceID
+  ) -> BluetoothEarPlacementRead
+}
+
+extension AudioRoutingBackend {
+  func readBluetoothInEarPlacement(
+    for deviceID: AudioDeviceID
+  ) -> BluetoothEarPlacementRead {
+    .unavailable
+  }
 }
 
 struct CoreAudioRoutingBackend: AudioRoutingBackend {
@@ -453,6 +488,83 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
     return status == noErr ? .success : .failure(status)
   }
 
+  func readBluetoothInEarPlacement(
+    for deviceID: AudioDeviceID
+  ) -> BluetoothEarPlacementRead {
+    switch readUInt32Property(
+      bluetoothInEarDetectionEnabledProperty,
+      from: deviceID,
+      scope: kAudioObjectPropertyScopeGlobal
+    ) {
+    case .unavailable:
+      return .unavailable
+    case let .failure(status):
+      return .failure(status)
+    case .value(0):
+      return .unavailable
+    case .value(1):
+      break
+    case .value:
+      return .unknown
+    }
+
+    let primarySideBefore: UInt32
+    switch readUInt32Property(
+      bluetoothPrimaryEarProperty,
+      from: deviceID,
+      scope: kAudioObjectPropertyScopeGlobal
+    ) {
+    case .unavailable:
+      return .unavailable
+    case let .failure(status):
+      return .failure(status)
+    case let .value(value) where value == 1 || value == 2:
+      primarySideBefore = value
+    case .value:
+      return .unknown
+    }
+
+    let rawPlacement: (UInt32, UInt32)
+    switch readUInt32PairProperty(
+      bluetoothInEarPlacementProperty,
+      from: deviceID,
+      scope: kAudioObjectPropertyScopeGlobal
+    ) {
+    case .unavailable:
+      return .unavailable
+    case let .failure(status):
+      return .failure(status)
+    case let .value(value):
+      rawPlacement = value
+    }
+
+    let primarySideAfter: UInt32
+    switch readUInt32Property(
+      bluetoothPrimaryEarProperty,
+      from: deviceID,
+      scope: kAudioObjectPropertyScopeGlobal
+    ) {
+    case .unavailable:
+      return .unavailable
+    case let .failure(status):
+      return .failure(status)
+    case let .value(value) where value == 1 || value == 2:
+      primarySideAfter = value
+    case .value:
+      return .unknown
+    }
+    guard primarySideBefore == primarySideAfter else { return .unknown }
+
+    guard let primary = mapBluetoothEarPlacementState(rawPlacement.0),
+          let secondary = mapBluetoothEarPlacementState(rawPlacement.1)
+    else { return .unknown }
+
+    if primarySideBefore == 1 {
+      return .value(BluetoothEarPlacement(left: primary, right: secondary))
+    }
+    return .value(BluetoothEarPlacement(left: secondary, right: primary))
+  }
+
   private func readUInt32Property(
     _ selector: AudioObjectPropertySelector,
     from deviceID: AudioDeviceID,
@@ -491,6 +603,48 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
     return .value(value)
   }
 
+  private func readUInt32PairProperty(
+    _ selector: AudioObjectPropertySelector,
+    from deviceID: AudioDeviceID,
+    scope: AudioObjectPropertyScope
+  ) -> AudioRoutingRead<(UInt32, UInt32)> {
+    var address = AudioObjectPropertyAddress(
+      mSelector: selector,
+      mScope: scope,
+      mElement: kAudioObjectPropertyElementMain
+    )
+    guard propertyAccess.hasProperty(deviceID, address: &address) else {
+      return .unavailable
+    }
+    let expectedSize = UInt32(2 * MemoryLayout<UInt32>.size)
+    var reportedSize: UInt32 = 0
+    let sizeStatus = propertyAccess.readPropertyDataSize(
+      deviceID,
+      address: &address,
+      dataSize: &reportedSize
+    )
+    guard sizeStatus == noErr else { return .failure(sizeStatus) }
+    guard reportedSize == expectedSize else {
+      return .failure(kAudioHardwareBadPropertySizeError)
+    }
+
+    var values = [UInt32](repeating: 0, count: 2)
+    var dataSize = reportedSize
+    let status = values.withUnsafeMutableBytes { buffer in
+      propertyAccess.readPropertyData(
+        deviceID,
+        address: &address,
+        dataSize: &dataSize,
+        data: buffer.baseAddress!
+      )
+    }
+    guard status == noErr else { return .failure(status) }
+    guard dataSize == expectedSize else {
+      return .failure(kAudioHardwareBadPropertySizeError)
+    }
+    return .value((values[0], values[1]))
+  }
+
   private var bluetoothListeningModeAddress: AudioObjectPropertyAddress {
     AudioObjectPropertyAddress(
       mSelector: bluetoothListeningModeProperty,
@@ -524,6 +678,17 @@ struct CoreAudioRoutingBackend: AudioRoutingBackend {
       return .failure(kAudioHardwareBadPropertySizeError)
     }
     return .value(value.map { $0.takeRetainedValue() as String })
+  }
+}
+
+private func mapBluetoothEarPlacementState(
+  _ rawValue: UInt32
+) -> BluetoothEarPlacementState? {
+  switch rawValue {
+  case 1: return .inEar
+  case 2: return .outOfEar
+  case 3: return .inCase
+  default: return nil
   }
 }
 

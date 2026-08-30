@@ -14,14 +14,15 @@
   structured JSON payload.
 
 **Status snapshot**
-: A read-only observation of selection, listening mode, and Conversation
-  Awareness for one compatible device. One invocation reads the available Core
-  Audio inventory and shares the same input and output route observations across
-  all records. A field contains a value, proven-unsupported result, unresolved
-  result, or read error. Unresolved fields and read errors are displayed as
-  `unknown`; read errors also name the affected field. Unsupported feature
-  fields are omitted. Records follow the adapter's deduplicated inventory order,
-  with output endpoints preferred, but that order is not a stable interface.
+: A read-only observation of selection, listening mode, Conversation Awareness,
+  and left/right ear placement for one compatible device. One invocation reads
+  the available Core Audio inventory and shares the same input and output route
+  observations across all records. A field contains a value,
+  proven-unsupported result, unresolved result, or read error. Unresolved fields
+  and read errors are displayed as `unknown`; read errors also name the affected
+  field. Unsupported feature fields are omitted. Records follow the adapter's
+  deduplicated inventory order, with output endpoints preferred, but that order
+  is not a stable interface.
 
 **Status device inventory**
 : The status-only inventory from public `kAudioHardwarePropertyDevices`. An
@@ -114,7 +115,12 @@
   transports, missing properties, and unavailable or nil mappings remain
   unresolved. Failed route, class, transport, or mapper reads are read errors.
   Active-output enrichment cannot change selection. The adapter does not expose
-  raw HAL values or routing and Bluetooth identifiers to command execution.
+  raw HAL values or routing and Bluetooth identifiers to command execution. When
+  macOS exposes the runtime-gated `iesb`, `pris`, and `iede` properties, it also
+  captures a typed left/right ear-placement pair during status inventory. The
+  placement observation is one-pass and read-only; missing or disabled
+  properties are unsupported, while unknown or conflicting evidence remains
+  unresolved. BLE advertisements are not used as an identity fallback.
 
 **Support report document**
 : Compatibility data built from a pre-write device snapshot and optional
