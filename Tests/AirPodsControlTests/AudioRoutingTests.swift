@@ -220,6 +220,75 @@ func testCoreAudioStatusPlacementGroupsFailClosed() {
     valueAndFailureDevice.readInEarPlacementStatus().isReadError,
     "a failed sibling prevents a definitive placement value"
   )
+
+  let unknownAndFailure = EqualBluetoothObject(identity: 120)
+  let unknownAndFailureInput = EqualBluetoothObject(identity: 120)
+  let (unknownAndFailureController, _) = makeBluetoothController(inventory: [
+    FakeInventoryEndpoint(
+      audioDeviceID: 120,
+      bluetoothDevice: unknownAndFailure,
+      name: .value("Placement Unknown Partial Error"),
+      appleAudioDevice: .value(true),
+      inEarPlacement: .unknown
+    ),
+    FakeInventoryEndpoint(
+      audioDeviceID: 121,
+      bluetoothDevice: unknownAndFailureInput,
+      inputStreams: .value(true),
+      outputStreams: .value(false),
+      appleAudioDevice: .value(true),
+      inEarPlacement: .failure(-7_114)
+    ),
+  ])
+  let unknownAndFailureDevice = unknownAndFailureController.selectDevices(
+    named: nil,
+    policy: .allOrExact
+  )![0]
+  check(
+    unknownAndFailureDevice.readInEarPlacementStatus().isReadError,
+    "a failed sibling is not hidden by unknown placement evidence"
+  )
+
+  let conflictAndFailure = EqualBluetoothObject(identity: 122)
+  let conflictAndFailureInput = EqualBluetoothObject(identity: 122)
+  let conflictAndFailureSecondInput = EqualBluetoothObject(identity: 122)
+  let (conflictAndFailureController, _) = makeBluetoothController(inventory: [
+    FakeInventoryEndpoint(
+      audioDeviceID: 122,
+      bluetoothDevice: conflictAndFailure,
+      name: .value("Placement Conflict Partial Error"),
+      appleAudioDevice: .value(true),
+      inEarPlacement: .value(
+        BluetoothEarPlacement(left: .inEar, right: .outOfEar)
+      )
+    ),
+    FakeInventoryEndpoint(
+      audioDeviceID: 123,
+      bluetoothDevice: conflictAndFailureInput,
+      inputStreams: .value(true),
+      outputStreams: .value(false),
+      appleAudioDevice: .value(true),
+      inEarPlacement: .value(
+        BluetoothEarPlacement(left: .outOfEar, right: .inEar)
+      )
+    ),
+    FakeInventoryEndpoint(
+      audioDeviceID: 124,
+      bluetoothDevice: conflictAndFailureSecondInput,
+      inputStreams: .value(true),
+      outputStreams: .value(false),
+      appleAudioDevice: .value(true),
+      inEarPlacement: .failure(-7_115)
+    ),
+  ])
+  let conflictAndFailureDevice = conflictAndFailureController.selectDevices(
+    named: nil,
+    policy: .allOrExact
+  )![0]
+  check(
+    conflictAndFailureDevice.readInEarPlacementStatus().isReadError,
+    "a failed sibling is not hidden by conflicting placement evidence"
+  )
 }
 
 func testCoreAudioStatusPlacementMapsUnavailableUnknownAndFailure() {

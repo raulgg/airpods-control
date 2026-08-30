@@ -852,6 +852,10 @@ final class IOBluetoothStatusController {
       case .failure: sawReadFailure = true
       }
     }
+    if sawReadFailure {
+      logger.debug("bluetooth.in_ear_placement_consistency", "read-error")
+      return .readFailure
+    }
     if recognizedPlacements.count > 1 {
       logger.debug("bluetooth.in_ear_placement_consistency", "conflict")
       return .conflict
@@ -859,10 +863,6 @@ final class IOBluetoothStatusController {
     if sawUnknown {
       logger.debug("bluetooth.in_ear_placement_consistency", "unknown")
       return .unknown
-    }
-    if sawReadFailure {
-      logger.debug("bluetooth.in_ear_placement_consistency", "read-error")
-      return .readFailure
     }
     if let placement = recognizedPlacements.first {
       return .value(placement)
