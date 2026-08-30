@@ -103,20 +103,19 @@ signs both artifacts, and installs them together.
 ### Documentation
 
 Markdown files in the repository follow rumdl's standard 80-column wrapping.
-GitHub pull request descriptions, issue comments, and review comments are
-unwrapped GitHub Markdown that uses the pull request template. rumdl never
-checks those. Install [pre-commit](https://pre-commit.com), then run
-`pre-commit install` once per clone. Use `pre-commit run --all-files` to
-format and check the full Markdown set. Coding agents should follow
-[AGENTS.md](AGENTS.md) (`CLAUDE.md` is a symlink to it).
+Do not wrap GitHub pull request descriptions, issue comments, or review
+comments. Those are GitHub Markdown. rumdl never sees them. Install
+[pre-commit](https://pre-commit.com), then run `pre-commit install` once per
+clone. Use `pre-commit run --all-files` to format and check the full Markdown
+set. Coding agents should follow [AGENTS.md](AGENTS.md) (`CLAUDE.md` is a
+symlink to it).
 
 ## Pull requests
 
 - Use a [Conventional Commit](https://www.conventionalcommits.org/) pull request
   title. The repository squash-merges pull requests, so that title becomes the
   commit used to generate versions and release notes.
-- Write the GitHub description from the pull request template in unwrapped
-  GitHub Markdown. Do not wrap it to 80 columns.
+- Fill the pull request template. Do not wrap the description to 80 columns.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.
 - Update CLI help and the affected user-facing documentation when the interface
