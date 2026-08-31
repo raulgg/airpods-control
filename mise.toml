@@ -1,3 +1,19 @@
 [tools]
 pre-commit = "4.6.2"
 rumdl = "0.2.52"
+
+[tasks.markdown-check]
+description = "Check Markdown"
+run = "rumdl check . --deny-config-warnings"
+
+[tasks.markdown-format]
+description = "Format Markdown"
+run = "rumdl fmt . --deny-config-warnings"
+
+[tasks.pre-commit]
+description = "Run all pre-commit hooks"
+run = "pre-commit run --all-files"
+
+[tasks.test]
+description = "Build and run tests"
+run = "make test"
