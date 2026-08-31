@@ -106,10 +106,9 @@ Markdown files in the repository follow rumdl's standard 80-column wrapping.
 Do not wrap GitHub pull request descriptions. rumdl never sees them. Install
 [mise](https://mise.jdx.dev/), then run `mise install` to install all
 development tools pinned in `mise.toml`. Use `mise exec -- rumdl check .` to
-check Markdown, or use `mise exec -- rumdl fmt .` to format it. Alternatively,
-install [pre-commit](https://pre-commit.com), run `pre-commit install` once per
-clone, and use `pre-commit run --all-files` to format and check the full
-Markdown set.
+check Markdown, or use `mise exec -- rumdl fmt .` to format it. Run
+`mise exec -- pre-commit install` once per clone, then use `mise exec --
+pre-commit run --all-files` to format and check the full Markdown set.
 
 ## Pull requests
 
