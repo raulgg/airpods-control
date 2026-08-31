@@ -10,10 +10,6 @@ run = "rumdl check . --deny-config-warnings"
 description = "Format Markdown"
 run = "rumdl fmt . --deny-config-warnings"
 
-[tasks.pre-commit]
-description = "Run all pre-commit hooks"
-run = "pre-commit run --all-files"
-
 [tasks.test]
 description = "Build and run tests"
 run = "make test"
