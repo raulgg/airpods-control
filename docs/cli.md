@@ -277,8 +277,8 @@ input, or for neither direction, still appears.
 
 With `--device`, the command emits one record for the unique case-insensitive
 whole-name match. A missing name is `no-device`; an ambiguous name is
-`ambiguous-device`. It never selects one of several matches. Every plain-text record has a heading, including
-a selected singleton:
+`ambiguous-device`. It never selects one of several matches. Every plain-text
+record has a heading, including a selected singleton:
 
 ```console
 $ airpods-control status
@@ -591,8 +591,8 @@ The issue-opening question is asked only when standard input is interactive.
 Under a script, pipeline, or CI, the command prints the report and writes the
 issue form URL to stderr without prompting or opening a browser. On normal
 completion it returns `0`, or `7` (`state-uncertain`) if consented write tests
-could not restore the initial settings. The signal exit codes described above still apply to an
-interrupted run.
+could not restore the initial settings. The signal exit codes described above
+still apply to an interrupted run.
 
 ## Target a device
 
@@ -618,11 +618,11 @@ display name after exact endpoint deduplication; AV-backed commands match their
 AV output-device names. Matches are exact but case-insensitive. Substrings are
 not accepted, so `--device "My"` will not silently select `"My AirPods Pro"`. If
 two devices have the same name ignoring case, a listening-mode command fails
-with `ambiguous-device` before reading or changing either one. The same universal
-ambiguity reason applies to every command that requires one target. Name
-matching targets an existing record; it is not device identity or correlation. A name passed on the
-command line must not begin with `-`; this prevents an option token from being
-consumed as a missing `--device` value.
+with `ambiguous-device` before reading or changing either one. The same
+universal ambiguity reason applies to every command that requires one target.
+Name matching targets an existing record; it is not device identity or
+correlation. A name passed on the command line must not begin with `-`; this
+prevents an option token from being consumed as a missing `--device` value.
 
 Allow Off cache correlation is a separate, downstream step for an already
 selected output endpoint. It never changes name matching, target selection,
@@ -787,13 +787,14 @@ writes or devices without Transparency, the response contains the final observed
 canonical mode or `null`.
 
 A HAL Off probe uses a stricter classification. An accepted request followed by
-definitive known non-Off readback is affirmative, target-specific evidence:
-the command returns `unsupported` and persists a denial. A missing or rejected
-setter is `unavailable`. An accepted request with unreadable, unknown, or timed-out
-final state is `no-op` and persists no denial. A positive-evidence-authorized
-Off write with definitive non-Off readback remains `no-op` for that invocation,
-but replaces the stale positive evidence with denial for later invocations. No
-case retries through AV or selects another cycle target.
+definitive known non-Off readback is affirmative, target-specific evidence: the
+command returns `unsupported` and persists a denial. A missing or rejected
+setter is `unavailable`. An accepted request with unreadable, unknown, or
+timed-out final state is `no-op` and persists no denial. A
+positive-evidence-authorized Off write with definitive non-Off readback remains
+`no-op` for that invocation, but replaces the stale positive evidence with
+denial for later invocations. No case retries through AV or selects another
+cycle target.
 
 ## Exit codes
 

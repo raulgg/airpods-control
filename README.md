@@ -145,15 +145,14 @@ list, even when it is not the selected audio output. The individual resource
 commands retain their documented adapters. Listening-mode commands combine AV
 and eligible HAL representations into logical targets, select one target
 automatically, and prompt in a fully interactive terminal when several remain.
-Declining the chooser, automated ambiguity, and duplicate exact names all
-report `ambiguous-device` (exit `8`). Multiple selected HAL targets fail
-closed when ambiguity remains; leftover AV records do not enter the HAL chooser. On systems where HAL
-control is entirely unavailable, a single compatible AV output is selected;
-multiple outputs are ambiguous. Run
-`airpods-control --help` for built-in help. The
-[complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics,
-write verification, and exit codes. After installation, you can also run
-`man airpods-control`.
+Declining the chooser, automated ambiguity, and duplicate exact names all report
+`ambiguous-device` (exit `8`). Multiple selected HAL targets fail closed when
+ambiguity remains; leftover AV records do not enter the HAL chooser. On systems
+where HAL control is entirely unavailable, a single compatible AV output is
+selected; multiple outputs are ambiguous. Run `airpods-control --help` for
+built-in help. The [complete CLI reference](docs/cli.md) covers aliases, JSON
+output, diagnostics, write verification, and exit codes. After installation, you
+can also run `man airpods-control`.
 
 ## Documentation
 

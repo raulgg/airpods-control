@@ -57,12 +57,13 @@ Failure to confirm a required final state after side effects is
 
 ### Plain presentation
 
-Plain output is not derived from the numeric code. Parser and individual-resource
-failures use their canonical tokens, while `status` and `support-report` retain
-their established detailed prose and report rendering. A `state-uncertain`
-support report keeps its restoration details. A declined chooser uses the
-canonical `ambiguous-device` failure presentation. The implementation chooses a
-terminal reason from typed state and never infers it by parsing output.
+Plain output is not derived from the numeric code. Parser and
+individual-resource failures use their canonical tokens, while `status` and
+`support-report` retain their established detailed prose and report rendering. A
+`state-uncertain` support report keeps its restoration details. A declined
+chooser uses the canonical `ambiguous-device` failure presentation. The
+implementation chooses a terminal reason from typed state and never infers it by
+parsing output.
 
 ## Consequences
 

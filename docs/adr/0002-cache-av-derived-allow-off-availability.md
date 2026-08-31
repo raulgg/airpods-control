@@ -71,7 +71,8 @@ but the probe cannot persist reusable evidence without unique correlation.
 
 ### Storage and lifetime
 
-Positive records, denial records, and internal ordering tombstones are stored in:
+Positive records, denial records, and internal ordering tombstones are stored
+in:
 
 ```text
 ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
