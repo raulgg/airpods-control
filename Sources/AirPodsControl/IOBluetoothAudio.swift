@@ -392,6 +392,12 @@ private struct IOBluetoothListeningModeBinding {
   let allowOffCorrelation: ListeningModeAllowOffCorrelation?
 }
 
+enum IOBluetoothStatusControllerCreationResult {
+  case success(IOBluetoothStatusController)
+  case unavailable
+  case readError(OSStatus)
+}
+
 final class IOBluetoothStatusController {
   private let devices: [IOBluetoothStatusDevice]
   private let listeningModeBindings: [IOBluetoothListeningModeBinding]
@@ -399,15 +405,15 @@ final class IOBluetoothStatusController {
   private let routingObserver: AudioRoutingObserver
   private let logger: DebugLogger
 
-  convenience init?(
+  static func create(
     logger: DebugLogger,
     activeOutputContext: AnyObject?,
     readStatusListeningMode: Bool = true,
     readStatusInEarPlacement: Bool = true,
     allowOffCache: (any ListeningModeAllowOffCaching)? = nil
-  ) {
+  ) -> IOBluetoothStatusControllerCreationResult {
     let runtime = SystemBluetoothAudioRuntime(logger: logger)
-    self.init(
+    return create(
       runtime: runtime,
       routingBackend: CoreAudioRoutingBackend(),
       activeEndpointProbe: activeOutputContext.map(SystemActiveAudioEndpointProbe.init),
@@ -418,7 +424,7 @@ final class IOBluetoothStatusController {
     )
   }
 
-  init?(
+  static func create(
     runtime: any BluetoothAudioRuntime,
     routingBackend: any AudioRoutingBackend,
     activeEndpointProbe: (any ActiveAudioEndpointProbing)? = nil,
@@ -426,21 +432,45 @@ final class IOBluetoothStatusController {
     readStatusInEarPlacement: Bool = false,
     allowOffCache: (any ListeningModeAllowOffCaching)? = nil,
     logger: DebugLogger
-  ) {
-    self.logger = logger
-    self.routingBackend = routingBackend
+  ) -> IOBluetoothStatusControllerCreationResult {
     let audioDeviceIDs: [AudioDeviceID]
     switch routingBackend.readAudioDevices() {
     case let .value(value):
       audioDeviceIDs = value
     case .unavailable:
       logger.warning("core_audio.device_inventory", "unavailable")
-      return nil
+      return .unavailable
     case let .failure(status):
       logger.warning("core_audio.device_inventory.error", status)
-      return nil
+      return .readError(status)
     }
     logger.info("core_audio.device_count", audioDeviceIDs.count)
+    return .success(
+      IOBluetoothStatusController(
+        audioDeviceIDs: audioDeviceIDs,
+        runtime: runtime,
+        routingBackend: routingBackend,
+        activeEndpointProbe: activeEndpointProbe,
+        readStatusListeningMode: readStatusListeningMode,
+        readStatusInEarPlacement: readStatusInEarPlacement,
+        allowOffCache: allowOffCache,
+        logger: logger
+      )
+    )
+  }
+
+  private init(
+    audioDeviceIDs: [AudioDeviceID],
+    runtime: any BluetoothAudioRuntime,
+    routingBackend: any AudioRoutingBackend,
+    activeEndpointProbe: (any ActiveAudioEndpointProbing)?,
+    readStatusListeningMode: Bool,
+    readStatusInEarPlacement: Bool,
+    allowOffCache: (any ListeningModeAllowOffCaching)?,
+    logger: DebugLogger
+  ) {
+    self.logger = logger
+    self.routingBackend = routingBackend
 
     let routingObserver = AudioRoutingObserver(
       backend: routingBackend,
@@ -742,32 +772,48 @@ final class IOBluetoothStatusController {
     named requestedName: String?,
     policy: DeviceSelectionPolicy
   ) -> [IOBluetoothStatusDevice]? {
+    guard case let .selected(devices) = resolveDevices(
+      named: requestedName,
+      policy: policy
+    ) else { return nil }
+    return devices
+  }
+
+  func resolveDevices(
+    named requestedName: String?,
+    policy: DeviceSelectionPolicy
+  ) -> DeviceSelection<IOBluetoothStatusDevice> {
     if let requestedName {
       let matches = devices.filter {
         $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
       }
-      guard matches.count == 1 else {
-        logger.warning(
-          "device_selection",
-          matches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
-        )
-        return nil
+      guard let selected = matches.first else {
+        logger.warning("device_selection", "no-exact-name-match")
+        return .noDevice
       }
-      logger.info("selected_device", matches[0].name)
-      return matches
+      guard matches.count == 1 else {
+        logger.warning("device_selection", "ambiguous-device-name")
+        return .ambiguousDevice
+      }
+      logger.info("selected_device", selected.name)
+      return .selected([selected])
     }
 
     guard !devices.isEmpty else {
       logger.warning("device_selection", "no-compatible-device")
-      return nil
+      return .noDevice
     }
     switch policy {
-    case .firstOrExact:
-      logger.info("selected_device", devices[0].name)
-      return [devices[0]]
+    case .singleOrExact:
+      guard devices.count == 1, let selected = devices.first else {
+        logger.warning("device_selection", "ambiguous-device")
+        return .ambiguousDevice
+      }
+      logger.info("selected_device", selected.name)
+      return .selected([selected])
     case .allOrExact:
       logger.info("selected_device_count", devices.count)
-      return devices
+      return .selected(devices)
     }
   }
 

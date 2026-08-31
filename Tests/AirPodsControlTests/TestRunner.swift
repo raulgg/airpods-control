@@ -8,6 +8,7 @@ struct TestRunner {
     }
 
     runCLIParsingTests()
+    runTerminalReasonTests()
     runInteractiveDeviceChooserTests()
     runListeningModeTests()
     runListeningModeAllowOffCacheTests()

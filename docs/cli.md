@@ -36,22 +36,19 @@ proven-unsupported field.
 
 Operational commands accept `--device NAME`, `--json`, and `--debug` in any
 position. `--device` uses a case-insensitive, whole-name match among the
-command's compatible devices. It never falls back to another device. For
-listening-mode commands, multiple exact matches produce `ambiguous-device`;
-the user must give connected devices distinct names. Without `--device`, a
-selected AirPods output remains the automatic listening-mode target, and a
-single eligible HAL (Core Audio's hardware abstraction layer) device is
-selected automatically. If no selected HAL target exists and several HAL
-devices remain, an interactive terminal displays them in discovery order and
-asks for a displayed number. The chooser is used only when standard input
-and standard error are terminals and `--json` is absent. Multiple selected HAL
-targets fail closed as `ambiguous-device`; the chooser is not used for that
-case. Blank input, `q`, or end of input
-prints `cancelled` and exits `1`; automated or JSON ambiguity returns
-`ambiguous-device` and exits `1`. Conversation Awareness retains its existing
-first compatible AV output behavior. If listening-mode HAL control is entirely
-unavailable, the older AV-only behavior likewise keeps the first compatible AV
-output. HAL target selection does not add leftover AV records to its chooser.
+command's compatible devices. It never falls back to another device. Multiple
+exact matches produce `ambiguous-device`; the user must give connected devices
+distinct names. Without `--device`, one logical listening-mode target is
+selected automatically. If several remain, an interactive terminal displays
+them in discovery order and asks for a displayed number, regardless of which
+route is selected. The chooser is used only when standard input and standard
+error are terminals and `--json` is absent. Blank input, `q`, or end of input
+prints `ambiguous-device` and exits `8`;
+automated or JSON ambiguity has the same result. Every command that needs one
+target uses this rule: multiple positively known candidates are
+`ambiguous-device`, including Conversation Awareness, `support-report`, and the
+AV-only listening-mode fallback. HAL target selection does not add leftover AV
+records to its chooser.
 A unique selected HAL target and unique singular active AV endpoint form one
 logical target even when optional status enrichment cannot join them; this
 pairing is based on selected-route evidence, never a matching name. A named
@@ -114,13 +111,13 @@ off,transparency,adaptive,noise-cancellation
 Modes are always printed in that order, filtered to the modes supported by the
 connected device. A HAL-backed list uses the `lsms` capability mask and can
 establish Noise Cancellation, Transparency, and Adaptive. HAL does not expose
-the separate user-configured Allow Off setting. A HAL-backed command includes
-Off only when it can consume recent positive AV evidence for the exact output
+the separate user-configured Allow Off setting. A HAL-backed `list` includes Off
+only when it can consume recent positive AV evidence for the exact output
 endpoint, as described under
-[Cached Allow Off availability](#cached-allow-off-availability). Without that
-evidence, HAL `list` omits Off, `set off` is unsupported, and Off is removed
-from an explicit cycle set. AV-backed commands continue to expose Off when AV
-advertises it.
+[Cached Allow Off availability](#cached-allow-off-availability). An explicit
+`set off` or explicit cycle containing Off may instead probe the HAL setter once
+when there is neither positive evidence nor a cached denial. AV-backed commands
+continue to expose Off when AV advertises it.
 
 ### Cycle through modes
 
@@ -163,37 +160,47 @@ the connected device does not support. If fewer than two remain, it reports
 
 The HAL `lsms` mask has no Allow Off bit. To support a connected but unselected
 device without changing the audio route, the CLI keeps a weak cache of the
-exact output endpoint's latest eligible AV availability observation. Only a
-positive observation, where AV advertises Off, can authorize a HAL command.
+exact output endpoint's latest Allow Off evidence. Positive evidence comes from
+AV advertising Off or reporting current Off. Negative evidence requires an
+accepted Off request followed by definitive known non-Off readback.
 
 An AV available-mode read updates this cache only when the read is already
 needed for `list`, `set off`, or an explicit cycle set containing Off. A
-successful eligible read that includes Off writes or refreshes the positive
-observation; a successful eligible read that omits Off removes the positive
-observation and writes a negative tombstone. The latest observation time wins,
-and a negative observation wins ties, so an older in-flight positive read cannot
-restore stale evidence. An AV-backed `listening-mode get` also refreshes the
-positive observation when it returns Off. A non-Off current-mode result is not
-an availability observation, and incidental current-mode reads made by other
-operations do not warm the cache. Selector failures, unavailable endpoints,
-and failed reads leave the cache unchanged. The CLI does not perform an extra
-AV read solely to warm the cache, and HAL observations never refresh it.
+successful eligible read that includes Off writes or refreshes positive
+evidence. A successful eligible read that omits Off invalidates older positive
+evidence but does not create a denial. An AV-backed `listening-mode get` also
+refreshes positive evidence when it returns Off. A non-Off current-mode result
+and incidental reads do not alter the cache. Selector failures, unavailable
+endpoints, and failed reads leave it unchanged. The CLI does not perform an
+extra AV read solely to warm the cache.
 
-A valid observation lets the exact HAL target include Off in `list`, attempt
+Positive evidence lets the exact HAL target include Off in `list`, attempt
 `set off`, or retain Off in an explicit cycle set. It never adds Off to the
-default cycle. A cache miss preserves the ordinary HAL behavior, including the
-minimum-size check after unavailable modes are removed from an explicit cycle
-set. Cache correlation happens after target and provider selection; it cannot
-select, merge, or disambiguate devices. A missing or nonunique exact endpoint
-correlation is a silent miss.
+default cycle. With no usable evidence, an explicit `set off` or explicit cycle
+containing Off may make one HAL attempt as a probe. `list`, `get`, and the
+default cycle never probe. A cached denial suppresses another probe until that
+evidence expires or newer positive evidence replaces it.
 
-The cache stores positive observations and negative tombstones. Only a positive
-observation can add Off or authorize a HAL write. Positive observations expire
-seven days after the AV observation, and use does not extend that lifetime.
-Negative tombstones only order observations and never authorize a write. A new
-eligible observation replaces the older state for that endpoint; a macOS update
-does not extend or invalidate a positive observation. Missing, expired,
-malformed, or unreadable data is treated as a miss. The disposable,
+The first explicit probe is classified from the evidence it produces:
+
+- an accepted request with definitive Off readback succeeds;
+- an accepted request with definitive known non-Off readback is `unsupported`
+  (exit `4`) and records denial evidence;
+- a missing or rejecting provider or setter is `unavailable` (exit `6`); and
+- an accepted request whose final state is unreadable, unknown, or times out is
+  `no-op` (exit `3`) and records no denial.
+
+Cache correlation happens after target and provider selection; it cannot
+select, merge, or disambiguate devices. Missing or nonunique exact endpoint
+correlation does not prevent the current explicit probe, but it prevents that
+probe from persisting reusable evidence.
+
+Positive and negative evidence expires seven days after observation, and use
+does not extend that lifetime. Internal invalidation tombstones preserve
+observation ordering without becoming target-specific denial. Newer evidence
+replaces older evidence; a negative observation wins equal timestamps. A macOS
+update does not extend or invalidate evidence. Missing, expired, malformed, or
+unreadable data is treated as a miss. The disposable,
 backup-excluded cache is stored at:
 
 ```text
@@ -212,18 +219,13 @@ evidence. If a negative write fails after taking the lock, the disposable cache
 is removed so stale positive evidence cannot remain reusable.
 
 This evidence may be stale if Allow Off changes before another eligible AV read
-or an Off write disproves it. Observation timestamps prevent delayed older reads
-from overwriting newer reads, with a negative result winning equal timestamps.
-If an accepted Off write backed by fresh or cached positive evidence finishes
-with a definitive non-Off state, the CLI deletes that positive observation. It
-does not create a negative tombstone: only an eligible AV availability read that
-omits Off can do that. A rejected write, timeout, failed read, or unknown final
-state leaves the observation in place.
-
-A cache-authorized HAL mismatch reports `no-op` with the actual final state and
-does not retry through AV, infer a Transparency fallback, or choose a second
-cycle target. As with every listening-mode readback, a match is macOS-reported
-state, not a direct AirPods acknowledgement.
+or explicit Off attempt updates it. Observation timestamps prevent delayed
+older work from overwriting newer evidence. Any accepted Off attempt—AV,
+cache-authorized HAL, or a HAL probe—with definitive known non-Off readback
+records denial. A rejected write, timeout, failed read, or unknown final state
+does not. After any attempted write, the command does not retry through another
+provider or choose a second cycle target. As with every listening-mode
+readback, a match is macOS-reported state, not a direct AirPods acknowledgement.
 
 ## Conversation Awareness
 
@@ -274,9 +276,9 @@ The inventory does not depend on either default, so a device selected only for
 input, or for neither direction, still appears.
 
 With `--device`, the command emits one record for the unique case-insensitive
-whole-name match. A missing or ambiguous name fails with `no-device`; it never
-selects one of several matches. Every plain-text record has a heading, including
-a selected singleton:
+whole-name match. A missing name is `no-device`; an ambiguous name is
+`ambiguous-device`. It never selects one of several matches. Every plain-text
+record has a heading, including a selected singleton:
 
 ```console
 $ airpods-control status
@@ -476,6 +478,12 @@ CLI version. The model name is resolved locally: the model identifier embeds the
 Bluetooth product ID, and the CLI maps known product IDs to model names (see the
 [device compatibility matrix](compatibility.md)).
 
+Product identity is optional report data, not a selection prerequisite. If the
+family or model identifier is missing, rejected, or unrecognized, the command
+still succeeds and renders a partial report from every safe observation it can
+collect. Explicit consent and the captured runtime plan—not identity—decide
+whether write tests can run.
+
 Unknown advertised listening modes that can be represented safely appear under
 `Other modes`. Missing values appear as `Unavailable / not reported`; the
 command does not guess them.
@@ -497,8 +505,9 @@ settings in the captured plan.
 
 `support-report` does not read customizable names or accept `--device`, so it
 requires exactly one compatible output device. With zero or multiple compatible
-devices it prints local instructions and exits `1` before a report, prompt, or
-write.
+devices it prints local instructions before a report, prompt, or write. Zero
+devices is `no-device` (exit `1`); multiple devices is `ambiguous-device` (exit
+`8`).
 
 ### Consented write tests
 
@@ -534,7 +543,8 @@ immediately before it cannot demonstrate a transition and is
 
 The terminal always states the restoration outcome: `RESTORED`, `NOT NEEDED`, or
 `NOT RESTORED`. A failed restoration names the final state, gives a manual-fix
-hint, and exits `3`. An externally delivered SIGHUP, SIGINT, or SIGTERM caught
+hint, and exits `7` (`state-uncertain`). An externally delivered SIGHUP, SIGINT,
+or SIGTERM caught
 during the tests stops further writes, prints
 `Interrupt caught; restoring initial settings...` on stderr, attempts
 restoration first, prints any restoration warning, and then exits `129`, `130`,
@@ -580,18 +590,17 @@ describe any restoration failure in Additional notes.
 The issue-opening question is asked only when standard input is interactive.
 Under a script, pipeline, or CI, the command prints the report and writes the
 issue form URL to stderr without prompting or opening a browser. On normal
-completion it returns `0`, or `3` if consented write tests could not restore the
-initial settings. The signal exit codes described above still apply to an
-interrupted run.
+completion it returns `0`, or `7` (`state-uncertain`) if consented write tests
+could not restore the initial settings. The signal exit codes described above
+still apply to an interrupted run.
 
 ## Target a device
 
-Without `--device`, listening-mode commands automatically use the selected
-AirPods output or one unique eligible HAL target. When no selected HAL target
-exists and multiple HAL targets remain, a fully interactive terminal presents a
-numbered chooser; multiple selected HAL targets fail closed. Automated and JSON
-invocations fail with `ambiguous-device`. Conversation
-Awareness retains the first compatible AV output behavior. `status` reports
+Without `--device`, listening-mode commands automatically use one logical
+target. When multiple targets remain, a fully interactive terminal presents a
+numbered chooser. Automated and JSON invocations fail with
+`ambiguous-device`. Conversation Awareness and the AV-only
+listening-mode fallback also require a unique target. `status` reports
 every eligible canonical device derived from the currently available Core Audio
 endpoint list, regardless of which device is the selected output. To select one
 explicitly:
@@ -609,16 +618,17 @@ display name after exact endpoint deduplication; AV-backed commands match their
 AV output-device names. Matches are exact but case-insensitive. Substrings are
 not accepted, so `--device "My"` will not silently select `"My AirPods Pro"`. If
 two devices have the same name ignoring case, a listening-mode command fails
-with `ambiguous-device` before reading or changing either one. Other commands
-retain their existing `no-device` ambiguity result. Name matching targets an
-existing record; it is not device identity or correlation. A name passed on the
-command line must not begin with `-`; this prevents an option token from being
-consumed as a missing `--device` value.
+with `ambiguous-device` before reading or changing either one. The same
+universal ambiguity reason applies to every command that requires one target.
+Name matching targets an existing record; it is not device identity or
+correlation. A name passed on the command line must not begin with `-`; this
+prevents an option token from being consumed as a missing `--device` value.
 
 Allow Off cache correlation is a separate, downstream step for an already
 selected output endpoint. It never changes name matching, target selection,
 endpoint deduplication, or provider routing. Failure to correlate exactly one
-endpoint is a silent cache miss.
+endpoint is a silent cache miss and does not prevent the current explicit Off
+probe.
 
 ## JSON output
 
@@ -642,8 +652,11 @@ $ airpods-control status --device "My AirPods Pro" --json
 {"devices":[{"conversationAwareness":"on","device":"My AirPods Pro","isSelectedAudioInput":false,"isSelectedAudioOutput":true,"listeningMode":"transparency"}],"result":"ok"}
 ```
 
-Every JSON response contains `result`, with a value of `ok`, `no-op`, or
-`error`. A valid resource command also contains `device` and the resulting
+Every JSON response contains `result`. Normal success uses `ok`, an unverified
+accepted write uses `no-op`, and every other normal nonzero reason uses `error`
+with `error` set to its canonical token. A caught signal instead uses
+`"result":"interrupted"`, includes the numeric `signal`, and omits `error`. A
+valid resource command also contains `device` and the resulting
 `listeningMode` or `conversationAwareness` state. States normally come from
 private-API readback. The accepted-`off` fallback described under Write
 verification may report the expected eventual Transparency state instead. An
@@ -657,8 +670,8 @@ $ airpods-control listening-mode get --json
 {"device":null,"error":"ambiguous-device","listeningMode":null,"result":"error"}
 ```
 
-The second shape applies only when multiple eligible listening-mode targets
-remain; JSON never opens the interactive chooser.
+The second shape applies whenever a one-target command has multiple eligible
+candidates; JSON never opens the interactive chooser.
 
 `listening-mode list` also returns `supportedListeningModes`. An unverified
 write uses `"result":"no-op"` and exits `3`. The response contains the final
@@ -773,29 +786,79 @@ when Off Listening Mode is disabled, not an observed final sample. For rejected
 writes or devices without Transparency, the response contains the final observed
 canonical mode or `null`.
 
-A cache-authorized HAL Off write uses the stricter cache contract instead. If
-its definitive final read is a known non-Off mode, that actual mode is returned
-with `no-op` and the positive observation is deleted. The command does not use
-the inferred Transparency fallback, retry through AV, or select another cycle
-target. Rejection, timeout, read failure, or an unknown final state does not
-delete the observation.
+A HAL Off probe uses a stricter classification. An accepted request followed by
+definitive known non-Off readback is affirmative, target-specific evidence: the
+command returns `unsupported` and persists a denial. A missing or rejected
+setter is `unavailable`. An accepted request with unreadable, unknown, or
+timed-out final state is `no-op` and persists no denial. A
+positive-evidence-authorized Off write with definitive non-Off readback remains
+`no-op` for that invocation, but replaces the stale positive evidence with
+denial for later invocations. No case retries through AV or selects another
+cycle target.
 
 ## Exit codes
 
-| Code | Meaning     | When                                                       |
-| ---- | ----------- | ---------------------------------------------------------- |
-| `0`  | ok          | Command succeeded, including writes with matching macOS readback. |
-| `1`  | selection  | No target, an ambiguous target, chooser cancellation, or no unique identifiable report device. |
-| `2`  | bad-args    | Arguments are missing or malformed.                        |
-| `3`  | no-op       | A write was not verified in the bounded window, or write tests could not restore the initial state. |
-| `4`  | unsupported | The mode or feature is not available on the selected device. |
-| `5`  | read-error  | Every selected status record contains only genuine read errors. |
-| `129` | hangup | An externally delivered SIGHUP was caught during the tests and restoration was attempted. |
-| `130` | interrupted | An externally delivered SIGINT was caught during the tests and restoration was attempted. |
-| `143` | terminated | An externally delivered SIGTERM was caught during the tests and restoration was attempted. |
+Every normal code has one command-independent meaning:
 
-Individual-resource plain stdout uses a single token such as `ok`, `no-op`,
-`no-device`, `ambiguous-device`, `cancelled`, `unsupported`, or a mode name.
-`status` emits headed device records, and `support-report` emits its
-terminal-native compatibility report or local guidance. Scripts can branch on
-the exit code.
+| Code | Terminal reason | Meaning |
+| ---: | --- | --- |
+| `0` | `success` | The command fulfilled its primary contract without violating a safety invariant. |
+| `1` | `no-device` | No target resolved under the command's device contract. |
+| `2` | `bad-args` | Arguments are missing or malformed. |
+| `3` | `no-op` | A setter accepted the request, but the requested feature state was not verified and no required final-state invariant remains unresolved. |
+| `4` | `unsupported` | Affirmative target-specific evidence excludes the requested operation. |
+| `5` | `read-error` | A primary information read failed without producing a usable result. |
+| `6` | `unavailable` | A required provider, prerequisite, capability inventory, or control path cannot currently be established or accessed. |
+| `7` | `state-uncertain` | Side effects occurred and a required final device state cannot be confirmed. |
+| `8` | `ambiguous-device` | Multiple candidates remain for a command that requires one target. |
+
+Caught Unix signals are typed separately and retain `128 + signal`. The current
+support-report write-test path catches SIGHUP (`129`), SIGINT (`130`), and
+SIGTERM (`143`); JSON uses `"result":"interrupted"` with the numeric `signal`.
+Crashes, SIGKILL, forced termination, and uncaught signals are outside this
+handled contract.
+
+### Per-command subsets
+
+These are the normal terminal reasons each command can produce after parsing;
+all commands may also produce `bad-args` during parsing.
+
+| Command | Normal terminal reasons after parsing |
+| --- | --- |
+| Help and version | `success` |
+| `listening-mode get`, `list` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error` |
+| `listening-mode set`, `cycle` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable` |
+| `conversation-awareness get` | `success`, `no-device`, `ambiguous-device`, `unsupported`, `unavailable`, `read-error` |
+| `conversation-awareness set` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable` |
+| `status` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error` |
+| `support-report` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `state-uncertain` |
+
+Only `support-report` currently adds caught-signal outcomes while running
+write tests. The table lists the normal terminal reasons reachable after
+parsing.
+
+### Migration from the previous contract
+
+This consolidation is a breaking scripting-contract change even though most
+numbers stay fixed:
+
+| Previous outcome | Previous code | Consolidated outcome | Code |
+| --- | ---: | --- | ---: |
+| Successful command | `0` | `success` | `0` |
+| No target | `1` | `no-device` | `1` |
+| Ambiguous target | `1` | `ambiguous-device` | `8` |
+| Chooser declined (`cancelled`) | `1` | `ambiguous-device` | `8` |
+| Unidentified support-report product | `1` | Successful partial report | `0` |
+| Malformed arguments | `2` | `bad-args` | `2` |
+| Accepted, unverified feature write | `3` | `no-op` | `3` |
+| Support-report restoration not verified | `3` | `state-uncertain` | `7` |
+| Proven unsupported operation | `4` | `unsupported` | `4` |
+| Failed primary read | `5` | `read-error` | `5` |
+| Missing provider or control path | `6` | `unavailable` | `6` |
+| Caught signal | `128 + signal` | Caught signal | `128 + signal` |
+
+Individual-resource plain failures use canonical tokens. `status` retains its
+headed records and detailed failure guidance; `support-report` retains its
+terminal-native report and restoration detail. Terminal reasons are selected
+from typed outcomes and are never inferred by parsing stdout. This migration is
+documented here; the release notes will call it out when the release is created.

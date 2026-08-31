@@ -202,29 +202,36 @@ enum StatusCommand {
     }
 
     let hasNonErrorResult = snapshots.contains(where: \.hasNonErrorResult)
-    var payload: [String: Any] = [
-      "devices": snapshots.map(\.payload),
-      "result": hasNonErrorResult ? "ok" : "error",
-    ]
-    if !hasNonErrorResult {
-      payload["error"] = "read-error"
-    }
-
     return CommandOutcome(
       plain: snapshots.map(\.plain).joined(separator: "\n\n"),
-      exitCode: hasNonErrorResult ? 0 : 5,
-      payload: payload
+      terminalReason: hasNonErrorResult ? .success : .readError,
+      data: ["devices": snapshots.map(\.payload)]
     )
   }
 
   static func noDeviceOutcome() -> CommandOutcome {
-    CommandOutcome(
-      plain: noDevicePlain,
-      exitCode: 1,
-      payload: [
+    resolutionFailureOutcome(.noDevice)
+  }
+
+  static func resolutionFailureOutcome(_ reason: TerminalReason) -> CommandOutcome {
+    let plain: String
+    switch reason {
+    case .noDevice:
+      plain = noDevicePlain
+    case .ambiguousDevice:
+      plain = "Multiple compatible devices match the requested status target."
+    case .unavailable:
+      plain = "Compatible device discovery is unavailable."
+    case .readError:
+      plain = "Compatible device discovery failed."
+    default:
+      preconditionFailure("status device resolution cannot end as \(reason.token)")
+    }
+    return CommandOutcome(
+      plain: plain,
+      terminalReason: reason,
+      data: [
         "devices": [[String: Any]](),
-        "error": "no-device",
-        "result": "error",
       ]
     )
   }

@@ -329,15 +329,16 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
   }
 
   func availableListeningModes() -> [ListeningMode] {
-    guard case let .value(modes) = listeningModeAvailabilityObservation() else {
-      return []
+    switch listeningModeAvailabilityObservation() {
+    case let .value(modes), let .partial(modes): return modes
+    case .unavailable, .readError: return []
     }
-    return modes
   }
 
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
     guard let rawModes = availableRawListeningModes() else { return .unavailable }
-    return .value(rawModes.compactMap { listeningModesByRawValue[$0] })
+    let recognized = rawModes.compactMap { listeningModesByRawValue[$0] }
+    return recognized.count == rawModes.count ? .value(recognized) : .partial(recognized)
   }
 
   private func currentRawListeningMode() -> String? {
@@ -353,7 +354,14 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
   }
 
   func currentListeningMode() -> ListeningMode? {
-    currentRawListeningMode().flatMap { listeningModesByRawValue[$0] }
+    guard case let .value(mode) = listeningModeStateObservation() else { return nil }
+    return mode
+  }
+
+  func listeningModeStateObservation() -> ListeningModeStateObservation {
+    guard let rawMode = currentRawListeningMode() else { return .unavailable }
+    return listeningModesByRawValue[rawMode]
+      .map(ListeningModeStateObservation.value) ?? .unknown
   }
 
   func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
@@ -655,59 +663,75 @@ final class PrivateAudioController {
   }
 
   func selectDevice(named requestedName: String?) -> PrivateAudioDevice? {
-    selectDevices(named: requestedName, policy: .firstOrExact)?.first
+    guard case let .selected(devices) = resolveDevices(
+      named: requestedName,
+      policy: .singleOrExact
+    ) else { return nil }
+    return devices.first
   }
 
+  // Kept as a narrow compatibility adapter for the device-adapter tests.
   func selectDevices(
     named requestedName: String?,
     policy: DeviceSelectionPolicy
   ) -> [PrivateAudioDevice]? {
+    guard case let .selected(devices) = resolveDevices(
+      named: requestedName,
+      policy: policy
+    ) else { return nil }
+    return devices
+  }
+
+  func resolveDevices(
+    named requestedName: String?,
+    policy: DeviceSelectionPolicy
+  ) -> DeviceSelection<PrivateAudioDevice> {
     guard let requestedName else {
-      if !includesDeviceNames, devices.count != 1 {
-        logger.warning("device_selection", "unique-name-free-device-required")
-        return nil
-      }
       guard !devices.isEmpty else {
         logger.warning("device_selection", "no-compatible-device")
-        return nil
+        return .noDevice
       }
       switch policy {
-      case .firstOrExact:
-        let selected = devices[0]
+      case .singleOrExact:
+        guard devices.count == 1, let selected = devices.first else {
+          logger.warning("device_selection", "ambiguous-device")
+          return .ambiguousDevice
+        }
         logger.info("selected_device", selected.name ?? "name-not-read")
-        return [selected]
+        return .selected([selected])
       case .allOrExact:
         guard includesDeviceNames else {
-          // Name-free discovery belongs to support-report and must retain its
-          // exactly-one-device privacy contract.
-          let selected = devices[0]
+          guard devices.count == 1, let selected = devices.first else {
+            logger.warning("device_selection", "ambiguous-device")
+            return .ambiguousDevice
+          }
           logger.info("selected_device", "name-not-read")
-          return [selected]
+          return .selected([selected])
         }
         logger.info("selected_device_count", devices.count)
-        return devices
+        return .selected(devices)
       }
     }
 
     guard includesDeviceNames else {
       logger.warning("device_selection", "name-selection-disabled")
-      return nil
+      return .noDevice
     }
 
     let matches = devices.filter {
       $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
     }
 
-    guard matches.count == 1, let selected = matches.first else {
-      if matches.isEmpty {
-        logger.warning("device_selection", "no-exact-name-match")
-      } else {
-        logger.warning("device_selection", "ambiguous-device-name")
-      }
-      return nil
+    guard let selected = matches.first else {
+      logger.warning("device_selection", "no-exact-name-match")
+      return .noDevice
+    }
+    guard matches.count == 1 else {
+      logger.warning("device_selection", "ambiguous-device-name")
+      return .ambiguousDevice
     }
 
     logger.info("selected_device", selected.name)
-    return [selected]
+    return .selected([selected])
   }
 }

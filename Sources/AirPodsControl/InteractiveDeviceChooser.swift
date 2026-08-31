@@ -15,7 +15,7 @@ enum InteractiveDeviceChooser {
     // Discovery order is display order, so the selected displayed number maps
     // directly back to the caller's deviceNames array.
     case selected(index: Int)
-    case cancelled
+    case declined
   }
 
   static func choose(
@@ -25,7 +25,7 @@ enum InteractiveDeviceChooser {
     writeError: (String) -> Void
   ) -> Outcome {
     guard eligibility.allowsPrompt, deviceNames.count > 1 else {
-      return .cancelled
+      return .declined
     }
 
     var menu = "Multiple compatible devices are connected:\n"
@@ -37,17 +37,17 @@ enum InteractiveDeviceChooser {
     while true {
       writeError(
         "Select a device [1-\(deviceNames.count)] "
-          + "(blank or q cancels): "
+          + "(blank or q declines): "
       )
 
       guard let rawResponse = readResponse() else {
         writeError("\n")
-        return .cancelled
+        return .declined
       }
 
       let response = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
       if response.isEmpty || response.lowercased() == "q" {
-        return .cancelled
+        return .declined
       }
 
       if let displayIndex = deviceNames.indices.first(
@@ -58,7 +58,7 @@ enum InteractiveDeviceChooser {
 
       writeError(
         "Invalid selection. Enter one of the displayed numbers, "
-          + "or q to cancel.\n"
+          + "or q to decline.\n"
       )
     }
   }

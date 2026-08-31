@@ -8,7 +8,23 @@ enum ListeningModeTransportKind: String {
 
 enum ListeningModeAvailabilityObservation {
   case value([ListeningMode])
+  case partial([ListeningMode])
   case unavailable
+  case readError
+}
+
+enum ListeningModeStateObservation {
+  case value(ListeningMode)
+  case unknown
+  case unavailable
+  case readError
+}
+
+extension ListeningModeStateObservation {
+  var value: ListeningMode? {
+    guard case let .value(mode) = self else { return nil }
+    return mode
+  }
 }
 
 protocol ListeningModeTransport: AnyObject {
@@ -18,6 +34,7 @@ protocol ListeningModeTransport: AnyObject {
   func availableListeningModes() -> [ListeningMode]
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation
   func currentListeningMode() -> ListeningMode?
+  func listeningModeStateObservation() -> ListeningModeStateObservation
   func canSetListeningMode() -> Bool
   func setListeningModeAndReadBack(
     _ target: ListeningMode
@@ -28,6 +45,10 @@ protocol ListeningModeTransport: AnyObject {
 extension ListeningModeTransport {
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
     .value(availableListeningModes())
+  }
+
+  func listeningModeStateObservation() -> ListeningModeStateObservation {
+    currentListeningMode().map(ListeningModeStateObservation.value) ?? .unknown
   }
 
 }
@@ -87,18 +108,19 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
   }
 
   func availableListeningModes() -> [ListeningMode] {
-    guard case .value(let modes) = listeningModeAvailabilityObservation() else {
-      return []
+    switch listeningModeAvailabilityObservation() {
+    case let .value(modes), let .partial(modes): return modes
+    case .unavailable, .readError: return []
     }
-    return modes
   }
 
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
-    guard
-      case .value(let rawMask) = backend.readBluetoothListeningModeSupport(
-        for: audioDeviceID
-      )
-    else { return .unavailable }
+    let rawMask: UInt32
+    switch backend.readBluetoothListeningModeSupport(for: audioDeviceID) {
+    case let .value(value): rawMask = value
+    case .unavailable: return .unavailable
+    case .failure: return .readError
+    }
 
     let recognizedMask = rawMask & halListeningModeSupportMask
     let unknownMask = rawMask & ~halListeningModeSupportMask
@@ -111,21 +133,28 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
     if recognizedMask & 0b001 != 0 { modes.insert(.noiseCancellation) }
     if recognizedMask & 0b010 != 0 { modes.insert(.transparency) }
     if recognizedMask & 0b100 != 0 { modes.insert(.adaptive) }
-    return .value(ListeningMode.allCases.filter { modes.contains($0) })
+    let recognized = ListeningMode.allCases.filter { modes.contains($0) }
+    return unknownMask == 0 ? .value(recognized) : .partial(recognized)
   }
 
   func currentListeningMode() -> ListeningMode? {
+    guard case let .value(mode) = listeningModeStateObservation() else { return nil }
+    return mode
+  }
+
+  func listeningModeStateObservation() -> ListeningModeStateObservation {
     switch backend.readBluetoothListeningMode(for: audioDeviceID) {
     case .value(let rawValue):
       logger.debug("hal.listening_mode_raw", rawValue)
       return halListeningModeByRawValue[rawValue]
+        .map(ListeningModeStateObservation.value) ?? .unknown
     case .unavailable:
       logger.debug("hal.listening_mode", "unavailable")
-      return nil
+      return .unavailable
     case .failure(let status):
       logger.debug("hal.listening_mode", "read-error")
       logger.debug("hal.listening_mode_error", status)
-      return nil
+      return .readError
     }
   }
 
@@ -269,7 +298,6 @@ struct ListeningModeCandidate {
 
 enum ListeningModeAmbiguousChoice {
   case selected(index: Int)
-  case cancelled
   case unavailable
 }
 
@@ -278,6 +306,8 @@ struct ListeningModeSession {
   let transport: any ListeningModeTransport
   let availableModes: [ListeningMode]
   let currentMode: ListeningMode?
+  let stateObservation: ListeningModeStateObservation
+  let availabilityObservation: ListeningModeAvailabilityObservation?
   let writePlan: ListeningModeWritePlan?
   let allowOffAuthorization: ListeningModeAllowOffAuthorization?
   let blocksCachedAllowOff: Bool
@@ -291,7 +321,6 @@ enum ListeningModeResolution {
   case session(ListeningModeSession)
   case noDevice
   case ambiguousDevice
-  case cancelled
 }
 
 final class ListeningModeCoordinator {
@@ -332,22 +361,7 @@ final class ListeningModeCoordinator {
   ) -> ListeningModeResolution {
     let selectedCandidate: ListeningModeCandidate
 
-    if halCandidates.isEmpty {
-      guard !avCandidates.isEmpty else { return .noDevice }
-      if let requestedName {
-        let matches = matching(requestedName, in: avCandidates)
-        guard matches.count == 1, let match = matches.first else {
-          logger.warning(
-            "device_selection",
-            matches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
-          )
-          return matches.isEmpty ? .noDevice : .ambiguousDevice
-        }
-        selectedCandidate = match
-      } else {
-        selectedCandidate = avCandidates[0]
-      }
-    } else if let requestedName {
+    if let requestedName {
       let halMatches = matching(requestedName, in: halCandidates)
         .map(attachUniqueActiveAV)
       let avMatches = matching(requestedName, in: avCandidates).filter { avCandidate in
@@ -365,30 +379,16 @@ final class ListeningModeCoordinator {
       }
       selectedCandidate = halMatches.first ?? avMatches[0]
     } else {
-      let selectedHALCandidates = halCandidates.filter { $0.route == .selected }
-      if selectedHALCandidates.count == 1, let selected = selectedHALCandidates.first {
-        selectedCandidate = attachUniqueActiveAV(to: selected)
-      } else if selectedHALCandidates.count > 1 {
-        logger.warning("device_selection", "ambiguous-active-device")
-        return .ambiguousDevice
-      } else if halCandidates.count == 1 {
-        let selectedAVCandidates = avCandidates.filter { $0.route == .selected }
-        if selectedAVCandidates.count == 1, let selected = selectedAVCandidates.first {
-          selectedCandidate = selected
-        } else if selectedAVCandidates.count > 1 {
-          logger.warning("device_selection", "ambiguous-active-device")
-          return .ambiguousDevice
-        } else {
-          selectedCandidate = halCandidates[0]
-        }
+      let candidates = logicalCandidates()
+      guard !candidates.isEmpty else { return .noDevice }
+      if candidates.count == 1, let only = candidates.first {
+        selectedCandidate = only
       } else {
-        switch chooseAmbiguous(halCandidates.map(\.displayName)) {
-        case .selected(let index) where halCandidates.indices.contains(index):
-          selectedCandidate = halCandidates[index]
+        switch chooseAmbiguous(candidates.map(\.displayName)) {
+        case .selected(let index) where candidates.indices.contains(index):
+          selectedCandidate = candidates[index]
         case .selected, .unavailable:
           return .ambiguousDevice
-        case .cancelled:
-          return .cancelled
         }
       }
     }
@@ -398,6 +398,16 @@ final class ListeningModeCoordinator {
     }
     logger.info("listening_mode.transport", session.transport.listeningModeTransportKind.rawValue)
     return .session(session)
+  }
+
+  private func logicalCandidates() -> [ListeningModeCandidate] {
+    let joinedHAL = halCandidates.map(attachUniqueActiveAV)
+    let independentAV = avCandidates.filter { avCandidate in
+      !joinedHAL.contains { halCandidate in
+        representsJoinedAVTarget(avCandidate, in: halCandidate)
+      }
+    }
+    return joinedHAL + independentAV
   }
 
   private func matching(
@@ -522,17 +532,22 @@ final class ListeningModeCoordinator {
   ) -> ListeningModeSession {
     let availableModes: [ListeningMode]
     let currentMode: ListeningMode?
+    let stateObservation: ListeningModeStateObservation
+    let availabilityObservation: ListeningModeAvailabilityObservation?
     let canSet: Bool
     var allowOffAuthorization: ListeningModeAllowOffAuthorization?
+    var allowsOffProbe = false
     var freshAVBlocksCachedAllowOff = false
 
     switch command {
     case .get:
       availableModes = []
+      availabilityObservation = nil
       let currentObservedAt = transport.listeningModeTransportKind == .av
         ? correlation?.captureObservationTime()
         : nil
-      currentMode = transport.currentListeningMode()
+      stateObservation = transport.listeningModeStateObservation()
+      currentMode = stateObservation.value
       canSet = false
       if currentMode == .off, let correlation, let currentObservedAt {
         correlation.observeCurrentOff(observedAt: currentObservedAt)
@@ -546,8 +561,11 @@ final class ListeningModeCoordinator {
         blocksCachedAllowOff: blocksCachedAllowOff
       )
       currentMode = preflight.currentMode
+      stateObservation = preflight.stateObservation
+      availabilityObservation = preflight.availabilityObservation
       availableModes = preflight.availableModes
       allowOffAuthorization = preflight.allowOffAuthorization
+      allowsOffProbe = preflight.allowsOffProbe
       freshAVBlocksCachedAllowOff = preflight.blocksCachedAllowOff
       switch command {
       case .list:
@@ -560,7 +578,7 @@ final class ListeningModeCoordinator {
     }
 
     let effectiveModes: [ListeningMode]
-    if allowOffAuthorization != nil {
+    if allowOffAuthorization != nil || allowsOffProbe {
       let advertised = Set(availableModes).union([.off])
       effectiveModes = ListeningMode.allCases.filter { advertised.contains($0) }
     } else {
@@ -573,7 +591,9 @@ final class ListeningModeCoordinator {
       ? ListeningModeWritePlan(
         transport: transport,
         availableModes: effectiveModes,
-        allowOffAuthorization: allowOffAuthorization
+        allowOffAuthorization: allowOffAuthorization,
+        allowsOffProbe: allowsOffProbe,
+        allowOffCorrelation: correlation
       )
       : nil
 
@@ -582,6 +602,8 @@ final class ListeningModeCoordinator {
       transport: transport,
       availableModes: effectiveModes,
       currentMode: currentMode,
+      stateObservation: stateObservation,
+      availabilityObservation: availabilityObservation,
       writePlan: writePlan,
       allowOffAuthorization: allowOffAuthorization,
       blocksCachedAllowOff: freshAVBlocksCachedAllowOff
@@ -590,8 +612,11 @@ final class ListeningModeCoordinator {
 
   private struct ListeningModeAvailabilityPreflight {
     let currentMode: ListeningMode?
+    let stateObservation: ListeningModeStateObservation
+    let availabilityObservation: ListeningModeAvailabilityObservation
     let availableModes: [ListeningMode]
     let allowOffAuthorization: ListeningModeAllowOffAuthorization?
+    let allowsOffProbe: Bool
     let blocksCachedAllowOff: Bool
   }
 
@@ -605,7 +630,8 @@ final class ListeningModeCoordinator {
     let observedAt = transport.listeningModeTransportKind == .av
       ? correlation?.captureObservationTime()
       : nil
-    let currentMode = transport.currentListeningMode()
+    let stateObservation = transport.listeningModeStateObservation()
+    let currentMode = stateObservation.value
     let availability = transport.listeningModeAvailabilityObservation()
     let availableModes = normalizedModes(from: availability)
     let freshAVBlocksCachedAllowOff = availabilityBlocksCachedAllowOff(
@@ -622,18 +648,55 @@ final class ListeningModeCoordinator {
       blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
       observedAt: observedAt
     )
+    let allowsOffProbe = shouldProbeAllowOff(
+      availability: availability,
+      transport: transport,
+      command: command,
+      correlation: correlation,
+      hasAuthorization: allowOffAuthorization != nil
+    )
     return ListeningModeAvailabilityPreflight(
       currentMode: currentMode,
+      stateObservation: stateObservation,
+      availabilityObservation: availability,
       availableModes: availableModes,
       allowOffAuthorization: allowOffAuthorization,
+      allowsOffProbe: allowsOffProbe,
       blocksCachedAllowOff: freshAVBlocksCachedAllowOff
     )
+  }
+
+  private func shouldProbeAllowOff(
+    availability: ListeningModeAvailabilityObservation,
+    transport: any ListeningModeTransport,
+    command: ListeningModeCommand,
+    correlation: ListeningModeAllowOffCorrelation?,
+    hasAuthorization: Bool
+  ) -> Bool {
+    guard transport.listeningModeTransportKind == .hal,
+      commandExplicitlyTargetsOff(command),
+      case .value = availability,
+      !hasAuthorization
+    else { return false }
+    return correlation?.hasCachedDenial() != true
+  }
+
+  private func commandExplicitlyTargetsOff(_ command: ListeningModeCommand) -> Bool {
+    switch command {
+    case .set(.off): return true
+    case let .cycle(requested): return requested?.contains(.off) == true
+    case .get, .list, .set: return false
+    }
   }
 
   private func normalizedModes(
     from observation: ListeningModeAvailabilityObservation
   ) -> [ListeningMode] {
-    guard case .value(let modes) = observation else { return [] }
+    let modes: [ListeningMode]
+    switch observation {
+    case let .value(value), let .partial(value): modes = value
+    case .unavailable, .readError: return []
+    }
     let advertised = Set(modes)
     return ListeningMode.allCases.filter { advertised.contains($0) }
   }
@@ -698,9 +761,15 @@ final class ListeningModeCoordinator {
   ) -> Bool {
     switch command {
     case .get:
-      return session.currentMode != nil
+      switch session.stateObservation {
+      case .value, .unknown: return true
+      case .unavailable, .readError: return false
+      }
     case .list:
-      return !session.availableModes.isEmpty
+      switch session.availabilityObservation {
+      case .value, .partial: return true
+      case .unavailable, .readError, .none: return false
+      }
     case .set(let target):
       return session.writePlan?.canWrite(target) == true
     case .cycle(let requested):

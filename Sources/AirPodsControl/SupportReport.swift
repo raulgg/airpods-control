@@ -4,9 +4,9 @@ import Foundation
 // interpreted before the document is built.
 struct SupportReportDocument {
   struct Device {
-    let family: SupportReportDeviceFamily
+    let family: SupportReportDeviceFamily?
     let modelName: String?
-    let modelIdentifier: String
+    let modelIdentifier: String?
     let bluetoothProductID: String?
     let macOS: String
     let cliVersion: String

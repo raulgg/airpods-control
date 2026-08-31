@@ -11,6 +11,7 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   private let lock = NSLock()
   private var positiveEvidence: [String: Date] = [:]
   private var negativeEvidence: [String: Date] = [:]
+  private var denialEvidence: [String: Date] = [:]
 
   init?(
     salt: Data,
@@ -32,12 +33,20 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     lock.lock()
     let observedAt = positiveEvidence[key]
     let negativeObservedAt = negativeEvidence[key]
+    let deniedAt = denialEvidence[key]
     lock.unlock()
-    guard let observedAt,
-      negativeObservedAt ?? .distantPast < observedAt,
-      let evidence = usableEvidence(observedAt: observedAt)
-    else { return .miss }
-    return .hit(AllowOffCacheRecord(evidence: evidence, key: key))
+    if let negativeObservedAt,
+      negativeObservedAt >= observedAt ?? .distantPast,
+      let deniedAt,
+      deniedAt >= negativeObservedAt,
+      let evidence = usableEvidence(observedAt: deniedAt)
+    {
+      return .denied(AllowOffCacheRecord(evidence: evidence, key: key))
+    }
+    guard let observedAt, let evidence = usableEvidence(observedAt: observedAt) else {
+      return .miss
+    }
+    return .allowed(AllowOffCacheRecord(evidence: evidence, key: key))
   }
 
   func applyObservation(
@@ -54,6 +63,9 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     let existingPositive = positiveEvidence[key]
     let existingNegative = negativeEvidence[key]
     if allowsOff {
+      guard denialEvidence[key] ?? .distantPast < observedAt else {
+        return .unchanged
+      }
       guard existingNegative ?? .distantPast < observedAt,
         existingPositive ?? .distantPast < observedAt
       else { return .unchanged }
@@ -66,10 +78,47 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       )
       guard existingPositive ?? .distantPast <= effectiveObservedAt,
         existingNegative ?? .distantPast < effectiveObservedAt
-      else { return .unchanged }
+      else {
+        guard existingNegative != nil,
+          denialEvidence[key] ?? .distantPast < effectiveObservedAt
+        else {
+          return .unchanged
+        }
+        denialEvidence[key] = effectiveObservedAt
+        return .applied
+      }
       positiveEvidence.removeValue(forKey: key)
       negativeEvidence[key] = effectiveObservedAt
+      denialEvidence[key] = effectiveObservedAt
     }
+    return .applied
+  }
+
+  func invalidatePositiveObservation(
+    rawDeviceUID: String,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    guard let key = testDigestKey(salt: salt, rawDeviceUID: rawDeviceUID) else {
+      return .unavailable
+    }
+    guard observedAt.timeIntervalSince1970.isFinite else { return .unavailable }
+    lock.lock()
+    defer { lock.unlock() }
+    let effectiveObservedAt = effectiveNegativeObservedAt(
+      observedAt: observedAt,
+      existingPositive: positiveEvidence[key]
+    )
+    if let deniedAt = denialEvidence[key],
+      usableEvidence(observedAt: deniedAt) != nil,
+      positiveEvidence[key] ?? .distantPast <= deniedAt
+    {
+      return .unchanged
+    }
+    guard positiveEvidence[key] ?? .distantPast <= effectiveObservedAt,
+      negativeEvidence[key] ?? .distantPast < effectiveObservedAt
+    else { return .unchanged }
+    positiveEvidence.removeValue(forKey: key)
+    negativeEvidence[key] = effectiveObservedAt
     return .applied
   }
 

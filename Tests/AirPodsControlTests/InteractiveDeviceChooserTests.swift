@@ -32,7 +32,7 @@ func testInteractiveDeviceChooserEligibility() {
       writeError: { output += $0 }
     )
 
-    check(outcome == .cancelled, "an ineligible chooser cancels")
+    check(outcome == .declined, "an ineligible chooser is declined")
     check(readCount == 0, "an ineligible chooser does not read standard input")
     check(output.isEmpty, "an ineligible chooser does not write a prompt")
   }
@@ -82,7 +82,7 @@ func testInteractiveDeviceChooserEscapesUnsafeDeviceNames() {
     "Multiple compatible devices are connected:\n"
     + "  1. Desk AirPods\n"
     + "  2. Café 🎧\\n\\r\\t\\\\\\u{001B}\\u{007F}\\u{2028}\\u{2029}\n"
-    + "Select a device [1-2] (blank or q cancels): "
+    + "Select a device [1-2] (blank or q declines): "
   check(
     output == expectedOutput,
     "chooser escapes record-breaking and terminal control characters"
@@ -140,15 +140,15 @@ func testInteractiveDeviceChooserRepromptsForOnlyDisplayedNumbers() {
   )
 }
 
-func testInteractiveDeviceChooserCancellation() {
+func testInteractiveDeviceChooserDecline() {
   let eligibility = InteractiveDeviceChooser.Eligibility(
     inputIsTerminal: true,
     errorIsTerminal: true,
     jsonOutput: false
   )
-  let cancellations: [String?] = ["", " \t", "q", " Q ", nil]
+  let declines: [String?] = ["", " \t", "q", " Q ", nil]
 
-  for response in cancellations {
+  for response in declines {
     var readCount = 0
     let outcome = InteractiveDeviceChooser.choose(
       deviceNames: ["Desk AirPods", "Travel AirPods"],
@@ -159,8 +159,8 @@ func testInteractiveDeviceChooserCancellation() {
       },
       writeError: { _ in }
     )
-    check(outcome == .cancelled, "blank, q, and EOF cancel selection")
-    check(readCount == 1, "cancellation consumes exactly one response")
+    check(outcome == .declined, "blank, q, and EOF decline selection")
+    check(readCount == 1, "declining consumes exactly one response")
   }
 }
 
@@ -182,7 +182,7 @@ func testInteractiveDeviceChooserRequiresAmbiguity() {
     writeError: { output += $0 }
   )
 
-  check(outcome == .cancelled, "a chooser with fewer than two candidates cancels")
+  check(outcome == .declined, "a chooser with fewer than two candidates declines")
   check(readCount == 0, "a nonambiguous chooser does not read")
   check(output.isEmpty, "a nonambiguous chooser does not write")
 }
@@ -193,6 +193,6 @@ func runInteractiveDeviceChooserTests() {
   testInteractiveDeviceChooserEscapesUnsafeDeviceNames()
   testInteractiveDeviceChooserEscapesBidirectionalControls()
   testInteractiveDeviceChooserRepromptsForOnlyDisplayedNumbers()
-  testInteractiveDeviceChooserCancellation()
+  testInteractiveDeviceChooserDecline()
   testInteractiveDeviceChooserRequiresAmbiguity()
 }

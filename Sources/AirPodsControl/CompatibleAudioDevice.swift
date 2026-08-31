@@ -28,12 +28,23 @@ enum AudioDeviceSelectionObservation: Equatable {
 }
 
 enum DeviceSelectionPolicy {
-  // Existing operational commands use the first compatible device when no
-  // name is supplied. A supplied name must always resolve uniquely.
-  case firstOrExact
+  // Operational commands require one target. They never choose the first
+  // device merely because discovery returned it first.
+  case singleOrExact
   // Status lists every compatible device when unnamed. A supplied name still
   // uses the same unique exact-match rule as every other operational command.
   case allOrExact
+}
+
+enum DeviceSelection<Value> {
+  case selected([Value])
+  case noDevice
+  case ambiguousDevice
+}
+
+enum CommandDeviceResolution {
+  case devices([any CompatibleAudioDevice])
+  case failed(TerminalReason)
 }
 
 protocol CompatibleAudioDevice {

@@ -178,6 +178,115 @@ func testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly() {
   check(backend.writtenValues == [1], "explicit Off cycle writes raw mode one")
 }
 
+func testListeningModeAllowOffExplicitProbeClassification() {
+  let clock = Date(timeIntervalSince1970: 2_000_000_125)
+
+  func fixture(
+    transport: FakeListeningModeTransport
+  ) -> (
+    cache: InMemoryListeningModeAllowOffCache,
+    candidate: ListeningModeCandidate
+  ) {
+    let backend = FakeHALRoutingBackend()
+    let correlated = allowOffCacheFixture(backend: backend, now: { clock })
+    return (
+      correlated.cache,
+      candidate(
+        name: transport.name ?? "Probe AirPods",
+        hal: transport,
+        route: .notSelected,
+        allowOffCorrelation: correlated.correlation
+      )
+    )
+  }
+
+  let successfulTransport = FakeListeningModeTransport(
+    name: "Successful Probe AirPods",
+    kind: .hal,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation
+  )
+  let successful = fixture(transport: successfulTransport)
+  let successfulOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [successful.candidate]
+  )
+  check(successfulOutcome.plain == "ok", "a definitive Off probe succeeds")
+  check(successfulTransport.allowOffWrites == [true], "an explicit Off miss probes once")
+  if case .allowed = successful.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "a successful correlated probe stores positive evidence")
+  } else {
+    check(false, "a successful correlated probe stores positive evidence")
+  }
+
+  let deniedTransport = FakeListeningModeTransport(
+    name: "Denied Probe AirPods",
+    kind: .hal,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation,
+    appliesWrites: false
+  )
+  let denied = fixture(transport: deniedTransport)
+  let deniedOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [denied.candidate]
+  )
+  check(deniedOutcome.plain == "unsupported", "definitive non-Off probe is unsupported")
+  if case .denied = denied.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "definitive non-Off probe stores denial evidence")
+  } else {
+    check(false, "definitive non-Off probe stores denial evidence")
+  }
+  _ = coordinatorOutcome(["lm", "set", "off"], candidates: [denied.candidate])
+  check(deniedTransport.setterTargets == [.off], "cached denial prevents a repeated probe")
+
+  let rejectedTransport = FakeListeningModeTransport(
+    name: "Rejected Probe AirPods",
+    kind: .hal,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation,
+    acceptsWrites: false,
+    appliesWrites: false
+  )
+  let rejected = fixture(transport: rejectedTransport)
+  let rejectedOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [rejected.candidate]
+  )
+  check(rejectedOutcome.plain == "unavailable", "a rejected probe setter is unavailable")
+  check(rejected.cache.lookup(rawDeviceUID: "uid-42") == .miss, "rejection stores no denial")
+
+  let unreadableTransport = FakeListeningModeTransport(
+    name: "Unreadable Probe AirPods",
+    kind: .hal,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation,
+    appliesWrites: false
+  )
+  unreadableTransport.dropsWriteReadback = true
+  let unreadable = fixture(transport: unreadableTransport)
+  let unreadableOutcome = coordinatorOutcome(
+    ["lm", "set", "off"],
+    candidates: [unreadable.candidate]
+  )
+  check(unreadableOutcome.plain == "no-op", "an unreadable accepted probe is no-op")
+  check(unreadable.cache.lookup(rawDeviceUID: "uid-42") == .miss, "unreadable final state stores no denial")
+
+  let passiveTransport = FakeListeningModeTransport(
+    name: "Passive Probe AirPods",
+    kind: .hal,
+    modes: [.transparency, .adaptive, .noiseCancellation],
+    current: .noiseCancellation
+  )
+  let passive = fixture(transport: passiveTransport)
+  _ = coordinatorOutcome(["lm", "list"], candidates: [passive.candidate])
+  _ = coordinatorOutcome(["lm", "cycle"], candidates: [passive.candidate])
+  check(
+    passiveTransport.allowOffWrites == [false],
+    "list never writes and the default cycle never performs an Off probe"
+  )
+}
+
 func testListeningModeWritePlanOwnsHALAllowOffPolicy() {
   let clock = Date(timeIntervalSince1970: 2_000_000_150)
   let backend = FakeHALRoutingBackend()
@@ -255,7 +364,7 @@ func testListeningModeWritePlanOwnsHALAllowOffPolicy() {
 }
 
 func testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() {
-  let clock = Date(timeIntervalSince1970: 2_000_000_200)
+  var clock = Date(timeIntervalSince1970: 2_000_000_200)
   let backend = FakeHALRoutingBackend()
   backend.rawModeRead = .value(2)
   backend.appliesWrite = false
@@ -288,12 +397,13 @@ func testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() {
     mismatch.payload["allowOffAvailability"] != nil,
     "mismatch reports the cached evidence consumed by that invocation"
   )
-  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
-    check(true, "accepted definitive mismatch evicts the positive evidence")
+  if case .denied = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "accepted definitive mismatch records denial evidence")
   } else {
-    check(false, "accepted definitive mismatch evicts the positive evidence")
+    check(false, "accepted definitive mismatch records denial evidence")
   }
 
+  clock.addTimeInterval(1)
   _ = fixture.cache.applyObservation(
     rawDeviceUID: "uid-42",
     allowsOff: true,
@@ -301,8 +411,8 @@ func testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() {
   )
   backend.writeResult = .notSettable
   let rejected = coordinatorOutcome(["lm", "set", "off"], candidates: [halCandidate])
-  check(rejected.plain == "no-op", "a provider rejection remains a no-op")
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+  check(rejected.plain == "unavailable", "a provider rejection is unavailable")
+  if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "setter rejection leaves positive evidence unchanged")
   } else {
     check(false, "setter rejection leaves positive evidence unchanged")
@@ -331,10 +441,10 @@ func testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() {
     avMismatch.payload["listeningMode"] as? String == "transparency",
     "an AV mismatch reports the definitive final mode"
   )
-  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
-    check(true, "an accepted definitive AV mismatch evicts fresh positive evidence")
+  if case .denied = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "an accepted definitive AV mismatch records denial evidence")
   } else {
-    check(false, "an accepted definitive AV mismatch evicts fresh positive evidence")
+    check(false, "an accepted definitive AV mismatch records denial evidence")
   }
 
   backend.writeResult = .success
@@ -353,9 +463,9 @@ func testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() {
     ["lm", "set", "off", "--json"],
     candidates: [halCandidate]
   )
-  check(setAfterMismatch.plain == "unsupported", "HAL Off is unsupported after AV eviction")
-  check(setAfterMismatch.exitCode == 4, "unsupported HAL Off exits four after AV eviction")
-  check(backend.writtenValues.isEmpty, "unsupported HAL Off does not invoke the setter")
+  check(setAfterMismatch.plain == "unsupported", "cached denial makes HAL Off unsupported")
+  check(setAfterMismatch.exitCode == 4, "cached denial exits four")
+  check(backend.writtenValues.isEmpty, "cached denial prevents another HAL probe")
 }
 
 func testListeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous() {
@@ -380,9 +490,9 @@ func testListeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous() {
     ["lm", "set", "off", "--json"],
     candidates: [avCandidate]
   )
-  check(rejected.plain == "no-op", "a rejected AV Off setter remains a no-op")
-  check(rejected.exitCode == 3, "a rejected AV Off setter exits three")
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+  check(rejected.plain == "unavailable", "a rejected AV Off setter is unavailable")
+  check(rejected.exitCode == 6, "a rejected AV Off setter exits six")
+  if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "a rejected AV setter preserves fresh positive evidence")
   } else {
     check(false, "a rejected AV setter preserves fresh positive evidence")
@@ -396,7 +506,7 @@ func testListeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous() {
   )
   check(unknown.plain == "no-op", "an unknown AV Off readback remains a no-op")
   check(unknown.exitCode == 3, "an unknown AV Off readback exits three")
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+  if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "an unknown AV readback preserves fresh positive evidence")
   } else {
     check(false, "an unknown AV readback preserves fresh positive evidence")
@@ -424,9 +534,9 @@ func testListeningModeAllowOffAVEvidenceLifecycle() {
   )
   _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
   backend.onDeviceUIDRead = nil
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+  if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "successful AV availability with Off refreshes positive evidence")
-    if case .hit(let record) = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    if case .allowed(let record) = fixture.cache.lookup(rawDeviceUID: "uid-42") {
       check(
         record.evidence.observedAt == firstObservationTime,
         "AV observation time is captured before UID correlation"
@@ -449,7 +559,7 @@ func testListeningModeAllowOffAVEvidenceLifecycle() {
   let readsBeforeGet = av.readModesCount
   _ = coordinatorOutcome(["lm", "get"], candidates: [joined])
   check(av.readModesCount == readsBeforeGet, "AV get does not add an availability read")
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+  if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "a live AV get that returns Off refreshes positive evidence")
   } else {
     check(false, "a live AV get that returns Off refreshes positive evidence")
@@ -457,7 +567,7 @@ func testListeningModeAllowOffAVEvidenceLifecycle() {
 
   av.availabilityObservation = .unavailable
   _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
-  if case .hit = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+  if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     check(true, "AV selector/read failure leaves evidence unchanged")
   } else {
     check(false, "AV selector/read failure leaves evidence unchanged")
@@ -471,11 +581,52 @@ func testListeningModeAllowOffAVEvidenceLifecycle() {
   av.availabilityObservation = nil
   av.current = .off
   _ = coordinatorOutcome(["lm", "set", "adaptive"], candidates: [joined])
-  if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
-    check(true, "a non-Off operation does not warm evidence from incidental reads")
+  if case .denied = fixture.cache.lookup(rawDeviceUID: "uid-42") {
+    check(true, "a non-Off operation preserves existing denial evidence")
   } else {
-    check(false, "a non-Off operation does not warm evidence from incidental reads")
+    check(false, "a non-Off operation preserves existing denial evidence")
   }
+
+  clock.addTimeInterval(1)
+  av.availabilityObservation = .value([
+    .transparency,
+    .adaptive,
+    .noiseCancellation,
+  ])
+  _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
+  check(
+    {
+      if case .denied = fixture.cache.lookup(rawDeviceUID: "uid-42") { return true }
+      return false
+    }(),
+    "an AV omission preserves an unexpired denial"
+  )
+
+  backend.resetWrites()
+  let deniedHAL = ListeningModeCandidate(
+    displayName: "Cached AirPods",
+    selectableNames: ["Cached AirPods"],
+    avTransport: nil,
+    halTransport: fixture.transport,
+    route: .notSelected,
+    allowOffCorrelation: fixture.correlation
+  )
+  let deniedHALOutcome = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [deniedHAL]
+  )
+  check(
+    deniedHALOutcome.plain == "unsupported",
+    "an AV omission keeps HAL Off unsupported after denial"
+  )
+  check(
+    deniedHALOutcome.exitCode == 4,
+    "cached denial after AV omission exits four"
+  )
+  check(
+    backend.writtenValues.isEmpty,
+    "cached denial after AV omission avoids another HAL setter call"
+  )
 }
 
 func testListeningModeAllowOffAmbiguousCorrelation() {
@@ -522,10 +673,10 @@ func testListeningModeAllowOffAmbiguousCorrelation() {
       )
     ]
   )
-  check(ambiguousOutcome.plain == "unsupported", "ambiguous UID correlation is a silent miss")
+  check(ambiguousOutcome.plain == "ok", "ambiguous UID correlation does not prevent a live probe")
   check(
-    ambiguousBackend.writtenValues.isEmpty,
-    "ambiguous cache correlation never authorizes a write"
+    ambiguousBackend.writtenValues == [1],
+    "an explicit probe does not require cache correlation"
   )
 }
 
@@ -618,12 +769,12 @@ func testListeningModeAllowOffFreshNegativeEvidence() {
     ]
   )
   check(
-    freshNegative.plain == "unsupported",
-    "fresh AV negative evidence suppresses a stale cache hit even if deletion fails"
+    freshNegative.plain == "ok",
+    "ordinary AV omission does not manufacture unsupported evidence"
   )
   check(
-    staleBackend.writtenValues.isEmpty,
-    "failed negative-evidence persistence never reauthorizes HAL Off in the same command"
+    staleBackend.writtenValues == [1],
+    "an explicit HAL request probes after ordinary AV omission"
   )
 }
 
@@ -669,12 +820,12 @@ func testListeningModeAllowOffStalePositiveAuthorization() {
     ]
   )
   check(
-    stalePositiveOutcome.plain == "unsupported",
-    "a stale positive AV observation cannot authorize HAL Off"
+    stalePositiveOutcome.plain == "ok",
+    "an unusable positive cache write falls back to an explicit probe"
   )
   check(
-    stalePositiveBackend.writtenValues.isEmpty,
-    "a rejected stale positive observation never reaches the HAL setter"
+    stalePositiveBackend.writtenValues == [1],
+    "an explicit probe does not depend on persisted positive evidence"
   )
 }
 
@@ -714,8 +865,11 @@ func testInMemoryAllowOffCachePreservesObservationOrdering() {
     "equal negative observations replace positive evidence"
   )
   check(
-    cache.lookup(rawDeviceUID: "equal-timestamp-uid") == .miss,
-    "equal negative evidence blocks the positive lookup"
+    {
+      if case .denied = cache.lookup(rawDeviceUID: "equal-timestamp-uid") { return true }
+      return false
+    }(),
+    "equal negative evidence is returned as a denial"
   )
 
   let rollbackUID = "rollback-uid"
@@ -739,8 +893,11 @@ func testInMemoryAllowOffCachePreservesObservationOrdering() {
   )
   current = positiveObservedAt
   check(
-    cache.lookup(rawDeviceUID: rollbackUID) == .miss,
-    "in-memory cache cannot resurrect rollback-superseded evidence"
+    {
+      if case .denied = cache.lookup(rawDeviceUID: rollbackUID) { return true }
+      return false
+    }(),
+    "in-memory cache returns rollback-superseding denial evidence"
   )
 }
 
@@ -824,9 +981,9 @@ func testListeningModeCoordinatorOrdersDelayedAVObservations() {
     "the older AV observation completes after the newer one"
   )
   if case .miss = cache.lookup(rawDeviceUID: "uid-80") {
-    check(true, "an older positive AV observation cannot replace a newer tombstone")
+    check(true, "ordinary AV absence leaves no cached denial")
   } else {
-    check(false, "an older positive AV observation cannot replace a newer tombstone")
+    check(false, "ordinary AV absence leaves no cached denial")
   }
 
   let halBackend = FakeHALRoutingBackend()
@@ -861,8 +1018,6 @@ func testListeningModeCoordinatorOrdersDelayedAVObservations() {
       )
     ]
   )
-  check(
-    offOutcome.plain == "unsupported" && halBackend.writtenValues.isEmpty,
-    "the newer negative tombstone blocks a later HAL Off write"
-  )
+  check(offOutcome.plain == "ok", "ordinary AV absence permits a later explicit probe")
+  check(halBackend.writtenValues == [1], "the later explicit Off request reaches the setter")
 }

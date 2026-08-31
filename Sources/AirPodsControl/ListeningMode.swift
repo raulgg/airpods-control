@@ -41,9 +41,11 @@ enum ListeningMode: String, CaseIterable {
 }
 
 struct ListeningModeWriteResolution {
+  let setterAccepted: Bool
   let verified: Bool
   let state: ListeningMode?
   let inferredOffFallback: Bool
+  let probeDenied: Bool
 }
 
 // A non-idempotent command verifies only when the provider accepted the setter
@@ -53,7 +55,8 @@ func resolveListeningModeWrite(
   requested: ListeningMode,
   setterAccepted: Bool,
   observed: ListeningMode?,
-  transparencySupported: Bool
+  transparencySupported: Bool,
+  probeDenied: Bool = false
 ) -> ListeningModeWriteResolution {
   let verified = setterAccepted && observed == requested
   let inferredOffFallback =
@@ -63,8 +66,10 @@ func resolveListeningModeWrite(
     && transparencySupported
     && observed != .transparency
   return ListeningModeWriteResolution(
+    setterAccepted: setterAccepted,
     verified: verified,
     state: inferredOffFallback ? .transparency : observed,
-    inferredOffFallback: inferredOffFallback
+    inferredOffFallback: inferredOffFallback,
+    probeDenied: probeDenied
   )
 }

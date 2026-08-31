@@ -157,7 +157,7 @@ func testListeningModeCoordinatorNeverFallsBackAfterASetter() {
   check(hal.setterTargets.isEmpty, "a post-setter failure never falls through to HAL")
 }
 
-func testListeningModeCoordinatorAmbiguityAndCancellation() {
+func testListeningModeCoordinatorAmbiguityAndDecline() {
   let first = FakeListeningModeTransport(name: "Desk AirPods", kind: .hal)
   let second = FakeListeningModeTransport(name: "Travel AirPods", kind: .hal)
   let candidates = [
@@ -167,7 +167,7 @@ func testListeningModeCoordinatorAmbiguityAndCancellation() {
 
   let ambiguous = coordinatorOutcome(["lm", "get", "--json"], candidates: candidates)
   check(ambiguous.plain == "ambiguous-device", "noninteractive ambiguity is specific")
-  check(ambiguous.exitCode == 1, "ambiguous device exits one")
+  check(ambiguous.exitCode == 8, "ambiguous device exits eight")
   check(
     ambiguous.payload["error"] as? String == "ambiguous-device",
     "ambiguous JSON has its specific error"
@@ -181,13 +181,13 @@ func testListeningModeCoordinatorAmbiguityAndCancellation() {
   )
   check(chosen.payload["device"] as? String == "Travel AirPods", "chooser index selects target")
 
-  let cancelled = coordinatorOutcome(
+  let declined = coordinatorOutcome(
     ["lm", "get"],
     candidates: candidates,
-    choice: .cancelled
+    choice: .unavailable
   )
-  check(cancelled.plain == "cancelled", "interactive cancellation has stable plain output")
-  check(cancelled.exitCode == 1, "interactive cancellation exits one")
+  check(declined.plain == "ambiguous-device", "declining keeps ambiguity explicit")
+  check(declined.exitCode == 8, "declining exits as ambiguous-device")
 
   let duplicateNameCandidates = [
     candidate(name: "Same AirPods", hal: first, route: .notSelected),
@@ -201,7 +201,7 @@ func testListeningModeCoordinatorAmbiguityAndCancellation() {
   check(duplicate.plain == "ambiguous-device", "duplicate exact names never prompt or select")
 }
 
-func testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL() {
+func testListeningModeCoordinatorTreatsSelectedAndInactiveAsAmbiguous() {
   let selectedAV = FakeListeningModeTransport(name: "Selected AirPods", kind: .av)
   let inactiveHAL = FakeListeningModeTransport(name: "Inactive AirPods", kind: .hal)
   let candidates = [
@@ -214,8 +214,8 @@ func testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL() {
     candidates: candidates
   )
 
-  check(outcome.plain == "ok", "the selected AV target resolves")
-  check(selectedAV.setterTargets == [.adaptive], "the selected AV target receives the setter")
+  check(outcome.plain == "ambiguous-device", "route selection does not hide another target")
+  check(selectedAV.setterTargets.isEmpty, "ambiguous selected AV target is not written")
   check(inactiveHAL.setterTargets.isEmpty, "the inactive HAL target remains untouched")
 
   let otherSelectedAV = FakeListeningModeTransport(name: "Other AirPods", kind: .av)
@@ -227,7 +227,7 @@ func testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL() {
   )
 
   check(ambiguousOutcome.plain == "ambiguous-device", "multiple selected AV targets fail closed")
-  check(selectedAV.setterTargets == [.adaptive], "ambiguous resolution does not write again")
+  check(selectedAV.setterTargets.isEmpty, "ambiguous resolution does not write")
   check(otherSelectedAV.setterTargets.isEmpty, "an ambiguous selected AV target is not written")
   check(inactiveHAL.setterTargets.isEmpty, "ambiguous resolution does not write the HAL target")
 }
@@ -363,15 +363,12 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
       return .unavailable
     }
   )
-  if case .session(let session) = unnamedMixed {
-    check(
-      session.transport.listeningModeTransportKind == .hal,
-      "unnamed selection ignores leftover AV rows when HAL exists"
-    )
+  if case .ambiguousDevice = unnamedMixed {
+    check(true, "unnamed mixed providers retain every logical candidate")
   } else {
-    check(false, "one HAL target remains uniquely selectable")
+    check(false, "unnamed mixed providers remain ambiguous")
   }
-  check(!chooserCalled, "leftover AV rows never enter the HAL chooser")
+  check(chooserCalled, "independent AV rows participate in the chooser")
 
   let avOnlyCoordinator = ListeningModeCoordinator(
     avDevices: [pluralAV, otherAV],
@@ -383,10 +380,10 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
     named: nil,
     chooseAmbiguous: { _ in .unavailable }
   )
-  if case .session(let session) = avOnly {
-    check(session.name == "Nearby AirPods", "HAL absence preserves first-AV selection")
+  if case .ambiguousDevice = avOnly {
+    check(true, "multiple AV-only candidates remain ambiguous")
   } else {
-    check(false, "HAL absence keeps legacy AV-only selection")
+    check(false, "HAL absence never selects the first AV candidate")
   }
 }
 
@@ -434,7 +431,7 @@ func testHALListeningModeTranslationAndOffLimitation() {
       )
     ]
   )
-  check(unknownCurrentOutcome.plain == "unsupported", "unknown HAL state blocks a write")
+  check(unknownCurrentOutcome.plain == "unavailable", "unknown HAL state blocks a write")
   check(
     backend.writtenValues.count == writeCountBeforeUnknown,
     "unknown HAL state never reaches the setter"
@@ -448,12 +445,13 @@ func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorPreservesAVUnknownStateWrites()
   testListeningModeCoordinatorReadsOnlyCommandRequirements()
   testListeningModeCoordinatorNeverFallsBackAfterASetter()
-  testListeningModeCoordinatorAmbiguityAndCancellation()
-  testListeningModeCoordinatorPrefersSelectedAVOverSoleInactiveHAL()
+  testListeningModeCoordinatorAmbiguityAndDecline()
+  testListeningModeCoordinatorTreatsSelectedAndInactiveAsAmbiguous()
   testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames()
   testHALListeningModeTranslationAndOffLimitation()
   testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata()
   testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly()
+  testListeningModeAllowOffExplicitProbeClassification()
   testListeningModeWritePlanOwnsHALAllowOffPolicy()
   testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence()
   testListeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous()

@@ -2,21 +2,24 @@ import Foundation
 
 struct CommandOutcome {
   let plain: String
-  let exitCode: Int32
-  let payload: [String: Any]
+  let terminalReason: TerminalReason
+  let data: [String: Any]
   let supportReport: SupportReportDocument?
 
   init(
     plain: String,
-    exitCode: Int32 = 0,
-    payload: [String: Any],
+    terminalReason: TerminalReason = .success,
+    data: [String: Any] = [:],
     supportReport: SupportReportDocument? = nil
   ) {
     self.plain = plain
-    self.exitCode = exitCode
-    self.payload = payload
+    self.terminalReason = terminalReason
+    self.data = data
     self.supportReport = supportReport
   }
+
+  var exitCode: Int32 { terminalReason.exitCode }
+  var payload: [String: Any] { terminalReason.addingEnvelope(to: data) }
 }
 
 enum CommandExecution {
@@ -44,42 +47,47 @@ enum CommandExecution {
     case .noDevice:
       return deviceResolutionFailureOutcome(
         for: invocation.command,
-        plain: "no-device",
-        error: "no-device"
+        reason: .noDevice
       )
     case .ambiguousDevice:
       return deviceResolutionFailureOutcome(
         for: invocation.command,
-        plain: "ambiguous-device",
-        error: "ambiguous-device"
-      )
-    case .cancelled:
-      return deviceResolutionFailureOutcome(
-        for: invocation.command,
-        plain: "cancelled",
-        error: "cancelled"
+        reason: .ambiguousDevice
       )
     }
 
     switch command {
     case .get:
-      let mode = session.currentMode
+      let mode: ListeningMode?
+      switch session.stateObservation {
+      case let .value(value): mode = value
+      case .unknown: mode = nil
+      case .unavailable:
+        return listeningModeFailureOutcome(.unavailable, session: session)
+      case .readError:
+        return listeningModeFailureOutcome(.readError, session: session)
+      }
       return resourceOutcome(
         resource: .listeningMode,
         deviceName: session.name,
         plain: mode?.rawValue ?? "unknown",
-        result: "ok",
         state: mode?.rawValue,
         extra: listeningModeExtra(for: session)
       )
 
     case .list:
+      switch session.availabilityObservation {
+      case .value, .partial: break
+      case .unavailable, .none:
+        return listeningModeFailureOutcome(.unavailable, session: session)
+      case .readError:
+        return listeningModeFailureOutcome(.readError, session: session)
+      }
       let tokens = session.availableModes.map(\.rawValue)
       return resourceOutcome(
         resource: .listeningMode,
         deviceName: session.name,
         plain: tokens.joined(separator: ","),
-        result: "ok",
         state: session.currentMode?.rawValue,
         extra: listeningModeExtra(
           for: session,
@@ -88,10 +96,16 @@ enum CommandExecution {
       )
 
     case .set(let target):
-      guard let writePlan = session.writePlan,
-            writePlan.canWrite(target)
-      else {
-        return unsupportedListeningModeOutcome(session: session)
+      guard let writePlan = session.writePlan else {
+        return listeningModeFailureOutcome(.unavailable, session: session)
+      }
+      guard writePlan.canWrite(target) else {
+        let reason: TerminalReason
+        switch session.availabilityObservation {
+        case .value: reason = .unsupported
+        case .partial, .unavailable, .readError, .none: reason = .unavailable
+        }
+        return listeningModeFailureOutcome(reason, session: session)
       }
 
       if session.currentMode == target {
@@ -99,7 +113,6 @@ enum CommandExecution {
           resource: .listeningMode,
           deviceName: session.name,
           plain: "ok",
-          result: "ok",
           state: target.rawValue,
           extra: listeningModeExtra(for: session)
         )
@@ -116,8 +129,16 @@ enum CommandExecution {
     case .cycle(let requested):
       let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
       let cycleModes = base.filter { session.availableModes.contains($0) }
-      guard cycleModes.count >= 2, let writePlan = session.writePlan else {
-        return unsupportedListeningModeOutcome(session: session)
+      guard let writePlan = session.writePlan else {
+        return listeningModeFailureOutcome(.unavailable, session: session)
+      }
+      guard cycleModes.count >= 2 else {
+        let reason: TerminalReason
+        switch session.availabilityObservation {
+        case .value: reason = .unsupported
+        case .partial, .unavailable, .readError, .none: reason = .unavailable
+        }
+        return listeningModeFailureOutcome(reason, session: session)
       }
 
       let target = ListeningMode.next(current: session.currentMode, within: cycleModes)
@@ -139,7 +160,7 @@ enum CommandExecution {
       _ requestedName: String?,
       _ policy: DeviceSelectionPolicy,
       _ logger: DebugLogger
-    ) -> [any CompatibleAudioDevice]?,
+    ) -> CommandDeviceResolution,
     supportReport: SupportReportCommand = SupportReportCommand()
   ) -> CommandOutcome {
     let logger = DebugLogger(enabled: invocation.debugEnabled)
@@ -150,7 +171,7 @@ enum CommandExecution {
     if case .version = invocation.command {
       return CommandOutcome(
         plain: VERSION,
-        payload: ["result": "ok", "version": VERSION]
+        data: ["version": VERSION]
       )
     }
 
@@ -158,20 +179,21 @@ enum CommandExecution {
     if case .status = invocation.command {
       selectionPolicy = .allOrExact
     } else {
-      selectionPolicy = .firstOrExact
+      selectionPolicy = .singleOrExact
     }
 
-    guard let devices = resolveDevices(
+    let resolution = resolveDevices(
       invocation.requestedDeviceName,
       selectionPolicy,
       logger
-    ), !devices.isEmpty
-    else {
-      return deviceResolutionFailureOutcome(
-        for: invocation.command,
-        plain: "no-device",
-        error: "no-device"
-      )
+    )
+    let devices: [any CompatibleAudioDevice]
+    switch resolution {
+    case let .devices(resolved):
+      precondition(!resolved.isEmpty, "successful device resolution must not be empty")
+      devices = resolved
+    case let .failed(reason):
+      return deviceResolutionFailureOutcome(for: invocation.command, reason: reason)
     }
 
     if case .status = invocation.command {
@@ -195,42 +217,35 @@ enum CommandExecution {
       preconditionFailure("listening-mode commands use executeListeningMode")
 
     case .conversationAwarenessGet:
-      guard device.supportsConversationAwareness() == true,
-            let enabled = device.conversationAwarenessState()
-      else {
-        return resourceOutcome(
-          resource: .conversationAwareness,
-          deviceName: device.name,
-          plain: "unsupported",
-          exitCode: 4,
-          result: "error",
-          state: nil,
-          error: "unsupported"
-        )
+      let enabled: Bool
+      switch device.readConversationAwarenessStatus() {
+      case let .value(value): enabled = value
+      case .unsupported:
+        return conversationAwarenessFailure(.unsupported, device: device)
+      case .unresolved:
+        return conversationAwarenessFailure(.unavailable, device: device)
+      case .readError:
+        return conversationAwarenessFailure(.readError, device: device)
       }
       let state = enabled ? "on" : "off"
       return resourceOutcome(
         resource: .conversationAwareness,
         deviceName: device.name,
         plain: state,
-        result: "ok",
         state: state
       )
 
     case let .conversationAwarenessSet(target):
-      guard device.supportsConversationAwareness() == true,
-            let current = device.conversationAwarenessState(),
-            device.canSetConversationAwareness()
-      else {
-        return resourceOutcome(
-          resource: .conversationAwareness,
-          deviceName: device.name,
-          plain: "unsupported",
-          exitCode: 4,
-          result: "error",
-          state: nil,
-          error: "unsupported"
-        )
+      let current: Bool
+      switch device.readConversationAwarenessStatus() {
+      case let .value(value): current = value
+      case .unsupported:
+        return conversationAwarenessFailure(.unsupported, device: device)
+      case .unresolved, .readError:
+        return conversationAwarenessFailure(.unavailable, device: device)
+      }
+      guard device.canSetConversationAwareness() else {
+        return conversationAwarenessFailure(.unavailable, device: device)
       }
 
       if current == target {
@@ -239,19 +254,26 @@ enum CommandExecution {
           resource: .conversationAwareness,
           deviceName: device.name,
           plain: "ok",
-          result: "ok",
           state: state
         )
       }
 
       let observation = device.setConversationAwarenessAndReadBack(target)
       let observed = observation.observed.map { $0 ? "on" : "off" }
+      guard observation.setterAccepted else {
+        return resourceOutcome(
+          resource: .conversationAwareness,
+          deviceName: device.name,
+          plain: TerminalReason.unavailable.token,
+          terminalReason: .unavailable,
+          state: observed
+        )
+      }
       if observation.observed == target {
         return resourceOutcome(
           resource: .conversationAwareness,
           deviceName: device.name,
           plain: "ok",
-          result: "ok",
           state: observed
         )
       }
@@ -259,25 +281,39 @@ enum CommandExecution {
         resource: .conversationAwareness,
         deviceName: device.name,
         plain: "no-op",
-        exitCode: 3,
-        result: "no-op",
+        terminalReason: .noOp,
         state: observed
       )
     }
   }
 
-  private static func unsupportedListeningModeOutcome(
+  private static func listeningModeFailureOutcome(
+    _ reason: TerminalReason,
     session: ListeningModeSession
   ) -> CommandOutcome {
-    resourceOutcome(
+    precondition(
+      reason == .unsupported || reason == .unavailable || reason == .readError
+    )
+    return resourceOutcome(
       resource: .listeningMode,
       deviceName: session.name,
-      plain: "unsupported",
-      exitCode: 4,
-      result: "error",
+      plain: reason.token,
+      terminalReason: reason,
       state: session.currentMode?.rawValue,
-      error: "unsupported",
       extra: listeningModeExtra(for: session)
+    )
+  }
+
+  private static func conversationAwarenessFailure(
+    _ reason: TerminalReason,
+    device: any CompatibleAudioDevice
+  ) -> CommandOutcome {
+    return resourceOutcome(
+      resource: .conversationAwareness,
+      deviceName: device.name,
+      plain: reason.token,
+      terminalReason: reason,
+      state: nil
     )
   }
 
@@ -293,12 +329,17 @@ enum CommandExecution {
       logger.debug("verify.listening_mode.inferred_off_fallback", true)
     }
 
+    guard resolution.setterAccepted else {
+      return listeningModeFailureOutcome(.unavailable, session: session)
+    }
+    if resolution.probeDenied {
+      return listeningModeFailureOutcome(.unsupported, session: session)
+    }
     if resolution.verified {
       return resourceOutcome(
         resource: .listeningMode,
         deviceName: session.name,
         plain: successPlain,
-        result: "ok",
         state: resolution.state?.rawValue,
         extra: listeningModeExtra(for: session)
       )
@@ -307,8 +348,7 @@ enum CommandExecution {
       resource: .listeningMode,
       deviceName: session.name,
       plain: "no-op",
-      exitCode: 3,
-      result: "no-op",
+      terminalReason: .noOp,
       state: resolution.state?.rawValue,
       extra: listeningModeExtra(for: session)
     )
@@ -316,14 +356,17 @@ enum CommandExecution {
 
   private static func deviceResolutionFailureOutcome(
     for command: CLICommand,
-    plain: String,
-    error: String
+    reason: TerminalReason
   ) -> CommandOutcome {
+    precondition(
+      reason == .noDevice || reason == .ambiguousDevice
+        || reason == .unavailable || reason == .readError
+    )
     if case .status = command {
-      return StatusCommand.noDeviceOutcome()
+      return StatusCommand.resolutionFailureOutcome(reason)
     }
     if case .supportReport = command {
-      return SupportReportCommand.noDeviceOutcome()
+      return SupportReportCommand.resolutionFailureOutcome(reason)
     }
     guard let resource = command.resource else {
       preconditionFailure("version does not require a device")
@@ -337,11 +380,9 @@ enum CommandExecution {
     return resourceOutcome(
       resource: resource,
       deviceName: nil,
-      plain: plain,
-      exitCode: 1,
-      result: "error",
+      plain: reason.token,
+      terminalReason: reason,
       state: nil,
-      error: error,
       extra: extra
     )
   }
@@ -350,23 +391,17 @@ enum CommandExecution {
     resource: CLIResource,
     deviceName: String?,
     plain: String,
-    exitCode: Int32 = 0,
-    result: String,
+    terminalReason: TerminalReason = .success,
     state: String?,
-    error: String? = nil,
     extra: [String: Any] = [:]
   ) -> CommandOutcome {
     var payload = extra
     payload["device"] = deviceName ?? NSNull()
-    payload["result"] = result
     payload[resource.stateKey] = state ?? NSNull()
-    if let error {
-      payload["error"] = error
-    }
     return CommandOutcome(
       plain: plain,
-      exitCode: exitCode,
-      payload: payload
+      terminalReason: terminalReason,
+      data: payload
     )
   }
 

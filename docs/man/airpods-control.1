@@ -101,8 +101,10 @@ Without
 .BR --device ,
 print one record for every eligible canonical device derived from the Core Audio inventory, including Beats candidates. This inventory is independent of the selected defaults, so an eligible device selected only for input, or for neither direction, still appears. Core Audio does not guarantee a stable inventory order. With
 .BR --device ,
-print only the unique case-insensitive whole-name match; no match or an ambiguous match produces
-.BR no-device .
+print only the unique case-insensitive whole-name match. No match produces
+.BR no-device ;
+multiple matches produce
+.BR ambiguous-device .
 .IP
 Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in this order: Listening mode, Conversation Awareness, Selected as audio output, Selected as audio input, left/right ear placement, and Read errors. Inapplicable feature lines are omitted, and records are separated by one blank line. For example:
 .nf
@@ -227,7 +229,9 @@ Print the comma-separated modes supported by the connected device in the determi
 .IP
 A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. HAL does not expose the separate user-configured Allow Off setting. A valid cached AV observation for the exact output endpoint can additionally establish Off as described under
 .BR "ALLOW OFF CACHE" .
-Without that evidence, HAL lists omit Off, direct writes to Off are unsupported, and Off is removed from explicit cycle sets. AV-backed commands continue to expose Off when AV advertises it.
+Without usable positive evidence, HAL lists omit Off. The default cycle never includes Off. An explicit
+.BR "set off"
+or explicit cycle containing Off may make one HAL setter attempt when there is neither usable positive evidence nor a cached denial. A cached denial suppresses the probe and makes explicit Off unsupported. AV-backed commands follow the modes AV advertises, including Off when advertised.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
 Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes always cycle in the order documented under
@@ -243,34 +247,34 @@ cycle still advances in canonical order from the current mode to the next mode t
 .B no-op
 (exit 3).
 .SS ALLOW OFF CACHE
-The CLI can reuse a recent positive AV observation of Allow Off for an exact HAL output endpoint. This weak evidence says only that the endpoint recently advertised Off through AV; it is not a live device query, durable device identity, or protocol acknowledgement. The cache also keeps a negative tombstone when a newer eligible AV read omits Off; that tombstone never authorizes a write.
+The CLI can reuse recent Allow Off evidence for an exact HAL output endpoint. Positive evidence means that AV recently advertised or reported Off. Denial evidence requires an accepted Off request followed by definitive known non-Off readback. Neither is a live device query, durable device identity, or protocol acknowledgement.
 .PP
 An AV available-mode read updates the cache only when already needed for
 .BR list ,
 .BR "set off" ,
-or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes the positive observation; a successful eligible read omitting Off removes the positive observation and writes a negative tombstone. An AV-backed
+or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes positive evidence; a successful eligible read omitting Off invalidates older positive evidence without establishing denial. An internal ordering tombstone prevents delayed older work from restoring stale evidence. An AV-backed
 .B listening-mode get
-also refreshes the positive observation when it returns Off. A successful eligible availability read that omits Off removes the positive observation and writes a negative tombstone. The latest observation time wins, and a negative observation wins equal timestamps, so an older in-flight positive read cannot restore stale evidence. A non-Off current-mode result is not an availability observation, and incidental current-mode reads made by other operations do not warm the cache. Selector failures, unavailable endpoints, and failed reads leave the cache unchanged. The CLI does not perform an extra AV read to warm the cache, and HAL observations never refresh it.
+also refreshes positive evidence when it returns Off. A non-Off current-mode result and incidental reads do not alter the cache. Selector failures, unavailable endpoints, and failed reads leave it unchanged. The CLI does not perform an extra AV read to warm the cache.
 .PP
 A valid observation lets the exact HAL target include Off in
 .BR list ,
 attempt
 .BR "set off" ,
-or retain Off in an explicit cycle set. The default cycle always excludes Off. A cache miss preserves the existing fail-closed HAL behavior, including the explicit-cycle minimum-size check after unavailable modes are removed.
+or retain Off in an explicit cycle set. The default cycle always excludes Off. On a miss, only an explicit set Off or explicit cycle containing Off may probe once; get, list, and the default cycle never probe. Accepted definitive Off succeeds. Accepted definitive known non-Off is unsupported and records denial. A missing or rejected setter is unavailable. Accepted but unreadable, unknown, or timed-out final state is no-op and records no denial.
 .PP
 Correlation occurs after target and provider selection and cannot select, merge, or disambiguate devices. The cache key is the full SHA-256 digest of a random per-cache salt followed by the exact, case-sensitive public Core Audio UID. The cache persists the salt, digest, and observation time. The raw UID is used only transiently and is never persisted; the raw UID, digest, and salt are never printed or logged.
 .B support-report
-does not access this cache or include its data. Missing or nonunique correlation is a silent cache miss.
+does not access this cache or include its data. Missing or nonunique correlation is a silent cache miss; it does not prevent the current explicit probe, but no reusable evidence can be stored.
 .PP
-Positive observations expire seven days after the AV observation. Use does not extend the lifetime, and macOS version changes do not invalidate or refresh it. Negative tombstones only order observations and never authorize a write. A newer eligible observation replaces the older state. Missing, expired, unreadable, or malformed data is a miss. The disposable, backup-excluded file is stored at
+Positive and denial evidence expires seven days after observation. Use does not extend the lifetime, and macOS version changes do not invalidate or refresh it. Internal tombstones only order observations and appear as a miss. Newer evidence replaces older state. Missing, expired, unreadable, or malformed data is a miss. The disposable, backup-excluded file is stored at
 .BR ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json .
 Deleting it safely restores the pre-cache HAL behavior.
 .PP
-An accepted Off write backed by fresh or cached positive evidence invalidates that positive after a definitive non-Off bounded readback. This does not create a negative tombstone; only an eligible AV availability read that omits Off can do that. A rejected write, timeout, failed read, or unknown final state leaves the observation in place.
+Any accepted Off request with definitive known non-Off bounded readback records denial. A rejected write, timeout, failed read, or unknown final state creates no denial.
 .PP
-An accepted cache-authorized HAL Off write still requires bounded HAL readback. A definitive non-Off final state produces
+An accepted positive-evidence-authorized HAL Off write still requires bounded HAL readback. A definitive non-Off final state produces
 .B no-op
-with that actual state and deletes the observation. The command does not retry through AV, infer Transparency, or choose another cycle target.
+with that actual state and replaces positive evidence with denial. The command does not retry through AV, infer Transparency, or choose another cycle target.
 .SS CONVERSATION AWARENESS
 .TP
 .BR "conversation-awareness get" ", " "ca get"
@@ -293,9 +297,9 @@ Build a local compatibility report from existing device and macOS metadata. Exac
 .B --device
 nor
 .BR --json ,
-and does not choose arbitrarily among devices. With zero or multiple compatible devices it prints local instructions and exits 1 before a report, prompt, or write.
+and does not choose arbitrarily among devices. With zero compatible devices it prints local instructions and exits 1; with multiple devices it exits 8. Both happen before a report, prompt, or write.
 .IP
-The read-only report includes only the normalized model identifier, advertised listening modes, Conversation Awareness capability, whether each query answers, whether macOS exposes each setter, the macOS version, and the CLI version. The model name is resolved locally from the Bluetooth product ID in the model identifier. Unknown advertised modes are included when they can be represented safely. Missing data is marked unavailable or not reported; the command does not guess it. The report omits the setting values returned by queries and never invokes a setter without consent.
+The read-only report includes only the normalized model identifier, advertised listening modes, Conversation Awareness capability, whether each query answers, whether macOS exposes each setter, the macOS version, and the CLI version. The model name is resolved locally from the Bluetooth product ID in the model identifier. Product identity is optional: missing, rejected, or unrecognized identity produces a successful partial report from the remaining safe observations and does not by itself disable consented write tests. Unknown advertised modes are included when they can be represented safely. Missing data is marked unavailable or not reported; the command does not guess it. The report omits the setting values returned by queries and never invokes a setter without consent.
 .IP
 The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It does not enumerate the Core Audio status inventory, query the selected input or output route, call the selection mapper, run active-output enrichment, or read or report routing identifiers. It never uses the clipboard, sends telemetry, or submits anything. A read-only report does not change device settings or intentionally interrupt audio; consented write tests temporarily change the settings in the captured plan.
 .IP
@@ -309,14 +313,14 @@ and stops the remaining tests for that setting. A target that already matches th
 .B inconclusive
 rather than
 .BR verified .
-After normal completion or a setter error, the command makes one restoration attempt if needed. An unverified restoration names the final state, gives a manual-fix hint, and exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM stops further writes, attempts restoration first, and exits 129, 130, or 143, respectively. An interrupted run does not offer an issue-form URL. SIGKILL, a process crash, or power loss cannot guarantee restoration.
+After normal completion or a setter error, the command makes one restoration attempt if needed. An unverified restoration names the final state, gives a manual-fix hint, and exits 7 (state-uncertain). An externally delivered SIGHUP, SIGINT, or SIGTERM stops further writes, attempts restoration first, and exits 129, 130, or 143, respectively. An interrupted run does not offer an issue-form URL. SIGKILL, a process crash, or power loss cannot guarantee restoration.
 .IP
 .B --with-write-tests
 answers the consent question with yes and is the only way to run the tests noninteractively;
 .B --no-write-tests
 answers it with no.
 .IP
-The report is printed for review before the command asks whether to open a prefilled GitHub issue form. If the report cannot be prefilled, copy it from the terminal. Under a script, pipeline, or CI, the command writes the issue form URL to standard error without prompting or opening a browser. On normal completion it returns 0, or 3 if write tests could not restore the initial settings; interrupted runs use the signal exit codes above. The contributor always reviews and submits the issue.
+The report is printed for review before the command asks whether to open a prefilled GitHub issue form. If the report cannot be prefilled, copy it from the terminal. Under a script, pipeline, or CI, the command writes the issue form URL to standard error without prompting or opening a browser. On normal completion it returns 0, or 7 (state-uncertain) if write tests could not restore the initial settings; interrupted runs use the signal exit codes above. The contributor always reviews and submits the issue.
 .IP
 Compatibility varies by device, firmware, and macOS version. Compatibility
 reports are welcome. See the CLI reference and Device compatibility entries
@@ -365,26 +369,40 @@ at least two distinct entries. Mode aliases are accepted. Duplicates are ignored
 (exit 2).
 .TP
 .BI "--device " name
-Target a compatible device using a case-insensitive exact name match. Listening-mode commands can match a mapped Core Audio HAL device or their compatible AV output device; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. Multiple exact listening-mode matches produce
-.BR ambiguous-device ;
-other missing or ambiguous matches retain
-.BR no-device .
+Target a compatible device using a case-insensitive exact name match. Listening-mode commands can match a mapped Core Audio HAL device or their compatible AV output device; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. A missing match is
+.BR no-device ;
+multiple exact matches are
+.BR ambiguous-device .
 .IP
 The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
 .IP
-Without this option, listening-mode commands automatically use the selected output or a unique eligible HAL target. If no selected HAL target exists and multiple HAL targets remain, they prompt only when standard input and standard error are terminals and JSON is absent; multiple selected HAL targets never open the chooser. All other ambiguity fails with
+Without this option, listening-mode commands automatically use one logical target. If several remain, they prompt only when standard input and standard error are terminals and JSON is absent, regardless of selected-route status. Unresolved ambiguity fails with
 .BR ambiguous-device .
-HAL target selection does not add leftover AV records to the chooser. A unique selected HAL target and unique singular active AV endpoint form one logical target even when optional status enrichment cannot join them; names are never used for that correlation. If HAL listening-mode control is entirely unavailable, the established AV-only behavior continues to use the first compatible AV output.
+HAL target selection does not add leftover AV records to the chooser. A unique selected HAL target and unique singular active AV endpoint form one logical target even when optional status enrichment cannot join them; names are never used for that correlation. If HAL listening-mode control is entirely unavailable, the AV-only fallback must still resolve one target.
 Blank input,
 .BR q ,
-or end of input cancels the chooser. Conversation Awareness retains the first compatible AV output behavior.
+or end of input declines the chooser and reports
+.BR ambiguous-device .
+Conversation Awareness also requires a unique target.
 .B status
 instead reports every eligible canonical device derived from the currently available Core Audio endpoint list, regardless of which device is the selected output.
 .TP
 .B --json
 Emit structured JSON instead of plain script-friendly output. Accepted anywhere in an operational command or global version command. Every JSON response has a
 .B result
-field. Individual resource operations also contain
+field. Success uses
+.BR ok ;
+an accepted unverified write uses
+.BR no-op ;
+other normal nonzero outcomes use
+.B error
+and add the canonical
+.B error
+token. Caught signals use
+.B interrupted
+with the numeric
+.B signal
+and no error token. Individual resource operations also contain
 .B device
 and the command's resulting
 .B listeningMode
@@ -450,22 +468,31 @@ Debug output from operational commands can also contain selected device names. A
 .SH EXIT STATUS
 .TP
 .B 0
-Success.
+Success: the primary contract was fulfilled without a safety-invariant violation.
 .TP
 .B 1
-No supported target was selected, selection was cancelled, devices were ambiguous, or no unique identifiable report device was available.
+No device resolved under the command's device contract (no-device).
 .TP
 .B 2
 Missing or malformed arguments (bad-args).
 .TP
 .B 3
-A requested write was not verified within the bounded window, or the support-report write tests could not restore the initial settings (no-op).
+A setter accepted the request, but the requested feature state was not verified and no required final-state invariant remains unresolved (no-op).
 .TP
 .B 4
-The mode or feature is not available on this device (unsupported).
+Affirmative target-specific evidence excludes the requested operation (unsupported).
 .TP
 .B 5
-Every selected status record contains only genuine read errors (read-error).
+A primary information read failed without a usable result (read-error).
+.TP
+.B 6
+A required provider, prerequisite, capability inventory, or control path is unavailable.
+.TP
+.B 7
+Side effects occurred and a required final device state cannot be confirmed (state-uncertain).
+.TP
+.B 8
+Multiple candidates remain for a command requiring one target (ambiguous-device).
 .TP
 .B 129
 An externally delivered SIGHUP was caught during the write tests and restoration was attempted.
@@ -475,6 +502,8 @@ An externally delivered SIGINT was caught during the write tests and restoration
 .TP
 .B 143
 An externally delivered SIGTERM was caught during the write tests and restoration was attempted.
+.PP
+Caught signals retain 128 plus the signal number. Crashes, SIGKILL, forced termination, and uncaught signals are outside this handled contract. Ambiguity and declined chooser input previously shared exit 1 and now use exit 8. Failed support-report restoration previously shared exit 3 and now uses exit 7. Missing or unrecognized support-report identity now produces a successful partial report.
 .SH NOTES
 Listening-mode writes use one route-selected AV or HAL provider and a bounded same-provider readback window while the device settles. A matching readback means macOS reports the requested state through that provider; it is not a direct AirPods protocol acknowledgement. Commands never change the default output or start an audio stream. If
 .B off
@@ -490,14 +519,20 @@ This is the expected eventual fallback when Off Listening Mode is disabled, not 
 .B null
 when the final readback is missing or unknown.
 .PP
-A cache-authorized HAL Off write does not use that inferred Transparency fallback. If its definitive final read is a known non-Off mode, it reports
+A positive-evidence-authorized HAL Off write does not use that inferred Transparency fallback. If its definitive final read is a known non-Off mode, it reports
 .B no-op
-with that actual mode and deletes the positive observation. It does not retry through AV or choose another cycle target. Rejection, timeout, read failure, or an unknown final state leaves the observation unchanged.
+with that actual mode and records denial for later invocations. A first explicit HAL probe with the same definitive evidence reports
+.BR unsupported .
+A missing or rejected setter is
+.BR unavailable ;
+accepted but unreadable, unknown, or timed-out final state is
+.B no-op
+and records no denial. The command does not retry through AV or choose another cycle target.
 .PP
-This relies on a private API and targets macOS Tahoe (26); Apple may change it in any update. Missing capabilities are reported as
-.B unsupported
-or
-.BR no-device .
+This relies on a private API and targets macOS Tahoe (26); Apple may change it in any update. A missing provider is
+.BR unavailable ;
+affirmative target-specific negative evidence is
+.BR unsupported .
 .SH SEE ALSO
 Project documentation: https://github.com/raulgg/airpods-control
 .PP

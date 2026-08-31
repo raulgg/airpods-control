@@ -218,6 +218,16 @@ final class FailingRemovalAllowOffCache: ListeningModeAllowOffCaching {
     )
   }
 
+  func invalidatePositiveObservation(
+    rawDeviceUID: String,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    wrapped.invalidatePositiveObservation(
+      rawDeviceUID: rawDeviceUID,
+      observedAt: observedAt
+    )
+  }
+
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
     wrapped.remove(record: record)
   }
@@ -234,6 +244,13 @@ final class StalePositiveAllowOffCache: ListeningModeAllowOffCaching {
     observedAt: Date
   ) -> AllowOffCacheMutation {
     allowsOff ? .unchanged : .unavailable
+  }
+
+  func invalidatePositiveObservation(
+    rawDeviceUID: String,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    .unchanged
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {

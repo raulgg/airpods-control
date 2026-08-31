@@ -102,7 +102,14 @@ private func withTemporaryAllowOffCache(
 private func allowOffRecord(
   from lookup: AllowOffCacheLookup
 ) -> AllowOffCacheRecord? {
-  guard case .hit(let record) = lookup else { return nil }
+  guard case .allowed(let record) = lookup else { return nil }
+  return record
+}
+
+private func allowOffDenialRecord(
+  from lookup: AllowOffCacheLookup
+) -> AllowOffCacheRecord? {
+  guard case .denied(let record) = lookup else { return nil }
   return record
 }
 
@@ -423,7 +430,10 @@ func runListeningModeAllowOffCacheTests() {
       ) == .applied,
       "raw UID removal deletes its positive evidence"
     )
-    check(cache.lookup(rawDeviceUID: "first") == .miss, "raw UID removal misses afterward")
+    check(
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: "first")) != nil,
+      "a negative raw UID observation remains available as denial evidence"
+    )
     check(
       allowOffRecord(from: cache.lookup(rawDeviceUID: "second")) != nil,
       "raw UID removal preserves unrelated evidence"
@@ -435,6 +445,70 @@ func runListeningModeAllowOffCacheTests() {
         observedAt: clock.value
       ) == .applied,
       "negative observations retain a tombstone even without positive evidence"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let denialObservedAt = Date(timeIntervalSince1970: 1_730_100_000)
+    let clock = AllowOffCacheTestClock(denialObservedAt)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      ttl: 60,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "denial-omission-positive-uid"
+
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: denialObservedAt
+      ) == .applied,
+      "persistent cache stores the initial denial"
+    )
+    guard let initialDenial = allowOffDenialRecord(
+      from: cache.lookup(rawDeviceUID: rawUID)
+    ) else {
+      check(false, "persistent cache returns the initial denial")
+      return
+    }
+
+    let omissionObservedAt = denialObservedAt.addingTimeInterval(10)
+    clock.value = omissionObservedAt
+    check(
+      cache.invalidatePositiveObservation(
+        rawDeviceUID: rawUID,
+        observedAt: omissionObservedAt
+      ) == .unchanged,
+      "an omission does not replace an unexpired denial tombstone"
+    )
+    guard let preservedDenial = allowOffDenialRecord(
+      from: cache.lookup(rawDeviceUID: rawUID)
+    ) else {
+      check(false, "an omission preserves denial evidence")
+      return
+    }
+    check(
+      preservedDenial.evidence.observedAt == initialDenial.evidence.observedAt
+        && preservedDenial.evidence.expiresAt == initialDenial.evidence.expiresAt,
+      "an omission does not extend the denial TTL"
+    )
+
+    let positiveObservedAt = denialObservedAt.addingTimeInterval(20)
+    clock.value = positiveObservedAt
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: positiveObservedAt
+      ) == .applied,
+      "strictly newer positive evidence supersedes denial"
+    )
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+        == positiveObservedAt,
+      "newer positive evidence is returned after denial"
     )
   }
 
@@ -494,8 +568,8 @@ func runListeningModeAllowOffCacheTests() {
       "negative observation replaces a malformed disposable cache"
     )
     check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "negative observation leaves no positive evidence"
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "negative observation is returned as denial evidence"
     )
   }
 
@@ -532,7 +606,7 @@ func runListeningModeAllowOffCacheTests() {
     )
     check(
       cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "failed negative persistence cannot leave a reusable positive"
+      "failed primary persistence cannot expose stale positive evidence"
     )
   }
 
@@ -752,8 +826,8 @@ func runListeningModeAllowOffCacheTests() {
     }
     clock.value = negativeObservedAt
     check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "a deny marker blocks stale positive evidence after lock contention"
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "a deny marker exposes denial evidence after lock contention"
     )
     clock.value = negativeObservedAt.addingTimeInterval(1)
     check(
@@ -1005,8 +1079,8 @@ func runListeningModeAllowOffCacheTests() {
     )
     clock.value = positiveObservedAt
     check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "clock rollback cannot resurrect superseded positive evidence"
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "clock rollback preserves superseding denial evidence"
     )
   }
 
@@ -1080,6 +1154,73 @@ func runListeningModeAllowOffCacheTests() {
     check(
       InMemoryListeningModeAllowOffCache(salt: Data(repeating: 0, count: 31)) == nil,
       "in-memory cache rejects an invalid salt"
+    )
+  }
+
+  do {
+    let denialObservedAt = Date(timeIntervalSince1970: 1_740_100_000)
+    let clock = AllowOffCacheTestClock(denialObservedAt)
+    guard
+      let cache = InMemoryListeningModeAllowOffCache(
+        salt: allowOffCacheTestSalt,
+        ttl: 60,
+        now: clock.read
+      )
+    else {
+      check(false, "in-memory denial ordering accepts a valid salt")
+      return
+    }
+    let rawUID = "denial-omission-positive-uid"
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: denialObservedAt
+      ) == .applied,
+      "in-memory cache stores the initial denial"
+    )
+    guard let initialDenial = allowOffDenialRecord(
+      from: cache.lookup(rawDeviceUID: rawUID)
+    ) else {
+      check(false, "in-memory cache returns the initial denial")
+      return
+    }
+
+    let omissionObservedAt = denialObservedAt.addingTimeInterval(10)
+    clock.value = omissionObservedAt
+    check(
+      cache.invalidatePositiveObservation(
+        rawDeviceUID: rawUID,
+        observedAt: omissionObservedAt
+      ) == .unchanged,
+      "in-memory omission preserves an unexpired denial tombstone"
+    )
+    guard let preservedDenial = allowOffDenialRecord(
+      from: cache.lookup(rawDeviceUID: rawUID)
+    ) else {
+      check(false, "in-memory omission preserves denial evidence")
+      return
+    }
+    check(
+      preservedDenial.evidence.observedAt == initialDenial.evidence.observedAt
+        && preservedDenial.evidence.expiresAt == initialDenial.evidence.expiresAt,
+      "in-memory omission does not extend the denial TTL"
+    )
+
+    let positiveObservedAt = denialObservedAt.addingTimeInterval(20)
+    clock.value = positiveObservedAt
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: positiveObservedAt
+      ) == .applied,
+      "in-memory newer positive evidence supersedes denial"
+    )
+    check(
+      allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+        == positiveObservedAt,
+      "in-memory newer positive evidence is returned after denial"
     )
   }
 }

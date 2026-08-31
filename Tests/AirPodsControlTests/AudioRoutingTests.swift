@@ -1,6 +1,61 @@
 import CoreAudio
 import Foundation
 
+func testCoreAudioControllerCreationPreservesInventoryReadOutcome() {
+  let unavailableBackend = FakeAudioRoutingBackend()
+  let (unavailableResult, _) = makeBluetoothControllerResult(
+    inventory: [],
+    backend: unavailableBackend,
+    inventoryRead: .unavailable
+  )
+  if case .unavailable = unavailableResult {
+    check(true, "unavailable Core Audio inventory stays unavailable")
+  } else {
+    check(false, "unavailable Core Audio inventory stays unavailable")
+  }
+  check(
+    unavailableBackend.audioDeviceReadCount == 1,
+    "unavailable inventory is read exactly once"
+  )
+
+  let failureStatus: OSStatus = -7_001
+  let failureBackend = FakeAudioRoutingBackend()
+  let (failureResult, _) = makeBluetoothControllerResult(
+    inventory: [],
+    backend: failureBackend,
+    inventoryRead: .failure(failureStatus)
+  )
+  if case let .readError(status) = failureResult {
+    check(status == failureStatus, "inventory OSStatus is retained for diagnostics")
+  } else {
+    check(false, "failed Core Audio inventory becomes a typed read error")
+  }
+  check(
+    failureBackend.audioDeviceReadCount == 1,
+    "failed inventory is read exactly once"
+  )
+
+  let emptyBackend = FakeAudioRoutingBackend()
+  let (emptyResult, _) = makeBluetoothControllerResult(
+    inventory: [],
+    backend: emptyBackend,
+    inventoryRead: .value([])
+  )
+  if case let .success(controller) = emptyResult {
+    switch controller.resolveDevices(named: nil, policy: .allOrExact) {
+    case .noDevice: check(true, "an answered empty inventory creates an empty controller")
+    case .selected, .ambiguousDevice:
+      check(false, "an answered empty inventory creates an empty controller")
+    }
+  } else {
+    check(false, "an answered empty inventory creates an empty controller")
+  }
+  check(
+    emptyBackend.audioDeviceReadCount == 1,
+    "successful inventory is read exactly once"
+  )
+}
+
 func testCoreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping() {
   let canonical = EqualBluetoothObject(identity: 1)
   let inputWrapper = EqualBluetoothObject(identity: 1)
@@ -590,6 +645,7 @@ func testActiveAVFeatureEnrichmentRequiresExactStableOutputJoin() {
 }
 
 func runAudioRoutingTests() {
+  testCoreAudioControllerCreationPreservesInventoryReadOutcome()
   testCoreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping()
   testCoreAudioStatusPlacementJourneyUsesGroupedEvidenceOnlyForStatus()
   testCoreAudioInventoryRequiresEveryPositiveEndpointGate()

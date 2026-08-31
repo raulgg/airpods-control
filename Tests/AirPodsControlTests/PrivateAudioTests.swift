@@ -341,9 +341,17 @@ func testDeviceSelectionAndCapabilities() {
   let controller = PrivateAudioController(rawDevices: [first, second], logger: logger)
 
   check(
-    controller.selectDevice(named: nil)?.name == "My AirPods Pro",
-    "default selection uses the first compatible device"
+    controller.selectDevice(named: nil) == nil,
+    "default single-target selection rejects multiple devices"
   )
+  if case .ambiguousDevice = controller.resolveDevices(
+    named: nil,
+    policy: .singleOrExact
+  ) {
+    check(true, "multiple unnamed devices have a typed ambiguous result")
+  } else {
+    check(false, "multiple unnamed devices have a typed ambiguous result")
+  }
   check(
     controller.selectDevices(named: nil, policy: .allOrExact)?.compactMap(\.name)
       == ["My AirPods Pro", "Studio AirPods"],
@@ -382,10 +390,17 @@ func testDeviceSelectionAndCapabilities() {
     ["--device", "My AirPods Pro", "ca", "set", "on"],
   ] {
     let invocation = try! parseInvocation(arguments)
-    let outcome = CommandExecution.execute(invocation) { name, _ in
-      ambiguous.selectDevice(named: name)
-    }
-    check(outcome.exitCode == 1, "ambiguous named setter fails as no-device")
+    let outcome = CommandExecution.execute(
+      invocation,
+      resolveDevices: { name, policy, _ in
+        switch ambiguous.resolveDevices(named: name, policy: policy) {
+        case let .selected(devices): return .devices(devices.map { $0 })
+        case .noDevice: return .failed(.noDevice)
+        case .ambiguousDevice: return .failed(.ambiguousDevice)
+        }
+      }
+    )
+    check(outcome.exitCode == 8, "ambiguous named setter exits eight")
   }
   check(
     first.listeningModeSetCount == 0 && duplicate.listeningModeSetCount == 0,
