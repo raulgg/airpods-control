@@ -38,9 +38,11 @@ the commit message.
 ## Publish a release
 
 1. Merge normal pull requests into `main` using squash merge. Release Please
-   opens or refreshes its release pull request when a releasable change lands.
-2. Review the proposed version and `CHANGELOG.md` in the diff. Do not rewrite
-   the Release Please pull request description. After merge, Release Please
+   opens or refreshes a draft release pull request when a releasable change
+   lands.
+2. Review the proposed version and `CHANGELOG.md` in the diff. Mark the pull
+   request ready for review, then squash-merge it. Do not rewrite the
+   Release Please pull request description. After merge, Release Please
    parses that live GitHub body to create the tag. Dropping the `---`
    delimiter lines or the `## [VERSION]` notes heading skips the GitHub
    release and opens the next version by mistake.

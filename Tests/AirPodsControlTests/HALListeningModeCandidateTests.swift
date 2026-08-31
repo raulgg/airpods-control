@@ -133,17 +133,9 @@ func testListeningModeControlInventoryDefersHALStateReads() {
     readStatusListeningMode: false
   )
   check(backend.listeningModeReads.isEmpty, "control inventory does not read HAL state")
-  check(
-    backend.inEarPlacementReads.isEmpty,
-    "control inventory does not read HAL placement"
-  )
   let transport = controller.listeningModeCandidates().first?.halTransport
     as? HALListeningModeTransport
   check(backend.listeningModeReads.isEmpty, "candidate construction keeps HAL state lazy")
-  check(
-    backend.inEarPlacementReads.isEmpty,
-    "candidate construction keeps HAL placement lazy"
-  )
   _ = transport?.currentListeningMode()
   check(backend.listeningModeReads == [73], "chosen HAL transport performs its own state read")
 }

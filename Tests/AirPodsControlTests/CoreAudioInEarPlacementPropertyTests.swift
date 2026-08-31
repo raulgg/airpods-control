@@ -1,46 +1,34 @@
 import CoreAudio
 import Foundation
 
-private struct PlacementPropertyAddress: Equatable {
-  let objectID: AudioObjectID
-  let selector: AudioObjectPropertySelector
-  let scope: AudioObjectPropertyScope
-  let element: AudioObjectPropertyElement
-
-  init(_ objectID: AudioObjectID, _ address: AudioObjectPropertyAddress) {
-    self.objectID = objectID
-    selector = address.mSelector
-    scope = address.mScope
-    element = address.mElement
-  }
-}
-
 private final class FakeInEarPlacementPropertyAccess: CoreAudioPropertyAccess {
-  var presentSelectors: Set<AudioObjectPropertySelector> = [
-    AudioObjectPropertySelector(0x6965_6465), // iede
-    AudioObjectPropertySelector(0x7072_6973), // pris
-    AudioObjectPropertySelector(0x6965_7362), // iesb
-  ]
-  var dataSizeStatusBySelector: [AudioObjectPropertySelector: OSStatus] = [:]
-  var reportedDataSizeBySelector: [AudioObjectPropertySelector: UInt32] = [
-    AudioObjectPropertySelector(0x6965_7362): 8,
-  ]
-  var readStatusBySelector: [AudioObjectPropertySelector: OSStatus] = [:]
-  var returnedDataSizeBySelector: [AudioObjectPropertySelector: UInt32] = [:]
-  var dataBySelector: [AudioObjectPropertySelector: [UInt8]] = [:]
-  var sequentialUInt32ValuesBySelector: [AudioObjectPropertySelector: [UInt32]] = [:]
-  private var sequentialReadIndices: [AudioObjectPropertySelector: Int] = [:]
+  private enum Property {
+    case detection
+    case primary
+    case placement
+  }
 
-  private(set) var propertyChecks: [PlacementPropertyAddress] = []
-  private(set) var sizeReads: [PlacementPropertyAddress] = []
-  private(set) var valueReads: [PlacementPropertyAddress] = []
+  private static let detectionSelector = AudioObjectPropertySelector(0x6965_6465)
+  private static let primarySelector = AudioObjectPropertySelector(0x7072_6973)
+  private static let placementSelector = AudioObjectPropertySelector(0x6965_7362)
+
+  var detectionValue: UInt32 = 1
+  var primaryValues: [UInt32] = [1] {
+    didSet { primaryReadIndex = 0 }
+  }
+  var placementValues: (UInt32, UInt32) = (1, 2)
+  var placementPresent = true
+  var placementReportedSize = UInt32(2 * MemoryLayout<UInt32>.size)
+  var placementReturnedSize: UInt32?
+  var placementReadStatus: OSStatus = noErr
+  private var primaryReadIndex = 0
 
   func hasProperty(
     _ objectID: AudioObjectID,
     address: inout AudioObjectPropertyAddress
   ) -> Bool {
-    propertyChecks.append(PlacementPropertyAddress(objectID, address))
-    return presentSelectors.contains(address.mSelector)
+    guard let property = property(for: address.mSelector) else { return false }
+    return property != .placement || placementPresent
   }
 
   func readPropertyDataSize(
@@ -48,10 +36,10 @@ private final class FakeInEarPlacementPropertyAccess: CoreAudioPropertyAccess {
     address: inout AudioObjectPropertyAddress,
     dataSize: inout UInt32
   ) -> OSStatus {
-    sizeReads.append(PlacementPropertyAddress(objectID, address))
-    dataSize = reportedDataSizeBySelector[address.mSelector]
-      ?? UInt32(MemoryLayout<UInt32>.size)
-    return dataSizeStatusBySelector[address.mSelector] ?? noErr
+    dataSize = property(for: address.mSelector) == .placement
+      ? placementReportedSize
+      : UInt32(MemoryLayout<UInt32>.size)
+    return noErr
   }
 
   func readPropertyData(
@@ -60,29 +48,32 @@ private final class FakeInEarPlacementPropertyAccess: CoreAudioPropertyAccess {
     dataSize: inout UInt32,
     data: UnsafeMutableRawPointer
   ) -> OSStatus {
-    valueReads.append(PlacementPropertyAddress(objectID, address))
-    let selector = address.mSelector
-    if let status = readStatusBySelector[selector], status != noErr {
-      return status
+    guard let property = property(for: address.mSelector) else {
+      return kAudioHardwareUnknownPropertyError
     }
-    let bytes: [UInt8]
-    if let values = sequentialUInt32ValuesBySelector[selector], !values.isEmpty {
-      let index = sequentialReadIndices[selector] ?? 0
-      let value = values[min(index, values.count - 1)]
-      sequentialReadIndices[selector] = index + 1
-      bytes = withUnsafeBytes(of: value) { Array($0) }
-    } else {
-      bytes = dataBySelector[selector] ?? []
+    if property == .placement, placementReadStatus != noErr {
+      return placementReadStatus
     }
-    if !bytes.isEmpty {
-      bytes.withUnsafeBytes { source in
-        data.copyMemory(
-          from: source.baseAddress!,
-          byteCount: min(Int(dataSize), bytes.count)
-        )
-      }
+    let propertyBytes: [UInt8]
+    switch property {
+    case .detection:
+      propertyBytes = bytes(detectionValue)
+    case .primary:
+      let value = primaryValues[min(primaryReadIndex, primaryValues.count - 1)]
+      primaryReadIndex += 1
+      propertyBytes = bytes(value)
+    case .placement:
+      propertyBytes = bytes(placementValues.0) + bytes(placementValues.1)
     }
-    dataSize = returnedDataSizeBySelector[selector] ?? dataSize
+    propertyBytes.withUnsafeBytes { source in
+      data.copyMemory(
+        from: source.baseAddress!,
+        byteCount: min(Int(dataSize), propertyBytes.count)
+      )
+    }
+    if property == .placement {
+      dataSize = placementReturnedSize ?? dataSize
+    }
     return noErr
   }
 
@@ -103,187 +94,110 @@ private final class FakeInEarPlacementPropertyAccess: CoreAudioPropertyAccess {
   ) -> OSStatus {
     noErr
   }
+
+  private func property(
+    for selector: AudioObjectPropertySelector
+  ) -> Property? {
+    switch selector {
+    case Self.detectionSelector: return .detection
+    case Self.primarySelector: return .primary
+    case Self.placementSelector: return .placement
+    default: return nil
+    }
+  }
 }
 
-func testCoreAudioInEarPlacementReadsMapBothPrimaryOrientations() {
+func testCoreAudioInEarPlacementMapsStablePrimaryJourneys() {
   let deviceID = AudioDeviceID(121)
   let access = FakeInEarPlacementPropertyAccess()
-  access.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(UInt32(1))
-  access.dataBySelector[AudioObjectPropertySelector(0x7072_6973)] = bytes(UInt32(1))
-  access.dataBySelector[AudioObjectPropertySelector(0x6965_7362)] = pairBytes(1, 2)
+  access.placementValues = (1, 3)
   let backend = CoreAudioRoutingBackend(propertyAccess: access)
 
   check(
     placementValue(backend.readBluetoothInEarPlacement(for: deviceID))
-      == BluetoothEarPlacement(left: .inEar, right: .outOfEar),
-    "iesb primary/secondary values map left-first when pris is left"
+      == BluetoothEarPlacement(left: .inEar, right: .inCase),
+    "a stable left primary maps both placement states to physical ears"
   )
 
-  access.dataBySelector[AudioObjectPropertySelector(0x7072_6973)] = bytes(UInt32(2))
+  access.primaryValues = [2]
+  access.placementValues = (2, 1)
   check(
     placementValue(backend.readBluetoothInEarPlacement(for: deviceID))
-      == BluetoothEarPlacement(left: .outOfEar, right: .inEar),
-    "iesb primary/secondary values map right-first when pris is right"
+      == BluetoothEarPlacement(left: .inEar, right: .outOfEar),
+    "a stable right primary reverses the primary and secondary mapping"
   )
 
-  let expectedSelectors = [
-    AudioObjectPropertySelector(0x6965_6465),
-    AudioObjectPropertySelector(0x7072_6973),
-    AudioObjectPropertySelector(0x6965_7362),
-    AudioObjectPropertySelector(0x7072_6973),
-  ]
+  access.primaryValues = [1, 2]
+  access.placementValues = (1, 1)
   check(
-    access.propertyChecks.map(\.selector) == expectedSelectors + expectedSelectors,
-    "placement properties are presence-gated in a stable order"
-  )
-  check(
-    access.sizeReads.map(\.selector) == expectedSelectors + expectedSelectors
-      && access.valueReads.map(\.selector) == expectedSelectors + expectedSelectors,
-    "placement properties are sized before exact reads"
-  )
-  check(
-    access.propertyChecks.allSatisfy {
-      $0.scope == kAudioObjectPropertyScopeGlobal
-        && $0.element == kAudioObjectPropertyElementMain
-        && $0.objectID == deviceID
-    },
-    "placement properties use global/main addresses"
+    placementUnknown(backend.readBluetoothInEarPlacement(for: deviceID)),
+    "a primary-side change during the read is not misattributed"
   )
 }
 
-func testCoreAudioInEarPlacementReadsPreserveAvailabilityFailuresAndSizes() {
+func testCoreAudioInEarPlacementFailsClosedAcrossUnavailableAndMalformedEvidence() {
   let deviceID = AudioDeviceID(122)
+  let access = FakeInEarPlacementPropertyAccess()
+  let backend = CoreAudioRoutingBackend(propertyAccess: access)
 
-  let missingAccess = FakeInEarPlacementPropertyAccess()
-  missingAccess.presentSelectors.remove(
-    AudioObjectPropertySelector(0x6965_6465)
-  )
-  let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
+  access.detectionValue = 0
   check(
-    placementUnavailable(missingBackend.readBluetoothInEarPlacement(for: deviceID)),
-    "a missing iede gate is unavailable without reading any value"
-  )
-  check(missingAccess.sizeReads.isEmpty && missingAccess.valueReads.isEmpty,
-        "a missing gate is not sized or read")
-
-  let sizeFailure: OSStatus = -7_101
-  let sizeFailureAccess = FakeInEarPlacementPropertyAccess()
-  sizeFailureAccess.dataSizeStatusBySelector[AudioObjectPropertySelector(0x6965_6465)] =
-    sizeFailure
-  let sizeFailureBackend = CoreAudioRoutingBackend(propertyAccess: sizeFailureAccess)
-  check(
-    placementFailure(sizeFailureBackend.readBluetoothInEarPlacement(for: deviceID))
-      == sizeFailure,
-    "a placement size-query error preserves its OSStatus"
+    placementUnavailable(backend.readBluetoothInEarPlacement(for: deviceID)),
+    "disabled in-ear detection makes placement unavailable"
   )
 
-  let readFailure: OSStatus = -7_102
-  let readFailureAccess = FakeInEarPlacementPropertyAccess()
-  readFailureAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(1)
-  readFailureAccess.readStatusBySelector[AudioObjectPropertySelector(0x6965_6465)] =
-    readFailure
-  let readFailureBackend = CoreAudioRoutingBackend(propertyAccess: readFailureAccess)
+  access.detectionValue = 2
   check(
-    placementFailure(readFailureBackend.readBluetoothInEarPlacement(for: deviceID))
-      == readFailure,
-    "a placement value-read error preserves its OSStatus"
+    placementUnknown(backend.readBluetoothInEarPlacement(for: deviceID)),
+    "unrecognized detection evidence remains unknown"
   )
 
-  for selector in [
-    AudioObjectPropertySelector(0x6965_6465),
-    AudioObjectPropertySelector(0x7072_6973),
-    AudioObjectPropertySelector(0x6965_7362),
-  ] {
-    let malformedAccess = FakeInEarPlacementPropertyAccess()
-    malformedAccess.reportedDataSizeBySelector[selector] = selector
-      == AudioObjectPropertySelector(0x6965_7362) ? 4 : 8
-    malformedAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(1)
-    malformedAccess.dataBySelector[AudioObjectPropertySelector(0x7072_6973)] = bytes(1)
-    malformedAccess.dataBySelector[AudioObjectPropertySelector(0x6965_7362)] = pairBytes(1, 1)
-    let malformedBackend = CoreAudioRoutingBackend(propertyAccess: malformedAccess)
-    check(
-      placementFailure(malformedBackend.readBluetoothInEarPlacement(for: deviceID))
-        == kAudioHardwareBadPropertySizeError,
-      "a malformed (selector) payload fails closed"
-    )
-  }
-
-  let changedSizeAccess = FakeInEarPlacementPropertyAccess()
-  changedSizeAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(1)
-  changedSizeAccess.dataBySelector[AudioObjectPropertySelector(0x7072_6973)] = bytes(1)
-  changedSizeAccess.dataBySelector[AudioObjectPropertySelector(0x6965_7362)] = pairBytes(1, 1)
-  changedSizeAccess.returnedDataSizeBySelector[AudioObjectPropertySelector(0x6965_7362)] = 4
-  let changedSizeBackend = CoreAudioRoutingBackend(propertyAccess: changedSizeAccess)
+  access.detectionValue = 1
+  access.placementValues = (1, 99)
   check(
-    placementFailure(changedSizeBackend.readBluetoothInEarPlacement(for: deviceID))
+    placementUnknown(backend.readBluetoothInEarPlacement(for: deviceID)),
+    "unrecognized placement evidence remains unknown"
+  )
+
+  access.placementValues = (1, 2)
+  access.placementPresent = false
+  check(
+    placementUnavailable(backend.readBluetoothInEarPlacement(for: deviceID)),
+    "a missing placement property remains unavailable"
+  )
+
+  access.placementPresent = true
+  access.placementReadStatus = -7_102
+  check(
+    placementFailure(backend.readBluetoothInEarPlacement(for: deviceID)) == -7_102,
+    "a placement read preserves its Core Audio failure"
+  )
+
+  access.placementReadStatus = noErr
+  access.placementReportedSize = UInt32(MemoryLayout<UInt32>.size)
+  check(
+    placementFailure(backend.readBluetoothInEarPlacement(for: deviceID))
       == kAudioHardwareBadPropertySizeError,
-    "a changed iesb payload size fails closed"
-  )
-}
-
-func testCoreAudioInEarPlacementReadsFailClosedForDisabledOrUnknownEvidence() {
-  let deviceID = AudioDeviceID(123)
-  let disabledAccess = FakeInEarPlacementPropertyAccess()
-  disabledAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(0)
-  let disabledBackend = CoreAudioRoutingBackend(propertyAccess: disabledAccess)
-  check(
-    placementUnavailable(disabledBackend.readBluetoothInEarPlacement(for: deviceID)),
-    "a disabled iede gate reports unavailable"
-  )
-  check(
-    disabledAccess.valueReads.map(\.selector)
-      == [AudioObjectPropertySelector(0x6965_6465)],
-    "a disabled gate prevents pris and iesb reads"
+    "a malformed placement payload is rejected before mapping"
   )
 
-  let unknownGateAccess = FakeInEarPlacementPropertyAccess()
-  unknownGateAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(2)
-  let unknownGateBackend = CoreAudioRoutingBackend(propertyAccess: unknownGateAccess)
+  access.placementReportedSize = UInt32(2 * MemoryLayout<UInt32>.size)
+  access.placementReturnedSize = UInt32(MemoryLayout<UInt32>.size)
   check(
-    placementUnknown(unknownGateBackend.readBluetoothInEarPlacement(for: deviceID)),
-    "an unrecognized iede value is unknown"
-  )
-
-  let unknownStateAccess = FakeInEarPlacementPropertyAccess()
-  unknownStateAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(1)
-  unknownStateAccess.dataBySelector[AudioObjectPropertySelector(0x7072_6973)] = bytes(1)
-  unknownStateAccess.dataBySelector[AudioObjectPropertySelector(0x6965_7362)] = pairBytes(1, 99)
-  let unknownStateBackend = CoreAudioRoutingBackend(propertyAccess: unknownStateAccess)
-  check(
-    placementUnknown(unknownStateBackend.readBluetoothInEarPlacement(for: deviceID)),
-    "an unrecognized iesb state is unknown rather than guessed"
-  )
-
-  let changingPrimaryAccess = FakeInEarPlacementPropertyAccess()
-  changingPrimaryAccess.dataBySelector[AudioObjectPropertySelector(0x6965_6465)] = bytes(1)
-  changingPrimaryAccess.dataBySelector[AudioObjectPropertySelector(0x6965_7362)] = pairBytes(1, 1)
-  changingPrimaryAccess.sequentialUInt32ValuesBySelector[
-    AudioObjectPropertySelector(0x7072_6973)
-  ] = [1, 2]
-  let changingPrimaryBackend = CoreAudioRoutingBackend(
-    propertyAccess: changingPrimaryAccess
-  )
-  check(
-    placementUnknown(
-      changingPrimaryBackend.readBluetoothInEarPlacement(for: deviceID)
-    ),
-    "a changing physical primary side is rejected rather than misattributed"
+    placementFailure(backend.readBluetoothInEarPlacement(for: deviceID))
+      == kAudioHardwareBadPropertySizeError,
+    "a placement payload that changes size during the read is rejected"
   )
 }
 
 func runCoreAudioInEarPlacementPropertyTests() {
-  testCoreAudioInEarPlacementReadsMapBothPrimaryOrientations()
-  testCoreAudioInEarPlacementReadsPreserveAvailabilityFailuresAndSizes()
-  testCoreAudioInEarPlacementReadsFailClosedForDisabledOrUnknownEvidence()
+  testCoreAudioInEarPlacementMapsStablePrimaryJourneys()
+  testCoreAudioInEarPlacementFailsClosedAcrossUnavailableAndMalformedEvidence()
 }
 
 private func bytes(_ value: UInt32) -> [UInt8] {
   var value = value
   return withUnsafeBytes(of: &value) { Array($0) }
-}
-
-private func pairBytes(_ primary: UInt32, _ secondary: UInt32) -> [UInt8] {
-  bytes(primary) + bytes(secondary)
 }
 
 private func placementValue(

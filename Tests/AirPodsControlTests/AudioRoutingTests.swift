@@ -100,283 +100,105 @@ func testCoreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping() {
   )
 }
 
-func testCoreAudioStatusReadsPlacementOnlyForStatusAndPreservesTypedState() {
-  let device = NSObject()
+func testCoreAudioStatusPlacementJourneyUsesGroupedEvidenceOnlyForStatus() {
+  let stablePlacement = BluetoothEarPlacement(left: .inEar, right: .inCase)
+  let conflictingPlacement = BluetoothEarPlacement(left: .outOfEar, right: .inEar)
+  let inventory =
+    placementGroup(
+      named: "Stable Placement",
+      identity: 111,
+      startingAt: 111,
+      reads: [.value(stablePlacement), .value(stablePlacement)]
+    )
+    + placementGroup(
+      named: "Conflicting Placement",
+      identity: 113,
+      startingAt: 113,
+      reads: [.value(stablePlacement), .value(conflictingPlacement)]
+    )
+    + placementGroup(
+      named: "Unknown Placement",
+      identity: 115,
+      startingAt: 115,
+      reads: [.value(stablePlacement), .unknown]
+    )
+    + placementGroup(
+      named: "Failed Placement",
+      identity: 117,
+      startingAt: 117,
+      reads: [.value(stablePlacement), .failure(-7_111)]
+    )
+    + placementGroup(
+      named: "Unavailable Placement",
+      identity: 119,
+      startingAt: 119,
+      reads: [.unavailable]
+    )
   let backend = FakeAudioRoutingBackend()
-  let placement = BluetoothEarPlacement(left: .inEar, right: .outOfEar)
   let (controller, _) = makeBluetoothController(
-    inventory: [
-      FakeInventoryEndpoint(
-        audioDeviceID: 111,
-        bluetoothDevice: device,
-        name: .value("Placement AirPods"),
-        appleAudioDevice: .value(true),
-        inEarPlacement: .value(placement)
-      ),
-    ],
+    inventory: inventory,
     backend: backend
   )
-  let statusDevice = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+
+  let devices = controller.selectDevices(named: nil, policy: .allOrExact)!
   check(
-    placementStatusValue(statusDevice.readInEarPlacementStatus()) == placement,
-    "status exposes the typed HAL placement value"
+    devices.compactMap(\.name) == [
+      "Stable Placement",
+      "Conflicting Placement",
+      "Unknown Placement",
+      "Failed Placement",
+      "Unavailable Placement",
+    ],
+    "status keeps the first occurrence order of grouped placement evidence"
   )
   check(
-    backend.inEarPlacementReads == [111],
-    "status reads placement once per eligible endpoint"
+    placementStatusValue(devices[0].readInEarPlacementStatus()) == stablePlacement,
+    "matching endpoint evidence produces one typed placement"
+  )
+  check(
+    placementStatusValue(devices[0].readInEarPlacementStatus()) == stablePlacement,
+    "the captured placement remains stable across repeated status access"
+  )
+  check(
+    devices[1].readInEarPlacementStatus().isUnresolved
+      && devices[2].readInEarPlacementStatus().isUnresolved,
+    "conflicting or unknown endpoint evidence remains unresolved"
+  )
+  check(
+    devices[3].readInEarPlacementStatus().isReadError,
+    "a failed sibling prevents a definitive group placement"
+  )
+  check(
+    devices[4].readInEarPlacementStatus().isUnsupported,
+    "a group without placement evidence remains unsupported"
+  )
+  check(
+    backend.inEarPlacementReads.count == inventory.count
+      && Set(backend.inEarPlacementReads).count == inventory.count,
+    "status captures placement once from every eligible endpoint"
   )
 
   let controlBackend = FakeAudioRoutingBackend()
   let (controlController, _) = makeBluetoothController(
-    inventory: [
-      FakeInventoryEndpoint(
-        audioDeviceID: 112,
-        bluetoothDevice: device,
-        name: .value("Control AirPods"),
-        appleAudioDevice: .value(true),
-        inEarPlacement: .value(placement)
-      ),
-    ],
+    inventory: placementGroup(
+      named: "Control Placement",
+      identity: 120,
+      startingAt: 120,
+      reads: [.value(stablePlacement)]
+    ),
     backend: controlBackend,
-    readStatusListeningMode: false
+    readStatusListeningMode: false,
+    readStatusInEarPlacement: false
   )
   let controlDevice = controlController.selectDevices(
     named: nil,
     policy: .allOrExact
   )![0]
   check(
-    controlDevice.readInEarPlacementStatus().isUnsupported,
-    "control discovery does not expose a placement snapshot"
+    controlDevice.readInEarPlacementStatus().isUnsupported
+      && controlBackend.inEarPlacementReads.isEmpty,
+    "non-status discovery neither captures nor exposes placement"
   )
-  check(
-    controlBackend.inEarPlacementReads.isEmpty,
-    "non-status discovery never queries HAL placement"
-  )
-}
-
-func testCoreAudioStatusPlacementGroupsFailClosed() {
-  let same = EqualBluetoothObject(identity: 113)
-  let sameInput = EqualBluetoothObject(identity: 113)
-  let samePlacement = BluetoothEarPlacement(left: .inEar, right: .inCase)
-  let sameBackend = FakeAudioRoutingBackend()
-  let (sameController, _) = makeBluetoothController(
-    inventory: [
-      FakeInventoryEndpoint(
-        audioDeviceID: 113,
-        bluetoothDevice: same,
-        name: .value("Same Placement"),
-        appleAudioDevice: .value(true),
-        inEarPlacement: .value(samePlacement)
-      ),
-      FakeInventoryEndpoint(
-        audioDeviceID: 114,
-        bluetoothDevice: sameInput,
-        inputStreams: .value(true),
-        outputStreams: .value(false),
-        appleAudioDevice: .value(true),
-        inEarPlacement: .value(samePlacement)
-      ),
-    ],
-    backend: sameBackend
-  )
-  let sameDevice = sameController.selectDevices(named: nil, policy: .allOrExact)![0]
-  check(
-    placementStatusValue(sameDevice.readInEarPlacementStatus()) == samePlacement,
-    "identical endpoint placement evidence is retained"
-  )
-  check(
-    placementStatusValue(sameDevice.readInEarPlacementStatus()) == samePlacement,
-    "placement status remains stable across repeated access"
-  )
-  check(
-    sameBackend.inEarPlacementReads == [113, 114],
-    "every eligible endpoint contributes one placement read"
-  )
-
-  let conflict = EqualBluetoothObject(identity: 115)
-  let conflictInput = EqualBluetoothObject(identity: 115)
-  let (conflictController, _) = makeBluetoothController(inventory: [
-    FakeInventoryEndpoint(
-      audioDeviceID: 115,
-      bluetoothDevice: conflict,
-      name: .value("Conflicting Placement"),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .value(
-        BluetoothEarPlacement(left: .inEar, right: .outOfEar)
-      )
-    ),
-    FakeInventoryEndpoint(
-      audioDeviceID: 116,
-      bluetoothDevice: conflictInput,
-      inputStreams: .value(true),
-      outputStreams: .value(false),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .value(
-        BluetoothEarPlacement(left: .outOfEar, right: .inEar)
-      )
-    ),
-  ])
-  let conflictDevice = conflictController.selectDevices(
-    named: nil,
-    policy: .allOrExact
-  )![0]
-  check(
-    conflictDevice.readInEarPlacementStatus().isUnresolved,
-    "conflicting endpoint placement evidence is unresolved"
-  )
-
-  let readErrorDevice = NSObject()
-  let (readErrorController, _) = makeBluetoothController(inventory: [
-    FakeInventoryEndpoint(
-      audioDeviceID: 117,
-      bluetoothDevice: readErrorDevice,
-      name: .value("Placement Error"),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .failure(-7_111)
-    ),
-  ])
-  let readError = readErrorController.selectDevices(
-    named: nil,
-    policy: .allOrExact
-  )![0]
-  check(
-    readError.readInEarPlacementStatus().isReadError,
-    "a HAL placement read error remains field-specific"
-  )
-
-  let valueAndFailure = EqualBluetoothObject(identity: 118)
-  let valueAndFailureInput = EqualBluetoothObject(identity: 118)
-  let valueAndFailurePlacement = BluetoothEarPlacement(
-    left: .inCase,
-    right: .outOfEar
-  )
-  let (valueAndFailureController, _) = makeBluetoothController(inventory: [
-    FakeInventoryEndpoint(
-      audioDeviceID: 118,
-      bluetoothDevice: valueAndFailure,
-      name: .value("Placement Partial Error"),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .value(valueAndFailurePlacement)
-    ),
-    FakeInventoryEndpoint(
-      audioDeviceID: 119,
-      bluetoothDevice: valueAndFailureInput,
-      inputStreams: .value(true),
-      outputStreams: .value(false),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .failure(-7_112)
-    ),
-  ])
-  let valueAndFailureDevice = valueAndFailureController.selectDevices(
-    named: nil,
-    policy: .allOrExact
-  )![0]
-  check(
-    valueAndFailureDevice.readInEarPlacementStatus().isReadError,
-    "a failed sibling prevents a definitive placement value"
-  )
-
-  let unknownAndFailure = EqualBluetoothObject(identity: 120)
-  let unknownAndFailureInput = EqualBluetoothObject(identity: 120)
-  let (unknownAndFailureController, _) = makeBluetoothController(inventory: [
-    FakeInventoryEndpoint(
-      audioDeviceID: 120,
-      bluetoothDevice: unknownAndFailure,
-      name: .value("Placement Unknown Partial Error"),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .unknown
-    ),
-    FakeInventoryEndpoint(
-      audioDeviceID: 121,
-      bluetoothDevice: unknownAndFailureInput,
-      inputStreams: .value(true),
-      outputStreams: .value(false),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .failure(-7_114)
-    ),
-  ])
-  let unknownAndFailureDevice = unknownAndFailureController.selectDevices(
-    named: nil,
-    policy: .allOrExact
-  )![0]
-  check(
-    unknownAndFailureDevice.readInEarPlacementStatus().isReadError,
-    "a failed sibling is not hidden by unknown placement evidence"
-  )
-
-  let conflictAndFailure = EqualBluetoothObject(identity: 122)
-  let conflictAndFailureInput = EqualBluetoothObject(identity: 122)
-  let conflictAndFailureSecondInput = EqualBluetoothObject(identity: 122)
-  let (conflictAndFailureController, _) = makeBluetoothController(inventory: [
-    FakeInventoryEndpoint(
-      audioDeviceID: 122,
-      bluetoothDevice: conflictAndFailure,
-      name: .value("Placement Conflict Partial Error"),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .value(
-        BluetoothEarPlacement(left: .inEar, right: .outOfEar)
-      )
-    ),
-    FakeInventoryEndpoint(
-      audioDeviceID: 123,
-      bluetoothDevice: conflictAndFailureInput,
-      inputStreams: .value(true),
-      outputStreams: .value(false),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .value(
-        BluetoothEarPlacement(left: .outOfEar, right: .inEar)
-      )
-    ),
-    FakeInventoryEndpoint(
-      audioDeviceID: 124,
-      bluetoothDevice: conflictAndFailureSecondInput,
-      inputStreams: .value(true),
-      outputStreams: .value(false),
-      appleAudioDevice: .value(true),
-      inEarPlacement: .failure(-7_115)
-    ),
-  ])
-  let conflictAndFailureDevice = conflictAndFailureController.selectDevices(
-    named: nil,
-    policy: .allOrExact
-  )![0]
-  check(
-    conflictAndFailureDevice.readInEarPlacementStatus().isReadError,
-    "a failed sibling is not hidden by conflicting placement evidence"
-  )
-}
-
-func testCoreAudioStatusPlacementMapsUnavailableUnknownAndFailure() {
-  let scenarios: [(String, BluetoothEarPlacementRead, String)] = [
-    ("unavailable", .unavailable, "unsupported"),
-    ("unknown", .unknown, "unresolved"),
-    ("failure", .failure(-7_113), "read-error"),
-  ]
-  for (index, scenario) in scenarios.enumerated() {
-    let label = scenario.0
-    let placement = scenario.1
-    let expected = scenario.2
-    let candidate = NSObject()
-    let (controller, _) = makeBluetoothController(inventory: [
-      FakeInventoryEndpoint(
-        audioDeviceID: AudioDeviceID(120 + index),
-        bluetoothDevice: candidate,
-        name: .value("Placement \(label)"),
-        appleAudioDevice: .value(true),
-        inEarPlacement: placement
-      ),
-    ])
-    let device = controller.selectDevices(named: nil, policy: .allOrExact)![0]
-    let status = device.readInEarPlacementStatus()
-    let matches: Bool
-    switch expected {
-    case "unsupported": matches = status.isUnsupported
-    case "unresolved": matches = status.isUnresolved
-    case "read-error": matches = status.isReadError
-    default: matches = false
-    }
-    check(matches, "a HAL placement \(label) maps to \(expected)")
-  }
 }
 
 func testCoreAudioInventoryRequiresEveryPositiveEndpointGate() {
@@ -825,9 +647,7 @@ func testActiveAVFeatureEnrichmentRequiresExactStableOutputJoin() {
 func runAudioRoutingTests() {
   testCoreAudioControllerCreationPreservesInventoryReadOutcome()
   testCoreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping()
-  testCoreAudioStatusReadsPlacementOnlyForStatusAndPreservesTypedState()
-  testCoreAudioStatusPlacementGroupsFailClosed()
-  testCoreAudioStatusPlacementMapsUnavailableUnknownAndFailure()
+  testCoreAudioStatusPlacementJourneyUsesGroupedEvidenceOnlyForStatus()
   testCoreAudioInventoryRequiresEveryPositiveEndpointGate()
   testGroupedEndpointIdentityConflictsFailClosed()
   testCoreAudioInventoryPreservesFirstGroupOccurrenceOrder()
@@ -839,6 +659,25 @@ func runAudioRoutingTests() {
   testBluetoothCanonicalEqualityAcceptsDistinctSystemWrappers()
   testBluetoothMapperMissingAndDifferentDeviceAreDistinguished()
   testActiveAVFeatureEnrichmentRequiresExactStableOutputJoin()
+}
+
+private func placementGroup(
+  named name: String,
+  identity: Int,
+  startingAt firstDeviceID: AudioDeviceID,
+  reads: [BluetoothEarPlacementRead]
+) -> [FakeInventoryEndpoint] {
+  reads.enumerated().map { index, read in
+    FakeInventoryEndpoint(
+      audioDeviceID: firstDeviceID + AudioDeviceID(index),
+      bluetoothDevice: EqualBluetoothObject(identity: identity),
+      inputStreams: .value(index != 0),
+      outputStreams: .value(index == 0),
+      name: .value(index == 0 ? name : nil),
+      appleAudioDevice: .value(true),
+      inEarPlacement: read
+    )
+  }
 }
 
 private extension DeviceStatusField {
