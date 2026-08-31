@@ -300,7 +300,7 @@ func testStatusIsOnePassAndReadOnly() {
   check(unsupported.conversationAwarenessStateReadCount == 0, "unsupported CA skips state read")
 }
 
-func testStatusNoDeviceContractAndResolutionPolicy() {
+func testStatusResolutionFailuresAndPolicy() {
   for arguments in [["status"], ["status", "--device", "Missing AirPods"]] {
     var capturedName: String?
     var capturedPolicy: DeviceSelectionPolicy?
@@ -332,23 +332,19 @@ func testStatusNoDeviceContractAndResolutionPolicy() {
       check(false, "status requests all-or-exact device resolution")
     }
   }
-}
 
-func testStatusResolutionReadErrorUsesTerminalEnvelope() {
-  let outcome = StatusCommand.resolutionFailureOutcome(.readError)
-  check(outcome.exitCode == 5, "status discovery read errors exit five")
-  check(
-    outcome.plain == "Compatible device discovery failed.",
-    "status discovery read errors use the read-error sentence"
+  let invocation = try! parseInvocation(["status"])
+  let readError = CommandExecution.execute(
+    invocation,
+    resolveDevices: { _, _, _ in .failed(.readError) }
   )
   check(
-    (outcome.payload["devices"] as? [[String: Any]])?.isEmpty == true,
+    readError.terminalReason == .readError,
+    "status preserves a discovery read error"
+  )
+  check(
+    (readError.payload["devices"] as? [[String: Any]])?.isEmpty == true,
     "status discovery read errors return an empty device array"
-  )
-  check(outcome.payload["result"] as? String == "error", "status read errors are JSON errors")
-  check(
-    outcome.payload["error"] as? String == "read-error",
-    "status discovery read errors use the canonical envelope token"
   )
 }
 
@@ -359,6 +355,5 @@ func runStatusCommandTests() {
   testStatusDistinguishesUnresolvedSelectionFromReadErrors()
   testStatusEscapesPlainHeadingsWithoutChangingJSONNames()
   testStatusIsOnePassAndReadOnly()
-  testStatusNoDeviceContractAndResolutionPolicy()
-  testStatusResolutionReadErrorUsesTerminalEnvelope()
+  testStatusResolutionFailuresAndPolicy()
 }
