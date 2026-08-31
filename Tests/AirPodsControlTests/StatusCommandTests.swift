@@ -7,7 +7,10 @@ private func statusOutcome(
   let invocation = try! parseInvocation(arguments)
   return CommandExecution.execute(
     invocation,
-    resolveDevices: { _, _, _ in devices }
+    resolveDevices: { _, _, _ in
+      guard let devices else { return .failed(.noDevice) }
+      return .devices(devices)
+    }
   )
 }
 
@@ -340,7 +343,7 @@ func testStatusNoDeviceContractAndResolutionPolicy() {
       resolveDevices: { name, policy, _ in
         capturedName = name
         capturedPolicy = policy
-        return nil
+        return .failed(.noDevice)
       }
     )
     check(outcome.exitCode == 1, "status no-device exits one")

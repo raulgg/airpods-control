@@ -329,15 +329,15 @@ func testConversationAwarenessUsesSharedNamedSelection() {
         resolverCallCount += 1
         capturedName = name
         capturedPolicy = policy
-        return nil
+        return .failed(.noDevice)
       }
     )
     check(resolverCallCount == 1, "\(arguments) resolves exactly once")
     check(capturedName == "Studio AirPods", "\(arguments) forwards its exact requested name")
-    if case .firstOrExact? = capturedPolicy {
-      check(true, "\(arguments) retains first-or-exact operational selection")
+    if case .singleOrExact? = capturedPolicy {
+      check(true, "\(arguments) requires one operational target")
     } else {
-      check(false, "\(arguments) retains first-or-exact operational selection")
+      check(false, "\(arguments) requires one operational target")
     }
     check(outcome.plain == "no-device", "\(arguments) retains plain no-device")
     check(outcome.exitCode == 1, "\(arguments) retains no-device exit one")

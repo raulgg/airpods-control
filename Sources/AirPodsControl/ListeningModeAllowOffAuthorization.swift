@@ -78,7 +78,7 @@ final class ListeningModeAllowOffCorrelation {
     observedAt: Date
   ) -> ListeningModeAllowOffAuthorization? {
     switch observation {
-    case .unavailable:
+    case .unavailable, .readError, .partial:
       return nil
     case .value(let modes) where modes.contains(.off):
       var storedRecord: AllowOffCacheRecord?
@@ -89,7 +89,7 @@ final class ListeningModeAllowOffCorrelation {
           allowsOff: true,
           observedAt: observedAt
         )
-        if case .hit(let record) = cache.lookup(rawDeviceUID: rawDeviceUID) {
+        if case .allowed(let record) = cache.lookup(rawDeviceUID: rawDeviceUID) {
           storedRecord = record
         }
       }
@@ -100,13 +100,7 @@ final class ListeningModeAllowOffCorrelation {
       // disposable cache cannot be correlated or written.
       return .live(cache: storedRecord == nil ? nil : cache, record: storedRecord)
     case .value:
-      withUnambiguousRawUID { rawDeviceUID in
-        _ = cache.applyObservation(
-          rawDeviceUID: rawDeviceUID,
-          allowsOff: false,
-          observedAt: observedAt
-        )
-      }
+      invalidatePositiveObservation(noNewerThan: observedAt)
       return nil
     }
   }
@@ -121,10 +115,20 @@ final class ListeningModeAllowOffCorrelation {
     }
   }
 
+  func observeDenial(observedAt: Date) {
+    withUnambiguousRawUID { rawDeviceUID in
+      _ = cache.applyObservation(
+        rawDeviceUID: rawDeviceUID,
+        allowsOff: false,
+        observedAt: observedAt
+      )
+    }
+  }
+
   func cachedAuthorization() -> ListeningModeAllowOffAuthorization? {
     var record: AllowOffCacheRecord?
     withUnambiguousRawUID { rawDeviceUID in
-      if case .hit(let value) = cache.lookup(rawDeviceUID: rawDeviceUID) {
+      if case .allowed(let value) = cache.lookup(rawDeviceUID: rawDeviceUID) {
         record = value
       }
     }
@@ -136,6 +140,25 @@ final class ListeningModeAllowOffCorrelation {
     let age = max(0, min(604_800, Int(now().timeIntervalSince(record.evidence.observedAt))))
     logger.debug("allow_off_cache.age_seconds", age)
     return .cached(cache: cache, record: record)
+  }
+
+  func hasCachedDenial() -> Bool {
+    var denied = false
+    withUnambiguousRawUID { rawDeviceUID in
+      if case .denied = cache.lookup(rawDeviceUID: rawDeviceUID) {
+        denied = true
+      }
+    }
+    return denied
+  }
+
+  private func invalidatePositiveObservation(noNewerThan observedAt: Date) {
+    withUnambiguousRawUID { rawDeviceUID in
+      _ = cache.invalidatePositiveObservation(
+        rawDeviceUID: rawDeviceUID,
+        observedAt: observedAt
+      )
+    }
   }
 
   private func withUnambiguousRawUID(_ body: (String) -> Void) {

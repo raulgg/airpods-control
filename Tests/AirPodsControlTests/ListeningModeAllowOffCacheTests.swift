@@ -102,7 +102,14 @@ private func withTemporaryAllowOffCache(
 private func allowOffRecord(
   from lookup: AllowOffCacheLookup
 ) -> AllowOffCacheRecord? {
-  guard case .hit(let record) = lookup else { return nil }
+  guard case .allowed(let record) = lookup else { return nil }
+  return record
+}
+
+private func allowOffDenialRecord(
+  from lookup: AllowOffCacheLookup
+) -> AllowOffCacheRecord? {
+  guard case .denied(let record) = lookup else { return nil }
   return record
 }
 
@@ -423,7 +430,10 @@ func runListeningModeAllowOffCacheTests() {
       ) == .applied,
       "raw UID removal deletes its positive evidence"
     )
-    check(cache.lookup(rawDeviceUID: "first") == .miss, "raw UID removal misses afterward")
+    check(
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: "first")) != nil,
+      "a negative raw UID observation remains available as denial evidence"
+    )
     check(
       allowOffRecord(from: cache.lookup(rawDeviceUID: "second")) != nil,
       "raw UID removal preserves unrelated evidence"
@@ -494,8 +504,8 @@ func runListeningModeAllowOffCacheTests() {
       "negative observation replaces a malformed disposable cache"
     )
     check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "negative observation leaves no positive evidence"
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "negative observation is returned as denial evidence"
     )
   }
 
@@ -532,7 +542,7 @@ func runListeningModeAllowOffCacheTests() {
     )
     check(
       cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "failed negative persistence cannot leave a reusable positive"
+      "failed primary persistence cannot expose stale positive evidence"
     )
   }
 
@@ -752,8 +762,8 @@ func runListeningModeAllowOffCacheTests() {
     }
     clock.value = negativeObservedAt
     check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "a deny marker blocks stale positive evidence after lock contention"
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "a deny marker exposes denial evidence after lock contention"
     )
     clock.value = negativeObservedAt.addingTimeInterval(1)
     check(
@@ -1005,8 +1015,8 @@ func runListeningModeAllowOffCacheTests() {
     )
     clock.value = positiveObservedAt
     check(
-      cache.lookup(rawDeviceUID: rawUID) == .miss,
-      "clock rollback cannot resurrect superseded positive evidence"
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+      "clock rollback preserves superseding denial evidence"
     )
   }
 

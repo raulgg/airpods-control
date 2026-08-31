@@ -58,11 +58,11 @@ struct SupportReportSnapshot {
   static let maximumUnrecognizedListeningModeLength = 80
   static let maximumUnrecognizedListeningModeCount = 6
 
-  let family: SupportReportDeviceFamily
+  let family: SupportReportDeviceFamily?
   // nil when no catalog entry matches. Each renderer words the gap itself
   // rather than inheriting a phrase chosen here.
   let modelName: String?
-  let modelIdentifier: String
+  let modelIdentifier: String?
   let bluetoothProductID: String?
   let listeningModes: [ListeningMode]
   let otherListeningModes: SupportReportOtherListeningModes
@@ -77,16 +77,13 @@ struct SupportReportSnapshot {
     device: any CompatibleAudioDevice,
     operatingSystemVersion: OperatingSystemVersion =
       ProcessInfo.processInfo.operatingSystemVersion
-  ) -> SupportReportSnapshot? {
+  ) -> SupportReportSnapshot {
     let metadata = device.supportReportMetadata()
-    guard let family = metadata.family,
-          let modelIdentifier = normalizedMetadataValue(
-            metadata.modelIdentifier,
-            maximumLength: maximumModelIdentifierLength
-          )
-    else {
-      return nil
-    }
+    let family = metadata.family
+    let modelIdentifier = normalizedMetadataValue(
+      metadata.modelIdentifier,
+      maximumLength: maximumModelIdentifierLength
+    )
 
     let availableModes = Set(device.availableListeningModes())
     let listeningModes = ListeningMode.allCases.filter { availableModes.contains($0) }
@@ -110,7 +107,7 @@ struct SupportReportSnapshot {
       ? SupportReportQueryAvailability.available
       : SupportReportQueryAvailability.unavailable
 
-    let resolvedProduct = AppleAudioProducts.product(for: modelIdentifier)
+    let resolvedProduct = modelIdentifier.flatMap(AppleAudioProducts.product)
     let bluetoothProductID = resolvedProduct?.bluetoothProductID.map {
       AppleAudioProducts.hexProductID($0)
     }

@@ -102,7 +102,10 @@ extension CommandExecution {
     return execute(
       invocation,
       resolveDevices: { requestedName, _, logger in
-        resolveDevice(requestedName, logger).map { [$0] }
+        guard let device = resolveDevice(requestedName, logger) else {
+          return .failed(.noDevice)
+        }
+        return .devices([device])
       },
       supportReport: supportReport
     )
@@ -116,10 +119,14 @@ func passiveSupportReport(
   operatingSystemVersion: OperatingSystemVersion =
     ProcessInfo.processInfo.operatingSystemVersion
 ) -> SupportReportDocument? {
-  SupportReportSnapshot.capture(
-    device: device,
-    operatingSystemVersion: operatingSystemVersion
-  ).map { SupportReportDocument.make(snapshot: $0) }
+  .some(
+    SupportReportDocument.make(
+      snapshot: SupportReportSnapshot.capture(
+        device: device,
+        operatingSystemVersion: operatingSystemVersion
+      )
+    )
+  )
 }
 
 extension SupportReportDocument {

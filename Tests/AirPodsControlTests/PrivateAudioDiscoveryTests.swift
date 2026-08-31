@@ -125,7 +125,7 @@ func testReadOnlySingularNeverFallsBackToPluralSetter() {
   let outcome = CommandExecution.execute(try! parseInvocation(["lm", "set", "adaptive"])) {
     _, _ in selected
   }
-  check(outcome.exitCode == 4, "a read-only singular endpoint reports an unsupported write")
+  check(outcome.exitCode == 6, "a read-only singular endpoint reports unavailable")
   check(plural.listeningModeSetCount == 0, "the stale plural setter is never used as fallback")
 }
 

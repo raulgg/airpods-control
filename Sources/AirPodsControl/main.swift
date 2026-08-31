@@ -68,24 +68,24 @@ func writeJSON(_ payload: [String: Any]) {
 
 func finish(
   plain: String,
-  code: Int32 = 0,
+  terminalReason: TerminalReason = .success,
   jsonOutput: Bool,
-  payload: [String: Any]
+  data: [String: Any] = [:]
 ) -> Never {
   if jsonOutput {
-    writeJSON(payload)
+    writeJSON(terminalReason.addingEnvelope(to: data))
   } else {
     print(plain)
   }
-  exit(code)
+  exit(terminalReason.exitCode)
 }
 
 func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
   finish(
     plain: outcome.plain,
-    code: outcome.exitCode,
+    terminalReason: outcome.terminalReason,
     jsonOutput: jsonOutput,
-    payload: outcome.payload
+    data: outcome.data
   )
 }
 
@@ -94,16 +94,21 @@ func bootstrapAndResolveAudioDevices(
   policy: DeviceSelectionPolicy,
   logger: DebugLogger,
   accessPolicy: PrivateAudioAccessPolicy
-) -> [any CompatibleAudioDevice]? {
+) -> CommandDeviceResolution {
   ensureBypass(logger: logger)
 
   switch accessPolicy {
   case .operational:
     guard let endpoints = PrivateAudioDiscovery.systemOperationalEndpoints(
       logger: logger
-    ) else { return nil }
-    return PrivateAudioController(endpoints: endpoints, logger: logger)
-      .selectDevices(named: requestedName, policy: policy)
+    ) else { return .failed(.unavailable) }
+    switch PrivateAudioController(endpoints: endpoints, logger: logger)
+      .resolveDevices(named: requestedName, policy: policy)
+    {
+    case let .selected(devices): return .devices(devices.map { $0 })
+    case .noDevice: return .failed(.noDevice)
+    case .ambiguousDevice: return .failed(.ambiguousDevice)
+    }
 
   case .status:
     let activeOutputContext = PrivateAudioDiscovery.systemStatusOutputContext(
@@ -112,21 +117,28 @@ func bootstrapAndResolveAudioDevices(
     guard let controller = IOBluetoothStatusController(
       logger: logger,
       activeOutputContext: activeOutputContext
-    ), let devices = controller.selectDevices(named: requestedName, policy: policy)
-    else { return nil }
-    return devices.map { $0 }
+    ) else { return .failed(.unavailable) }
+    switch controller.resolveDevices(named: requestedName, policy: policy) {
+    case let .selected(devices): return .devices(devices.map { $0 })
+    case .noDevice: return .failed(.noDevice)
+    case .ambiguousDevice: return .failed(.ambiguousDevice)
+    }
 
   case .supportReport:
     // Preserve the name-free, plural-only support-report discovery contract.
     // In particular, do not query outputDevice or private device identifiers.
     guard let devices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
-      return nil
+      return .failed(.unavailable)
     }
-    return PrivateAudioController(
+    switch PrivateAudioController(
       rawDevices: devices,
       logger: logger,
       includeDeviceNames: false
-    ).selectDevices(named: requestedName, policy: policy)
+    ).resolveDevices(named: requestedName, policy: policy) {
+    case let .selected(devices): return .devices(devices.map { $0 })
+    case .noDevice: return .failed(.noDevice)
+    case .ambiguousDevice: return .failed(.ambiguousDevice)
+    }
   }
 }
 
@@ -190,7 +202,7 @@ func bootstrapAndResolveListeningMode(
       )
       switch outcome {
       case let .selected(index): return .selected(index: index)
-      case .cancelled: return .cancelled
+      case .declined: return .unavailable
       }
     }
   )
@@ -199,13 +211,11 @@ func bootstrapAndResolveListeningMode(
 let rawArgs = Array(CommandLine.arguments.dropFirst())
 
 if rawArgs.isEmpty {
-  print(globalHelp)
-  exit(0)
+  finish(plain: globalHelp, jsonOutput: false)
 }
 
 if let help = helpText(for: rawArgs) {
-  print(help)
-  exit(0)
+  finish(plain: help, jsonOutput: false)
 }
 
 let preliminaryJSON = rawArgs.contains("--json")
@@ -219,9 +229,8 @@ do {
   preliminaryLogger.warning("cli.parse", "bad-args")
   finish(
     plain: "bad-args",
-    code: 2,
-    jsonOutput: preliminaryJSON,
-    payload: ["error": "bad-args", "result": "error"]
+    terminalReason: .badArgs,
+    jsonOutput: preliminaryJSON
   )
 }
 
@@ -277,6 +286,6 @@ if ListeningModeCommand(invocation.command) != nil {
   )
 }
 if case .supportReport = invocation.command {
-  exit(SupportReportInteraction.present(outcome: outcome))
+  exit(SupportReportInteraction.present(outcome: outcome).exitCode)
 }
 finish(outcome, jsonOutput: invocation.jsonOutput)

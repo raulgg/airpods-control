@@ -36,11 +36,9 @@ struct SupportReportCommand {
     writeTests preference: WriteTestsPreference,
     device: any CompatibleAudioDevice
   ) -> CommandOutcome {
-    // Identify the device before consenting to or running any write. The
-    // snapshot taken here is the one rendered after the writes.
-    guard let snapshot = SupportReportSnapshot.capture(device: device) else {
-      return Self.unidentifiedDeviceOutcome()
-    }
+    // Capture before consenting to or running any write. Identity is useful
+    // report data, but it is not a prerequisite for a safe partial report.
+    let snapshot = SupportReportSnapshot.capture(device: device)
     let plan = SupportReportWriteTestPlan.make(device: device)
     let consented: Bool
     switch preference {
@@ -55,21 +53,18 @@ struct SupportReportCommand {
     case .completed:
       return CommandOutcome(
         plain: "",
-        payload: ["result": "ok"],
         supportReport: report
       )
     case .restorationFailed:
       return CommandOutcome(
         plain: "",
-        exitCode: 3,
-        payload: ["result": "no-op"],
+        terminalReason: .stateUncertain,
         supportReport: report
       )
     case let .interrupted(signal):
       return CommandOutcome(
         plain: "",
-        exitCode: 128 + signal,
-        payload: ["result": "interrupted", "signal": signal],
+        terminalReason: .caughtSignal(signal),
         supportReport: report
       )
     }
@@ -86,29 +81,32 @@ struct SupportReportCommand {
   }
 
   static func noDeviceOutcome() -> CommandOutcome {
-    CommandOutcome(
+    resolutionFailureOutcome(.noDevice)
+  }
+
+  static func resolutionFailureOutcome(_ reason: TerminalReason) -> CommandOutcome {
+    let availability: String
+    switch reason {
+    case .noDevice:
+      availability = "No compatible AirPods or Beats report device is available."
+    case .ambiguousDevice:
+      availability = "Multiple compatible AirPods or Beats report devices are available."
+    case .unavailable:
+      availability = "AirPods or Beats report-device discovery is unavailable."
+    case .readError:
+      availability = "AirPods or Beats report-device discovery failed."
+    default:
+      preconditionFailure("support-report resolution cannot end as \(reason.token)")
+    }
+    return CommandOutcome(
       plain: """
-      No unique AirPods or Beats report device is available.
+      \(availability)
       Connect exactly one compatible AirPods or Beats device as a macOS output device,
       then run `airpods-control support-report` again.
       Nothing was sent to GitHub.
       """,
-      exitCode: 1,
-      payload: ["error": "no-device", "result": "error"]
+      terminalReason: reason
     )
   }
 
-  private static func unidentifiedDeviceOutcome() -> CommandOutcome {
-    CommandOutcome(
-      plain: """
-      A compatible audio device is connected, but it could not be identified
-      as AirPods or Beats from its model metadata.
-      No report was generated. Nothing was sent to GitHub.
-      You can open a compatibility issue manually:
-      \(SupportReportIssue.formURL.absoluteString)
-      """,
-      exitCode: 1,
-      payload: ["error": "unidentified-device", "result": "error"]
-    )
-  }
 }

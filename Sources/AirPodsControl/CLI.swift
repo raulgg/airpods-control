@@ -96,6 +96,11 @@ Global options:
                Print the version and exit.
   --help, -h   Print this help and exit.
 
+Exit status:
+  0 success; 1 no-device; 2 bad-args; 3 no-op; 4 unsupported;
+  5 read-error; 6 unavailable; 7 state-uncertain; 8 ambiguous-device.
+  Caught signals use 128 + signal.
+
 Run 'airpods-control status --help' or
 'airpods-control <resource> --help' for command-specific help.
 """
@@ -155,8 +160,9 @@ Conversation Awareness, audio output selection, audio input selection, left/righ
 ear placement, and read errors. An unresolved or failed feature read is also
 unknown; a feature proven unsupported is omitted.
 
-If no compatible device is connected, or the requested name is not unique,
-print 'No compatible AirPods or Beats device is connected.' and exit 1.
+If no compatible device is connected, print
+'No compatible AirPods or Beats device is connected.' and exit 1. A requested
+name that matches several records is ambiguous-device and exits 8.
 
 Options:
   --device NAME
@@ -210,11 +216,14 @@ Options:
 
 Listening-mode commands use a command-ready AV endpoint for the selected
 output and an eligible Core Audio HAL output endpoint when unselected. They
-never change the audio route. In an interactive terminal, multiple unnamed HAL
-targets prompt for a displayed number; automated or JSON ambiguity fails.
+never change the audio route. In an interactive terminal, multiple unnamed
+targets prompt for a displayed number; declining, automated use, and JSON use
+all report ambiguous-device.
 HAL-backed commands can reuse a recent AV Allow Off observation for the exact
-output endpoint. The observation expires after seven days; cache misses
-preserve HAL's non-Off behavior, and the default cycle always excludes off.
+output endpoint. The observation expires after seven days. On a cache miss,
+only an explicit set off or explicit cycle containing off may probe once; a
+setter-accepted definitive non-Off readback reports unsupported and records a
+denial. List and the default cycle never probe.
 """
 
 let conversationAwarenessHelp = """
@@ -237,7 +246,9 @@ let supportReportHelp = """
 Usage:
   airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
 
-Build a local compatibility report from device and macOS metadata. When the
+Build a local compatibility report from device and macOS metadata. Missing or
+unrecognized product identity is included as unavailable data in a successful
+partial report. When the
 command can plan at least one write test safely, an interactive run shows the
 plan and asks for consent. Declining produces a read-only report. Exactly one
 compatible output device must be available; the command does not read device
@@ -255,8 +266,8 @@ can be disruptive: mode switches are audible and noise control changes while
 the device is worn.
 
 After normal completion or a setter error, the command makes one restoration
-attempt. An unverified restoration reports the final state and
-exits 3. An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the
+attempt. An unverified restoration reports the final state and exits 7
+(state-uncertain). An externally delivered SIGHUP, SIGINT, or SIGTERM caught during the
 tests prints an interrupt notice on stderr, attempts restoration first, then
 exits 129, 130, or 143, respectively, without offering an issue form.
 

@@ -45,10 +45,10 @@ enum SupportReportInteraction {
     openURL: (URL) -> Bool = openInDefaultBrowser,
     writeOutput: (String) -> Void = { print($0); fflush(stdout) },
     writeError: (String) -> Void = { fputs($0, stderr) }
-  ) -> Int32 {
+  ) -> TerminalReason {
     guard let document = outcome.supportReport else {
       writeOutput(outcome.plain)
-      return outcome.exitCode
+      return outcome.terminalReason
     }
     writeOutput(
       SupportReportTerminalRenderer.render(
@@ -60,7 +60,7 @@ enum SupportReportInteraction {
       )
     )
     guard document.interruptedBySignal == nil else {
-      return outcome.exitCode
+      return outcome.terminalReason
     }
 
     let draft = SupportReportGitHubRenderer.render(document)
@@ -86,7 +86,7 @@ enum SupportReportInteraction {
           + "if you want to submit it:\n"
           + issueURL.url.absoluteString + "\n"
       )
-      return outcome.exitCode
+      return outcome.terminalReason
     }
 
     let prompt = issueURL.prefilled
@@ -97,7 +97,7 @@ enum SupportReportInteraction {
           ["y", "yes"].contains(response.lowercased())
     else {
       writeError("Not opened. The report remains above.\n")
-      return outcome.exitCode
+      return outcome.terminalReason
     }
 
     if openURL(issueURL.url) {
@@ -108,7 +108,7 @@ enum SupportReportInteraction {
           + issueURL.url.absoluteString + "\n"
       )
     }
-    return outcome.exitCode
+    return outcome.terminalReason
   }
 
   private static func terminalColorsEnabled(fileDescriptor: Int32) -> Bool {

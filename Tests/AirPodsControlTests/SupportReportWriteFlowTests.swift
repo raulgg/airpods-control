@@ -132,7 +132,7 @@ func testSupportReportIssueReportDoesNotNameTheUntestedInitialMode() {
     conversationAwarenessSupported: false,
     reportMetadata: .fixture()
   )
-  let snapshot = SupportReportSnapshot.capture(device: device)!
+  let snapshot = SupportReportSnapshot.capture(device: device)
   let results = SupportReportWriteTester.run(device: device)
   let issueReport = SupportReportDocument.make(snapshot: snapshot, writeTests: results).githubIssueDraft.report
 
@@ -318,7 +318,7 @@ func testSupportReportWriteTestsRestoreFailure() {
 
   let invocation = try! parseInvocation(["support-report", "--with-write-tests"])
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
-  check(outcome.exitCode == 3, "a failed restoration exits no-op")
+  check(outcome.exitCode == 7, "a failed restoration exits state-uncertain")
   check(device.currentListeningMode() == .transparency, "the final observed mode is retained")
   check(outcome.supportReportIssueDraft != nil, "a failed restoration still offers the issue draft")
 }

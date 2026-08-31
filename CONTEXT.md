@@ -5,13 +5,75 @@
 **Command execution**
 : Evaluates a parsed CLI invocation and produces a command outcome. It requests
   compatible audio devices from the runtime adapter only when the command needs
-  them. Individual resource commands retain first-or-exact selection; aggregate
-  status uses all-or-exact selection. Execution does not parse arguments, render
+  them. Commands needing one target use single-or-exact selection; aggregate
+  status uses all-or-exact selection. Either policy reports multiple exact
+  matches as ambiguous. Execution does not parse arguments, render
   output, or terminate the process.
 
 **Command outcome**
-: Everything produced by command execution: plain output, exit code, and the
-  structured JSON payload.
+: Everything produced by command execution: its terminal reason, corresponding
+  exit code, plain output, and structured JSON payload.
+
+**Terminal reason**
+: A command-independent semantic explanation for any deliberately handled CLI
+  termination, including caught signals but excluding crashes and forced or
+  uncaught termination. Each normal terminal reason has exactly one exit code
+  and remains distinct from command-specific plain or JSON presentation.
+
+**Normal terminal reasons**
+: The closed set `success`, `bad-args`, `no-device`, `ambiguous-device`,
+  `no-op`, `state-uncertain`, `unsupported`, `unavailable`, and `read-error`.
+  Caught Unix signals use a separate typed `128 + signal` namespace.
+
+**Successful terminal reason**
+: The terminal reason used when the CLI fulfilled its primary contract without
+  violating a safety invariant. Optional work may be skipped or report
+  negative results; failed restoration is not successful.
+
+**Device terminal reasons**
+: `no-device` means the command resolved no target under its device contract;
+  `ambiguous-device` means several possible targets remain, including when an
+  interactive chooser is unavailable or declined. There is no separate
+  cancellation reason. Missing or unrecognized
+  support-report product identity is report data, not a terminal reason: the
+  command emits a partial report from the safe observations it can collect and
+  remains successful.
+
+**No-op terminal reason**
+: A setter accepted the request, but the command did not verify the requested
+  feature state and no separate required final-state invariant remains
+  unresolved. A setter that explicitly rejects the request is `unavailable`,
+  not `no-op`.
+
+**State-uncertain terminal reason**
+: The command cannot confirm a required final device state after side effects,
+  including restoration after support-report write tests when no caught signal
+  owns termination. It is distinct from an unverified requested feature state
+  and from a failed primary information read; a caught signal retains its
+  conventional terminal reason while the report carries restoration details.
+
+**Read-error terminal reason**
+: The command attempted its primary information read but produced no usable
+  result. A read failure that instead prevents confirmation of a required final
+  state after side effects is `state-uncertain`; a successfully read unresolved
+  observation is not a read error.
+
+**Unresolved observation**
+: A successful read whose value the CLI cannot interpret or prove. Read-only
+  commands may report it as `unknown` and remain successful; a mutation that
+  requires a concrete value is `unavailable` before side effects begin.
+
+**Unsupported terminal reason**
+: Authoritative, target-specific evidence definitively excludes the requested
+  operation. Valid negative Allow Off evidence qualifies; missing or unresolved
+  evidence does not.
+
+**Unavailable terminal reason**
+: The CLI cannot currently establish or access a prerequisite, catalog,
+  provider, capability, or control path required to attempt an operation. It is
+  also the result when an invoked setter explicitly rejects the request or
+  reports that it is not settable before accepting a side effect. It is not
+  evidence that the target definitively excludes the operation.
 
 **Status snapshot**
 : A read-only observation of selection, listening mode, Conversation Awareness,
@@ -124,10 +186,14 @@
 
 **Support report document**
 : Compatibility data built from a pre-write device snapshot and optional
-  write-test results. It contains one result row per attempted write and omits
-  unresolved values instead of turning them into prose. The terminal and GitHub
-  renderers format the document and choose how to describe absent values; they
-  do not inspect raw device or write-test behavior.
+  write-test results. Product identity is optional: missing, rejected, or
+  unrecognized identity produces a successful partial document from the safe
+  observations that remain. Identity does not decide write-test eligibility;
+  the captured runtime plan, explicit consent, bounded verification, and
+  restoration rules do. The document contains one result row per attempted
+  write and omits unresolved values instead of turning them into prose. The
+  terminal and GitHub renderers format the document and choose how to describe
+  absent values; they do not inspect raw device or write-test behavior.
 
 **Device write observation**
 : What a compatible audio device reports after a write attempt: whether the
@@ -139,7 +205,9 @@
 **Allow Off availability observation**
 : A successful observation that a device's active AV control surface did or did
   not advertise Off at a particular time. It is evidence about that observation
-  time, not a perpetual statement of the device's current configuration.
+  time, not a perpetual statement of the device's current configuration. Off
+  establishes positive evidence; omission invalidates older positive evidence
+  but does not establish target-specific denial.
 
 **Cache-eligible AV observation**
 : A successful live AV availability read for an availability list, `set off`,
@@ -150,16 +218,23 @@
   the cache.
 
 **Allow Off evidence invalidation**
-: An accepted Off write backed by fresh or cached positive AV-derived evidence
-  invalidates that positive after a definitive non-Off bounded readback. Setter
-  rejection, timeout, and read failure leave it unchanged; invalidation is not
-  a negative availability observation.
+: Removal of older positive evidence after a later AV availability observation
+  omits Off. An internal ordering tombstone prevents delayed older positive
+  work from restoring that evidence, but is exposed as a cache miss rather than
+  a target-specific denial.
+
+**Allow Off denial evidence**
+: An accepted Off request followed by definitive known non-Off readback. It is
+  affirmative target-specific evidence for `unsupported` on a probe and blocks
+  later probes until it expires or newer positive evidence supersedes it.
+  Setter rejection, timeout, failed read, and unknown final state establish no
+  denial.
 
 **Cache-authorized Off mismatch**
-: An accepted HAL Off write whose definitive final state is non-Off. The command
-  reports the existing no-op result and exit status 3, includes the actual final
-  mode in JSON, deletes the positive cache entry, and stops without retrying a
-  provider, applying a fallback, or advancing a cycle again.
+: An Off write authorized by positive evidence whose definitive final state is
+  non-Off. The current invocation reports no-op, includes the actual final mode
+  in JSON, replaces the positive with denial evidence, and stops without
+  retrying a provider, applying a fallback, or advancing a cycle again.
 
 **Cached availability provenance**
 : Metadata emitted only when cached Off evidence is consumed. Plain operational
@@ -169,24 +244,14 @@
   support report.
 
 **Cached Allow Off availability**
-: The last persisted Allow Off availability observation associated with one
-  resolved device. A live observation outranks it, and absence of a usable cache
-  entry leaves availability unknown. A positive observation remains usable for
-  seven days from its observation time; cache reads never extend that deadline.
-  macOS version changes neither invalidate nor extend that deadline.
-  A successful cache-eligible AV observation refreshes the positive when Off is
-  advertised and replaces it with a negative tombstone when Off is absent. The
-  newest observation wins, and a negative observation wins equal timestamps, so
-  an older in-flight positive read cannot restore stale evidence. A selector or
-  read failure is not an observation and leaves the cache unchanged.
-  If a negative update cannot obtain the bounded shared mutation lock, a
-  digest-keyed deny marker is written beside the cache and honored by later
-  lookups until newer positive evidence supersedes it. A failed negative write
-  under the lock removes the disposable cache instead of retaining stale
-  positive evidence.
-  On a HAL-only path, a usable positive adds Off to listed availability and may
-  authorize `set off` or a cycle whose explicit mode set contains Off. It never
-  adds Off to the default cycle.
+: The last persisted positive evidence, denial evidence, or internal ordering
+  tombstone associated with one resolved device. Evidence remains usable for
+  seven days from observation; cache reads never extend that deadline. Positive
+  evidence can add Off to a HAL list or authorize an Off write. Denial evidence
+  prevents a repeated probe. An internal tombstone only orders observations
+  and appears as a miss. `get`, `list`, and the default cycle never probe; an
+  explicit Off request may probe on a miss. A selector or read failure leaves
+  evidence unchanged.
   _Avoid_: Current Allow Off state, cached capability
 
 **Cache correlation key**
@@ -203,7 +268,8 @@
   exact device groups. It is treated only as a cache miss: HAL listing omits
   Off, cache evidence authorizes no write, and the CLI neither guesses, merges,
   selects a device, nor emits an ambiguity error solely because of the cache.
-  Commands otherwise continue normally.
+  It does not prevent the current explicit probe, but no reusable evidence can
+  be persisted without unique correlation.
 
 **Allow Off cache store**
 : The deliberately disposable, per-user, backup-excluded file at

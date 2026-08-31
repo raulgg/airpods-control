@@ -39,7 +39,11 @@ enum SupportReportTerminalRenderer {
         terminalModelIdentifier(document.device),
         options: options
       ),
-      row("Family", document.device.family.rawValue, options: options),
+      row(
+        "Family",
+        document.device.family?.rawValue ?? "Unavailable / not reported",
+        options: options
+      ),
       row("macOS", document.device.macOS, options: options),
       row("airpods-control", document.device.cliVersion, options: options),
       "",
@@ -149,10 +153,11 @@ enum SupportReportTerminalRenderer {
   private static func terminalModelIdentifier(
     _ device: SupportReportDocument.Device
   ) -> String {
-    guard let productID = device.bluetoothProductID else {
-      return device.modelIdentifier
+    guard let identifier = device.modelIdentifier else {
+      return "Unavailable / not reported"
     }
-    return "\(device.modelIdentifier) · product \(productID)"
+    guard let productID = device.bluetoothProductID else { return identifier }
+    return "\(identifier) · product \(productID)"
   }
 
   private static func terminalListeningModes(_ modes: [ListeningMode]) -> String {
@@ -344,7 +349,8 @@ enum SupportReportGitHubRenderer {
       "- Model: "
         + (document.device.modelName ?? "not recognized by this CLI version"),
       "- Model identifier: \(githubModelIdentifier(document.device))",
-      "- Device family: \(document.device.family.rawValue)",
+      "- Device family: "
+        + (document.device.family?.rawValue ?? "unavailable/not reported"),
       "- macOS: \(document.device.macOS)",
       "- airpods-control: \(document.device.cliVersion)",
       "",
@@ -385,9 +391,9 @@ enum SupportReportGitHubRenderer {
       }
     }
 
-    // An unresolved model falls back to the family so the title still says
-    // what kind of device the report is about.
-    let subject = document.device.modelName ?? document.device.family.rawValue
+    let subject = document.device.modelName
+      ?? document.device.family?.rawValue
+      ?? "unidentified Apple audio device"
     return SupportReportIssueDraft(
       title: "[Compatibility] \(subject) on macOS \(document.device.macOS)",
       report: lines.joined(separator: "\n")
@@ -397,7 +403,10 @@ enum SupportReportGitHubRenderer {
   private static func githubModelIdentifier(
     _ device: SupportReportDocument.Device
   ) -> String {
-    let identifier = "`\(device.modelIdentifier)`"
+    guard let modelIdentifier = device.modelIdentifier else {
+      return "unavailable/not reported"
+    }
+    let identifier = "`\(modelIdentifier)`"
     guard let productID = device.bluetoothProductID else { return identifier }
     return "\(identifier) (Bluetooth product ID \(productID))"
   }

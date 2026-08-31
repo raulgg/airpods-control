@@ -142,14 +142,14 @@ airpods-control status --device "My AirPods Pro" --json
 `status` has no alias. Without `--device`, `status` reports every eligible
 AirPods or Beats record derived from the currently available Core Audio device
 list, even when it is not the selected audio output. The individual resource
-commands retain their documented adapters. Listening-mode commands prefer the
-selected output, use a unique eligible HAL device when unselected, and prompt in
-a fully interactive terminal when no selected HAL target exists and several HAL
-targets remain.
-Multiple selected HAL targets fail closed; leftover AV records do not enter the
-HAL chooser. On
-systems where HAL control is entirely unavailable, the prior AV-only behavior
-continues to use the first compatible AV output. Run
+commands retain their documented adapters. Listening-mode commands combine AV
+and eligible HAL representations into logical targets, select one target
+automatically, and prompt in a fully interactive terminal when several remain.
+Declining the chooser, automated ambiguity, and duplicate exact names all
+report `ambiguous-device` (exit `8`). Multiple selected HAL targets fail
+closed when ambiguity remains; leftover AV records do not enter the HAL chooser. On systems where HAL
+control is entirely unavailable, a single compatible AV output is selected;
+multiple outputs are ambiguous. Run
 `airpods-control --help` for built-in help. The
 [complete CLI reference](docs/cli.md) covers aliases, JSON output, diagnostics,
 write verification, and exit codes. After installation, you can also run
@@ -183,8 +183,11 @@ setting. After the exact output endpoint advertises Off in an eligible AV
 availability read, or an AV-backed `get` reports current Off, the CLI can reuse
 that positive observation for HAL-backed `list`, `set off`, and explicit cycles
 containing Off. The observation expires after seven days and is not refreshed
-by use; the default cycle always excludes Off. A cache miss preserves the
-fail-closed HAL behavior. See
+by use; the default cycle always excludes Off. On a cache miss, only an explicit
+`set off` or explicit cycle containing Off may perform one HAL probe. A
+setter-accepted definitive non-Off readback records target-specific denial and
+reports `unsupported`; rejection is `unavailable`, while an unreadable or
+timed-out final state is `no-op` and records no denial. See
 [the CLI reference](docs/cli.md#cached-allow-off-availability) and
 [ADR 0002](docs/adr/0002-cache-av-derived-allow-off-availability.md) for the
 evidence and invalidation rules.

@@ -51,10 +51,25 @@ cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
 CLI="$PROBE_DIR/airpods-control"
 MISSING_DEVICE='__airpods_control_cli_contract_missing__'
 
-"$CLI" --help >/dev/null
-"$CLI" lm --help >/dev/null
-"$CLI" status --help >/dev/null
-"$CLI" support-report --help >/dev/null
+global_help=$("$CLI" --help)
+listening_mode_help=$("$CLI" lm --help)
+status_help=$("$CLI" status --help)
+support_report_help=$("$CLI" support-report --help)
+assert_contains "$global_help" \
+  '0 success; 1 no-device; 2 bad-args; 3 no-op; 4 unsupported;' \
+  "global help documents the shared low exit codes"
+assert_contains "$global_help" \
+  '5 read-error; 6 unavailable; 7 state-uncertain; 8 ambiguous-device.' \
+  "global help documents the shared high exit codes"
+assert_contains "$listening_mode_help" \
+  'only an explicit set off or explicit cycle containing off may probe once' \
+  "listening-mode help documents the explicit Allow Off probe"
+assert_contains "$status_help" \
+  'ambiguous-device and exits 8' \
+  "status help documents universal ambiguity"
+assert_contains "$support_report_help" \
+  'exits 7' \
+  "support-report help documents state uncertainty"
 
 assert_equal "$VERSION" "$("$CLI" --version)" "plain version"
 assert_equal "{\"result\":\"ok\",\"version\":\"$VERSION\"}" \
@@ -77,7 +92,8 @@ expect_failure 2 '{"error":"bad-args","result":"error"}' \
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" support-report --json
 
-# Exercise the executable's script-facing no-device contract as one journey.
+# Omitting the bypass leaves public HAL discovery available to listening-mode
+# commands, while private-provider commands report unavailable.
 # Valid mutating invocations stay in the Swift suite. This black-box contract
 # never runs one against production discovery, even with a sentinel name.
 expect_failure 1 no-device "$CLI" \
@@ -85,8 +101,8 @@ expect_failure 1 no-device "$CLI" \
 expect_failure 1 \
   '{"device":null,"error":"no-device","listeningMode":null,"result":"error","supportedListeningModes":[]}' \
   "$CLI" --device "$MISSING_DEVICE" --json lm list
-expect_failure 1 \
-  '{"conversationAwareness":null,"device":null,"error":"no-device","result":"error"}' \
+expect_failure 6 \
+  '{"conversationAwareness":null,"device":null,"error":"unavailable","result":"error"}' \
   "$CLI" --device "$MISSING_DEVICE" ca get --json
 expect_failure 1 \
   '{"devices":[],"error":"no-device","result":"error"}' \
@@ -98,12 +114,12 @@ support_report_output=$(
 )
 support_report_status=$?
 set -e
-assert_equal 1 "$support_report_status" "support-report no-device exit status"
+assert_equal 6 "$support_report_status" "support-report unavailable exit status"
 assert_contains "$support_report_output" \
   'Connect exactly one compatible AirPods or Beats device' \
   "support-report unique-device guidance"
 assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
-  "support-report no-device has no prompt"
+  "support-report unavailable has no prompt"
 
 # --with-write-tests authorizes real writes. This probe copy has no bypass
 # dylib, and this immediately preceding operational command proves discovery is
@@ -116,12 +132,12 @@ support_report_writes_output=$(
 )
 support_report_writes_status=$?
 set -e
-assert_equal 1 "$support_report_writes_status" \
-  "consented support-report no-device exit status"
+assert_equal 6 "$support_report_writes_status" \
+  "consented support-report unavailable exit status"
 assert_contains "$support_report_writes_output" \
   'Connect exactly one compatible AirPods or Beats device' \
   "consented support-report unique-device guidance"
 assert_equal '' "$(cat "$PROBE_DIR/support-report-writes.stderr")" \
-  "no device means no consent prompt and no writes"
+  "unavailable discovery means no consent prompt and no writes"
 
 printf '%s\n' 'CLI contract tests passed'

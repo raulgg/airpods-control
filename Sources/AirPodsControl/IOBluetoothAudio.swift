@@ -742,32 +742,48 @@ final class IOBluetoothStatusController {
     named requestedName: String?,
     policy: DeviceSelectionPolicy
   ) -> [IOBluetoothStatusDevice]? {
+    guard case let .selected(devices) = resolveDevices(
+      named: requestedName,
+      policy: policy
+    ) else { return nil }
+    return devices
+  }
+
+  func resolveDevices(
+    named requestedName: String?,
+    policy: DeviceSelectionPolicy
+  ) -> DeviceSelection<IOBluetoothStatusDevice> {
     if let requestedName {
       let matches = devices.filter {
         $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
       }
-      guard matches.count == 1 else {
-        logger.warning(
-          "device_selection",
-          matches.isEmpty ? "no-exact-name-match" : "ambiguous-device-name"
-        )
-        return nil
+      guard let selected = matches.first else {
+        logger.warning("device_selection", "no-exact-name-match")
+        return .noDevice
       }
-      logger.info("selected_device", matches[0].name)
-      return matches
+      guard matches.count == 1 else {
+        logger.warning("device_selection", "ambiguous-device-name")
+        return .ambiguousDevice
+      }
+      logger.info("selected_device", selected.name)
+      return .selected([selected])
     }
 
     guard !devices.isEmpty else {
       logger.warning("device_selection", "no-compatible-device")
-      return nil
+      return .noDevice
     }
     switch policy {
-    case .firstOrExact:
-      logger.info("selected_device", devices[0].name)
-      return [devices[0]]
+    case .singleOrExact:
+      guard devices.count == 1, let selected = devices.first else {
+        logger.warning("device_selection", "ambiguous-device")
+        return .ambiguousDevice
+      }
+      logger.info("selected_device", selected.name)
+      return .selected([selected])
     case .allOrExact:
       logger.info("selected_device_count", devices.count)
-      return devices
+      return .selected(devices)
     }
   }
 

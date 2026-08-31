@@ -81,23 +81,22 @@ func testSupportReportUnavailableValuesAndIdentification() {
   unavailable.exposesListeningModeSetter = false
   unavailable.exposesConversationAwarenessSetter = false
   let snapshot = SupportReportSnapshot.capture(device: unavailable)
-  check(snapshot != nil, "an identifiable Beats device produces an exploratory report")
-  check(snapshot?.family == .beats, "the snapshot preserves the exploratory family")
-  check(snapshot?.modelName == nil, "an unmapped identifier invents no model")
-  check(snapshot?.listeningModes.isEmpty == true, "missing advertised modes stay empty")
-  if case .unavailable? = snapshot?.listeningModeQuery {
+  check(snapshot.family == .beats, "the snapshot preserves the exploratory family")
+  check(snapshot.modelName == nil, "an unmapped identifier invents no model")
+  check(snapshot.listeningModes.isEmpty, "missing advertised modes stay empty")
+  if case .unavailable = snapshot.listeningModeQuery {
     check(true, "an unanswered listening-mode query stays unavailable")
   } else {
     check(false, "an unanswered listening-mode query stays unavailable")
   }
-  if case .unavailable? = snapshot?.conversationAwarenessSupport {
+  if case .unavailable = snapshot.conversationAwarenessSupport {
     check(true, "missing Conversation Awareness support stays unavailable")
   } else {
     check(false, "missing Conversation Awareness support stays unavailable")
   }
   check(
-    snapshot?.listeningModeSetterExposed == false
-      && snapshot?.conversationAwarenessSetterExposed == false,
+    snapshot.listeningModeSetterExposed == false
+      && snapshot.conversationAwarenessSetterExposed == false,
     "unexposed setters remain absent from the snapshot"
   )
 
@@ -108,19 +107,22 @@ func testSupportReportUnavailableValuesAndIdentification() {
       listeningModeQueryAnswered: false
     )
   )
+  let unidentifiedSnapshot = SupportReportSnapshot.capture(device: unidentified)
+  check(unidentifiedSnapshot.family == nil, "missing family remains unavailable")
   check(
-    SupportReportSnapshot.capture(device: unidentified) == nil,
-    "unidentifiable hardware does not produce an issue report"
+    unidentifiedSnapshot.modelIdentifier == nil,
+    "missing model identifier remains unavailable"
   )
 
   let invocation = try! parseInvocation(["support-report"])
   let outcome = CommandExecution.execute(invocation) { _, _ in unidentified }
-  check(outcome.exitCode == 1, "a connected but unidentifiable device exits one")
+  check(outcome.exitCode == 0, "a connected unidentified device produces a partial report")
+  check(outcome.payload["error"] == nil, "a partial report is not an error")
+  check(outcome.supportReportIssueDraft != nil, "a partial report can be reviewed")
   check(
-    outcome.payload["error"] as? String == "unidentified-device",
-    "the command distinguishes unidentified hardware from no device"
+    outcome.supportReportIssueDraft?.title.contains("unidentified Apple audio device") == true,
+    "a partial report uses a generic issue title"
   )
-  check(outcome.supportReportIssueDraft == nil, "a connected but unidentifiable device offers no issue")
 }
 
 func testSupportReportEscapesDeviceControlledTextPerAdapter() {
@@ -155,9 +157,16 @@ func testSupportReportEscapesDeviceControlledTextPerAdapter() {
       modelIdentifier: "airpods` [CLICK](http://evil.example) `x"
     )
   )
+  let unnormalizedReport = SupportReportDocument.make(
+    snapshot: SupportReportSnapshot.capture(device: unnormalized)
+  )
   check(
-    SupportReportSnapshot.capture(device: unnormalized) == nil,
-    "capture itself rejects metadata that escapes the allowlist"
+    unnormalizedReport.device.modelIdentifier == nil,
+    "capture drops metadata that escapes the allowlist"
+  )
+  check(
+    !unnormalizedReport.terminalOutput.contains("CLICK"),
+    "partial report never renders rejected model metadata"
   )
 
   let hostileModes = FakeCompatibleAudioDevice(
@@ -293,7 +302,6 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
   let localReport = document.terminalOutput
   let outcome = CommandOutcome(
     plain: "",
-    payload: ["result": "ok"],
     supportReport: document
   )
   var openCount = 0
@@ -363,8 +371,7 @@ func testSupportReportRequiresConfirmationBeforeOpening() {
 
   let noDevice = CommandOutcome(
     plain: "No identifiable device.",
-    exitCode: 1,
-    payload: ["result": "error"]
+    terminalReason: .noDevice
   )
   var readCount = 0
   _ = SupportReportInteraction.present(
@@ -410,7 +417,6 @@ func testSupportReportPrintsPasteReadyFormFallback() {
   let localReport = oversizedDocument.terminalOutput
   let outcome = CommandOutcome(
     plain: "",
-    payload: ["result": "ok"],
     supportReport: oversizedDocument
   )
   var output: [String] = []

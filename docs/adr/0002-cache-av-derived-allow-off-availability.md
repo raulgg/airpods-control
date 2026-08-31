@@ -12,10 +12,10 @@ through HAL after it stops being the selected audio output, so the CLI can
 reuse a recent AV observation without changing the route or starting audio.
 
 This is deliberately a weak cache. A positive record means only that the exact
-output endpoint recently advertised Off through AV. A negative tombstone means
-that a newer eligible read did not advertise Off. Neither record is a current
-read of the AirPods setting, a device-level capability, a durable device
-identity, or a protocol acknowledgement.
+output endpoint recently advertised or reported Off. A denial record means an
+accepted Off request ended with definitive known non-Off readback. Neither
+record is a current read of the AirPods setting, a durable device identity, or a
+protocol acknowledgement.
 
 ## Decision
 
@@ -35,8 +35,8 @@ already required for:
 
 A successful eligible availability read that advertises Off writes or
 refreshes the positive record. A successful eligible read that omits Off
-removes the positive record and writes a negative tombstone. The latest
-observation time wins, and a negative observation wins ties so an older
+invalidates older positive evidence but does not establish target-specific
+denial. An internal tombstone preserves observation ordering so an older
 in-flight positive read cannot restore stale evidence. A selector failure, read
 failure, or unavailable AV endpoint leaves the record unchanged.
 
@@ -48,14 +48,11 @@ extra AV read solely to warm or refresh it, and a HAL current-mode observation
 never updates it. Fresh, successful AV evidence takes precedence over cached
 evidence in the same command.
 
-An accepted Off write backed by positive AV-derived evidence can disprove that
-positive even when AV still advertises Off. If the full bounded readback ends in
-a known non-Off mode, the coordinator removes the exact positive record that
-authorized the attempt, whether that record was refreshed by the same AV command
-or consumed later by HAL. This invalidation does not create a negative
-tombstone: the write mismatch is evidence that the positive is unsafe to reuse,
-not a successful availability observation that Off is absent. A rejected setter,
-timeout, failed read, or unknown final state leaves the record unchanged.
+Any accepted Off request can establish denial when its full bounded readback
+ends in a known non-Off mode. The coordinator replaces older positive evidence
+with that denial whether the request used AV, cached HAL authorization, or the
+explicit HAL probe described below. A rejected setter, timeout, failed read, or
+unknown final state creates no denial.
 
 ### Correlation and privacy
 
@@ -69,23 +66,23 @@ prints or logs the raw UID, digest, or salt.
 This correlation is downstream of target selection. It must never select a
 device, merge records, disambiguate names, or change AV/HAL routing. If the
 selected target cannot be correlated to exactly one output endpoint, the
-lookup is a silent cache miss and the command follows its ordinary HAL
-behavior.
+lookup is a silent cache miss. It cannot prevent the current explicit probe,
+but the probe cannot persist reusable evidence without unique correlation.
 
 ### Storage and lifetime
 
-Positive records and negative tombstones are stored in:
+Positive records, denial records, and internal ordering tombstones are stored in:
 
 ```text
 ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
 ```
 
-Each positive record expires seven days after its AV observation. The lifetime
-is non-sliding: consuming a record does not refresh it. Negative tombstones are
-used only to order observations and never authorize Off. A new eligible
-observation replaces the older state for that endpoint; macOS version changes
-do not extend or invalidate a positive record. Missing, expired, unreadable, or
-malformed cache data is a miss. The file is disposable cache data and should be
+Each positive or denial record expires seven days after its observation. The
+lifetime is non-sliding: consuming a record does not refresh it. Internal
+tombstones only order observations and are exposed as a miss, not a denial. New
+evidence replaces older state for that endpoint; macOS version changes do not
+extend or invalidate it. Missing, expired, unreadable, or malformed cache data
+is a miss. The file is disposable cache data and should be
 excluded from backups; deleting it safely restores the pre-cache behavior. The
 cache directory and files are restricted to the current user, and updates use
 atomic replacement so an interrupted write becomes a miss rather than partial
@@ -102,17 +99,24 @@ When a valid positive record is consumed for the exact HAL target:
 - `listening-mode set off` may attempt the normal HAL write; and
 - an explicit cycle set containing Off may include it.
 
-The default cycle continues to exclude Off, even on a cache hit. A miss does
-not weaken the existing fail-closed behavior: HAL `list` omits Off, `set off`
-is unsupported, and Off is removed from an explicit cycle set before the
-minimum-size check.
+The default cycle continues to exclude Off, even on a cache hit. HAL `list`
+omits Off on a miss. An explicit `set off` or explicit cycle containing Off may
+make one setter attempt as a probe when there is neither positive evidence nor
+a cached denial. `get`, `list`, and the default cycle never probe.
+
+The probe is classified from the evidence it produces. Accepted, definitive
+Off readback succeeds. Accepted, definitive known non-Off readback is
+`unsupported` and persists denial. A missing or rejecting provider or setter is
+`unavailable`. Accepted but unreadable, unknown, or timed-out final state is
+`no-op` and creates no denial. A cached denial prevents another probe until it
+expires or newer positive evidence supersedes it.
 
 Provider stickiness, deadlines, readback, and the prohibition on route changes
-or raw AACP access are unaffected. An accepted cache-authorized Off write must
-still complete the normal bounded HAL readback. If the definitive final state
-is a known non-Off mode, the command reports the existing `no-op` result with
-that actual state, deletes the positive record, and does not retry through AV,
-fall back to an inferred Transparency state, or choose another cycle target.
+or raw AACP access are unaffected. An accepted positive-evidence-authorized Off
+write must still complete the normal bounded HAL readback. If the definitive
+final state is known non-Off, that invocation reports `no-op` with the actual
+state and persists denial for later invocations. It does not retry through AV,
+fall back to inferred Transparency, or choose another cycle target.
 
 ### Output and diagnostics
 
@@ -143,8 +147,9 @@ AV observation or a definitive HAL write mismatch corrects it. Therefore a
 cache hit is always described as cached AV-derived availability, never as a
 live device query.
 
-This decision supersedes only ADR 0001's interim Off limitation. It does not
+This decision supersedes ADR 0001's interim Off limitation and its own earlier
+cache-miss prohibition on explicit Off attempts. It does not
 change target selection, provider routing, transport stickiness, or the meaning
 of a matching macOS readback. The stale gap can end through a newer AV
 availability observation or an accepted Off write with definitive non-Off
-readback; only the former can create a negative tombstone.
+readback; only the latter establishes reusable denial.
