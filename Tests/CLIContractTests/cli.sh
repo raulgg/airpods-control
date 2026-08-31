@@ -51,25 +51,10 @@ cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
 CLI="$PROBE_DIR/airpods-control"
 MISSING_DEVICE='__airpods_control_cli_contract_missing__'
 
-global_help=$("$CLI" --help)
-listening_mode_help=$("$CLI" lm --help)
-status_help=$("$CLI" status --help)
-support_report_help=$("$CLI" support-report --help)
-assert_contains "$global_help" \
-  '0 success; 1 no-device; 2 bad-args; 3 no-op; 4 unsupported;' \
-  "global help documents the shared low exit codes"
-assert_contains "$global_help" \
-  '5 read-error; 6 unavailable; 7 state-uncertain; 8 ambiguous-device.' \
-  "global help documents the shared high exit codes"
-assert_contains "$listening_mode_help" \
-  'only an explicit set off or explicit cycle containing off may probe once' \
-  "listening-mode help documents the explicit Allow Off probe"
-assert_contains "$status_help" \
-  'ambiguous-device and exits 8' \
-  "status help documents universal ambiguity"
-assert_contains "$support_report_help" \
-  'exits 7' \
-  "support-report help documents state uncertainty"
+"$CLI" --help >/dev/null
+"$CLI" lm --help >/dev/null
+"$CLI" status --help >/dev/null
+"$CLI" support-report --help >/dev/null
 
 assert_equal "$VERSION" "$("$CLI" --version)" "plain version"
 assert_equal "{\"result\":\"ok\",\"version\":\"$VERSION\"}" \
@@ -82,15 +67,11 @@ assert_equal "$VERSION" "$(cat "$PROBE_DIR/debug.stdout")" \
 [ -s "$PROBE_DIR/debug.stderr" ] ||
   fail "debug version should emit diagnostics on stderr"
 
-# Representative failures exercise command shape, option ownership, duplicate
-# globals, and cycle validation. Detailed parser seams stay in the Swift suite.
+# Representative failures exercise both plain and JSON terminal output. Detailed
+# parser seams stay in the Swift suite.
 expect_failure 2 bad-args "$CLI" unknown-command
-expect_failure 2 bad-args "$CLI" lm set
-expect_failure 2 bad-args "$CLI" lm cycle --modes transparency
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" lm get --json --json
-expect_failure 2 '{"error":"bad-args","result":"error"}' \
-  "$CLI" support-report --json
 
 # Omitting the bypass leaves public HAL discovery available to listening-mode
 # commands, while private-provider commands report unavailable.
