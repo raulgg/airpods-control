@@ -31,6 +31,20 @@ You need:
 - Command Line Tools or Xcode
 - `make`, `clang`, `swiftc`, `lipo`, and `codesign`
 
+### Development setup
+
+Install [mise](https://mise.jdx.dev/). From the repository root, run:
+
+```sh
+mise install
+```
+
+This installs the development tools and versions listed in `mise.toml`,
+including rumdl and pre-commit. The build still needs the macOS Command Line
+Tools or Xcode listed above.
+
+You can run the full test suite with `mise run test`. It calls `make test`.
+
 Build and run the device-independent test suite:
 
 ```sh
@@ -103,13 +117,11 @@ signs both artifacts, and installs them together.
 ### Documentation
 
 Markdown files in the repository follow rumdl's standard 80-column wrapping.
-Do not wrap GitHub pull request descriptions. rumdl never sees them. Install
-[mise](https://mise.jdx.dev/), then run `mise install` to install all
-development tools pinned in `mise.toml`. Use `mise run markdown-check` to
-check Markdown, or use `mise run markdown-format` to format it. Run `mise exec
--- pre-commit install` once per clone, then use `mise exec -- pre-commit run
---all-files` to format and check the full Markdown set. `mise run test` is a
-convenience alias for `make test`.
+Do not wrap GitHub pull request descriptions. rumdl never sees them. Use
+`mise run markdown-check` to check Markdown, or use `mise run markdown-format`
+to format it. Run `mise exec -- pre-commit install` once per clone. Use
+`mise exec -- pre-commit run --all-files` to format and check the full Markdown
+set.
 
 ## Pull requests
 
