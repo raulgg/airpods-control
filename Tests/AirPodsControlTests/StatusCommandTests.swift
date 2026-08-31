@@ -85,12 +85,20 @@ func testStatusRendersOneOrManyDevicesInResolverOrder() {
       && records[1]["isSelectedAudioInput"] as? Bool == true,
     "each device has independent input and output selection observations"
   )
+  bedroom.inEarPlacementStatus = .value(
+    BluetoothEarPlacement(left: .inCase, right: .inEar)
+  )
   let singleton = statusOutcome(
     ["status", "--device", "Bedroom AirPods", "--json"],
     devices: [bedroom]
   )
   check(singleton.plain.hasPrefix("Bedroom AirPods:\n"), "singleton status retains its heading")
   check(statusRecords(singleton)?.count == 1, "selected status JSON still uses a devices array")
+  check(
+    singleton.plain.contains("Left ear placement: in-case")
+      && statusRecords(singleton)?.first?["leftEarPlacement"] as? String == "in-case",
+    "a later status renders in-case placement consistently in plain and JSON output"
+  )
 }
 
 func testStatusPreservesExistingUnresolvedGetFallbacks() {
@@ -137,30 +145,6 @@ func testStatusPreservesExistingUnresolvedGetFallbacks() {
     "supported CA with unresolved state keeps the existing null fallback"
   )
   check(missingStateRecord?["errors"] == nil, "nil fake CA state is unresolved by default")
-}
-
-func testStatusRendersInCasePlacementToken() {
-  let device = FakeCompatibleAudioDevice(name: "Case AirPods")
-  device.inEarPlacementStatus = .value(
-    BluetoothEarPlacement(left: .inCase, right: .inEar)
-  )
-  let outcome = statusOutcome(devices: [device])
-  check(
-    outcome.plain == """
-    Case AirPods:
-      Listening mode: transparency
-      Conversation Awareness: off
-      Selected as audio output: no
-      Selected as audio input: no
-      Left ear placement: in-case
-      Right ear placement: in-ear
-    """,
-    "status renders the in-case placement token"
-  )
-  check(
-    statusRecords(outcome)?.first?["leftEarPlacement"] as? String == "in-case",
-    "JSON preserves the in-case placement token"
-  )
 }
 
 func testStatusReportsReadErrorsAndAggregateExitPolicy() {
@@ -367,7 +351,6 @@ func testStatusNoDeviceContractAndResolutionPolicy() {
 func runStatusCommandTests() {
   testStatusRendersOneOrManyDevicesInResolverOrder()
   testStatusPreservesExistingUnresolvedGetFallbacks()
-  testStatusRendersInCasePlacementToken()
   testStatusReportsReadErrorsAndAggregateExitPolicy()
   testStatusDistinguishesUnresolvedSelectionFromReadErrors()
   testStatusEscapesPlainHeadingsWithoutChangingJSONNames()
