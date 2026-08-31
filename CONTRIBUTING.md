@@ -39,9 +39,8 @@ Install [mise](https://mise.jdx.dev/). From the repository root, run:
 mise install
 ```
 
-This installs the development tools and versions listed in `mise.toml`,
-including rumdl and pre-commit. The build still needs the macOS Command Line
-Tools or Xcode listed above.
+This installs the development tools and versions listed in `mise.toml`. The
+build still needs the macOS Command Line Tools or Xcode listed above.
 
 You can run the full test suite with `mise run test`. It calls `make test`.
 
