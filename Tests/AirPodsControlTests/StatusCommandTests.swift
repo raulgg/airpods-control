@@ -367,6 +367,24 @@ func testStatusNoDeviceContractAndResolutionPolicy() {
   }
 }
 
+func testStatusResolutionReadErrorUsesTerminalEnvelope() {
+  let outcome = StatusCommand.resolutionFailureOutcome(.readError)
+  check(outcome.exitCode == 5, "status discovery read errors exit five")
+  check(
+    outcome.plain == "Compatible device discovery failed.",
+    "status discovery read errors use the read-error sentence"
+  )
+  check(
+    (outcome.payload["devices"] as? [[String: Any]])?.isEmpty == true,
+    "status discovery read errors return an empty device array"
+  )
+  check(outcome.payload["result"] as? String == "error", "status read errors are JSON errors")
+  check(
+    outcome.payload["error"] as? String == "read-error",
+    "status discovery read errors use the canonical envelope token"
+  )
+}
+
 func runStatusCommandTests() {
   testStatusRendersOneOrManyDevicesInResolverOrder()
   testStatusPreservesExistingUnresolvedGetFallbacks()
@@ -376,4 +394,5 @@ func runStatusCommandTests() {
   testStatusEscapesPlainHeadingsWithoutChangingJSONNames()
   testStatusIsOnePassAndReadOnly()
   testStatusNoDeviceContractAndResolutionPolicy()
+  testStatusResolutionReadErrorUsesTerminalEnvelope()
 }

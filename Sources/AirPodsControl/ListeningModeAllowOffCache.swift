@@ -302,6 +302,24 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
           candidate,
           existing: observations[key]
         )
+        if !recordsDenial, !allowsOff {
+          switch readDenyMarker(for: key) {
+          case .missing:
+            break
+          case .invalid:
+            return .unavailable
+          case .value(let deniedAt):
+            guard usableEvidence(observedAt: deniedAt) == nil else {
+              guard let existing = observations[key],
+                existing.allowsOff,
+                existing.observedAt > deniedAt
+              else {
+                return .unchanged
+              }
+              break
+            }
+          }
+        }
         if effectiveCandidate.allowsOff {
           switch readDenyMarker(for: key) {
           case .missing:

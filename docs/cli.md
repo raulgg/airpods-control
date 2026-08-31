@@ -826,15 +826,15 @@ all commands may also produce `bad-args` during parsing.
 | --- | --- |
 | Help and version | `success` |
 | `listening-mode get`, `list` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error` |
-| `listening-mode set`, `cycle` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable`, `read-error` |
+| `listening-mode set`, `cycle` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable` |
 | `conversation-awareness get` | `success`, `no-device`, `ambiguous-device`, `unsupported`, `unavailable`, `read-error` |
-| `conversation-awareness set` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable`, `read-error` |
+| `conversation-awareness set` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable` |
 | `status` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error` |
-| `support-report` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error`, `state-uncertain` |
+| `support-report` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `state-uncertain` |
 
 Only `support-report` currently adds caught-signal outcomes while running
-write tests. The table is a subset contract, not a promise that every listed
-reason is reproducible on every macOS version or device.
+write tests. The table lists the normal terminal reasons reachable after
+parsing.
 
 ### Migration from the previous contract
 

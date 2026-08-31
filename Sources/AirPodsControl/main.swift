@@ -114,10 +114,16 @@ func bootstrapAndResolveAudioDevices(
     let activeOutputContext = PrivateAudioDiscovery.systemStatusOutputContext(
       logger: logger
     )
-    guard let controller = IOBluetoothStatusController(
+    let controllerResult = IOBluetoothStatusController.create(
       logger: logger,
       activeOutputContext: activeOutputContext
-    ) else { return .failed(.unavailable) }
+    )
+    let controller: IOBluetoothStatusController
+    switch controllerResult {
+    case let .success(value): controller = value
+    case .unavailable: return .failed(.unavailable)
+    case .readError: return .failed(.readError)
+    }
     switch controller.resolveDevices(named: requestedName, policy: policy) {
     case let .selected(devices): return .devices(devices.map { $0 })
     case .noDevice: return .failed(.noDevice)
@@ -164,13 +170,17 @@ func bootstrapAndResolveListeningMode(
 
   let allowOffCache = PersistentListeningModeAllowOffCache.systemDefault()
 
-  let halCandidates = IOBluetoothStatusController(
+  let halCandidates: [ListeningModeCandidate]
+  switch IOBluetoothStatusController.create(
     logger: logger,
     activeOutputContext: outputContext,
     readStatusListeningMode: false,
     readStatusInEarPlacement: false,
     allowOffCache: allowOffCache
-  )?.listeningModeCandidates() ?? []
+  ) {
+  case let .success(controller): halCandidates = controller.listeningModeCandidates()
+  case .unavailable, .readError: halCandidates = []
+  }
   let coordinator = ListeningModeCoordinator(
     avDevices: avDevices,
     halCandidates: halCandidates,

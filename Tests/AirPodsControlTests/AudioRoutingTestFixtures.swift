@@ -230,15 +230,44 @@ func makeBluetoothController(
   inventory: [FakeInventoryEndpoint],
   featureEntries: [(AnyObject, FakeBluetoothEntry)] = [],
   backend: FakeAudioRoutingBackend = FakeAudioRoutingBackend(),
+  inventoryRead: AudioRoutingRead<[AudioDeviceID]>? = nil,
   configureRuntime: (FakeBluetoothAudioRuntime) -> Void = { _ in },
   activeProbe: (any ActiveAudioEndpointProbing)? = nil,
   readStatusListeningMode: Bool = true,
   readStatusInEarPlacement: Bool? = nil,
   allowOffCache: (any ListeningModeAllowOffCaching)? = nil
 ) -> (IOBluetoothStatusController, FakeBluetoothAudioRuntime) {
+  let (result, runtime) = makeBluetoothControllerResult(
+    inventory: inventory,
+    featureEntries: featureEntries,
+    backend: backend,
+    inventoryRead: inventoryRead,
+    configureRuntime: configureRuntime,
+    activeProbe: activeProbe,
+    readStatusListeningMode: readStatusListeningMode,
+    readStatusInEarPlacement: readStatusInEarPlacement,
+    allowOffCache: allowOffCache
+  )
+  guard case let .success(controller) = result else {
+    preconditionFailure("fake Bluetooth controller creation should succeed")
+  }
+  return (controller, runtime)
+}
+
+func makeBluetoothControllerResult(
+  inventory: [FakeInventoryEndpoint],
+  featureEntries: [(AnyObject, FakeBluetoothEntry)] = [],
+  backend: FakeAudioRoutingBackend = FakeAudioRoutingBackend(),
+  inventoryRead: AudioRoutingRead<[AudioDeviceID]>? = nil,
+  configureRuntime: (FakeBluetoothAudioRuntime) -> Void = { _ in },
+  activeProbe: (any ActiveAudioEndpointProbing)? = nil,
+  readStatusListeningMode: Bool = true,
+  readStatusInEarPlacement: Bool? = nil,
+  allowOffCache: (any ListeningModeAllowOffCaching)? = nil
+) -> (IOBluetoothStatusControllerCreationResult, FakeBluetoothAudioRuntime) {
   let runtime = FakeBluetoothAudioRuntime()
   for (device, entry) in featureEntries { runtime.add(device, entry: entry) }
-  backend.audioDevices = .value(inventory.map(\.audioDeviceID))
+  backend.audioDevices = inventoryRead ?? .value(inventory.map(\.audioDeviceID))
   for endpoint in inventory {
     let id = endpoint.audioDeviceID
     backend.aggregates[id] = endpoint.aggregate
@@ -255,7 +284,7 @@ func makeBluetoothController(
     runtime.mappings[id] = endpoint.mapping ?? .value(endpoint.bluetoothDevice)
   }
   configureRuntime(runtime)
-  let controller = IOBluetoothStatusController(
+  let result = IOBluetoothStatusController.create(
     runtime: runtime,
     routingBackend: backend,
     activeEndpointProbe: activeProbe,
@@ -263,8 +292,8 @@ func makeBluetoothController(
     readStatusInEarPlacement: readStatusInEarPlacement ?? readStatusListeningMode,
     allowOffCache: allowOffCache,
     logger: DebugLogger(enabled: false)
-  )!
-  return (controller, runtime)
+  )
+  return (result, runtime)
 }
 
 func makeBluetoothController(

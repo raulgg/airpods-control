@@ -37,12 +37,11 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     lock.unlock()
     if let negativeObservedAt,
       negativeObservedAt >= observedAt ?? .distantPast,
-      let evidence = usableEvidence(observedAt: negativeObservedAt)
+      let deniedAt,
+      deniedAt >= negativeObservedAt,
+      let evidence = usableEvidence(observedAt: deniedAt)
     {
-      if let deniedAt, deniedAt >= negativeObservedAt {
-        return .denied(AllowOffCacheRecord(evidence: evidence, key: key))
-      }
-      return .miss
+      return .denied(AllowOffCacheRecord(evidence: evidence, key: key))
     }
     guard let observedAt, let evidence = usableEvidence(observedAt: observedAt) else {
       return .miss
@@ -64,6 +63,9 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     let existingPositive = positiveEvidence[key]
     let existingNegative = negativeEvidence[key]
     if allowsOff {
+      guard denialEvidence[key] ?? .distantPast < observedAt else {
+        return .unchanged
+      }
       guard existingNegative ?? .distantPast < observedAt,
         existingPositive ?? .distantPast < observedAt
       else { return .unchanged }
@@ -106,6 +108,12 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       observedAt: observedAt,
       existingPositive: positiveEvidence[key]
     )
+    if let deniedAt = denialEvidence[key],
+      usableEvidence(observedAt: deniedAt) != nil,
+      positiveEvidence[key] ?? .distantPast <= deniedAt
+    {
+      return .unchanged
+    }
     guard positiveEvidence[key] ?? .distantPast <= effectiveObservedAt,
       negativeEvidence[key] ?? .distantPast < effectiveObservedAt
     else { return .unchanged }

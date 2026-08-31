@@ -229,7 +229,9 @@ Print the comma-separated modes supported by the connected device in the determi
 .IP
 A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. HAL does not expose the separate user-configured Allow Off setting. A valid cached AV observation for the exact output endpoint can additionally establish Off as described under
 .BR "ALLOW OFF CACHE" .
-Without that evidence, HAL lists omit Off, direct writes to Off are unsupported, and Off is removed from explicit cycle sets. AV-backed commands continue to expose Off when AV advertises it.
+Without usable positive evidence, HAL lists omit Off. The default cycle never includes Off. An explicit
+.BR "set off"
+or explicit cycle containing Off may make one HAL setter attempt when there is neither usable positive evidence nor a cached denial. A cached denial suppresses the probe and makes explicit Off unsupported. AV-backed commands follow the modes AV advertises, including Off when advertised.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
 Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes always cycle in the order documented under

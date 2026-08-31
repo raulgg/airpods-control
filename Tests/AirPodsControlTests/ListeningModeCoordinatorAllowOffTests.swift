@@ -586,6 +586,47 @@ func testListeningModeAllowOffAVEvidenceLifecycle() {
   } else {
     check(false, "a non-Off operation preserves existing denial evidence")
   }
+
+  clock.addTimeInterval(1)
+  av.availabilityObservation = .value([
+    .transparency,
+    .adaptive,
+    .noiseCancellation,
+  ])
+  _ = coordinatorOutcome(["lm", "list"], candidates: [joined])
+  check(
+    {
+      if case .denied = fixture.cache.lookup(rawDeviceUID: "uid-42") { return true }
+      return false
+    }(),
+    "an AV omission preserves an unexpired denial"
+  )
+
+  backend.resetWrites()
+  let deniedHAL = ListeningModeCandidate(
+    displayName: "Cached AirPods",
+    selectableNames: ["Cached AirPods"],
+    avTransport: nil,
+    halTransport: fixture.transport,
+    route: .notSelected,
+    allowOffCorrelation: fixture.correlation
+  )
+  let deniedHALOutcome = coordinatorOutcome(
+    ["lm", "set", "off", "--json"],
+    candidates: [deniedHAL]
+  )
+  check(
+    deniedHALOutcome.plain == "unsupported",
+    "an AV omission keeps HAL Off unsupported after denial"
+  )
+  check(
+    deniedHALOutcome.exitCode == 4,
+    "cached denial after AV omission exits four"
+  )
+  check(
+    backend.writtenValues.isEmpty,
+    "cached denial after AV omission avoids another HAL setter call"
+  )
 }
 
 func testListeningModeAllowOffAmbiguousCorrelation() {
