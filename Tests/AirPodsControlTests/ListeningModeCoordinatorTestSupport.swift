@@ -261,11 +261,13 @@ final class StalePositiveAllowOffCache: ListeningModeAllowOffCaching {
 func coordinatorOutcome(
   _ arguments: [String],
   candidates: [ListeningModeCandidate],
-  choice: ListeningModeAmbiguousChoice = .unavailable
+  choice: ListeningModeAmbiguousChoice = .unavailable,
+  halDiscovery: ListeningModeHALDiscovery = .available
 ) -> CommandOutcome {
   let invocation = try! parseInvocation(arguments)
   let coordinator = ListeningModeCoordinator(
     candidates: candidates,
+    halDiscovery: halDiscovery,
     logger: DebugLogger(enabled: false)
   )
   return CommandExecution.executeListeningMode(

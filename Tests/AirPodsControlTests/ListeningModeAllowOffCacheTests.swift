@@ -845,6 +845,153 @@ func runListeningModeAllowOffCacheTests() {
   }
 
   withTemporaryAllowOffCache { fileURL in
+    let observedAt = Date(timeIntervalSince1970: 1_732_100_000)
+    let denialObservedAt = observedAt.addingTimeInterval(59)
+    let clock = AllowOffCacheTestClock(observedAt)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      ttl: 60,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "expired-positive-with-fresh-denial-uid"
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: observedAt
+      ) == .applied,
+      "fresh-denial test seeds positive evidence"
+    )
+
+    clock.value = denialObservedAt
+    withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+      check(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: denialObservedAt
+        ) == .applied,
+        "fresh-denial test persists a marker during lock contention"
+      )
+    }
+
+    clock.value = denialObservedAt.addingTimeInterval(1)
+    guard let denial = allowOffDenialRecord(
+      from: cache.lookup(rawDeviceUID: rawUID)
+    ) else {
+      check(false, "a fresh denial remains usable after positive evidence expires")
+      return
+    }
+    check(
+      denial.evidence.observedAt == denialObservedAt,
+      "denial evidence is anchored to the marker timestamp"
+    )
+    check(
+      denial.evidence.expiresAt == denialObservedAt.addingTimeInterval(60),
+      "denial evidence gets its own TTL"
+    )
+    clock.value = denialObservedAt.addingTimeInterval(60)
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "denial evidence expires from its own timestamp"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let denialObservedAt = Date(timeIntervalSince1970: 1_732_200_000)
+    let positiveObservedAt = denialObservedAt.addingTimeInterval(1)
+    let clock = AllowOffCacheTestClock(denialObservedAt)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      ttl: 60,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "orphan-denial-marker-uid"
+
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: denialObservedAt
+      ) == .applied,
+      "stale-marker test seeds denial evidence"
+    )
+    clock.value = positiveObservedAt
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: positiveObservedAt
+      ) == .applied,
+      "stale-marker test stores newer positive evidence"
+    )
+    guard let positive = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
+      check(false, "stale-marker test reads newer positive evidence")
+      return
+    }
+    check(
+      cache.remove(record: positive) == .applied,
+      "stale-marker test removes the newer positive record"
+    )
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "an orphaned older denial marker cannot resurrect removed positive evidence"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
+    let denialObservedAt = Date(timeIntervalSince1970: 1_732_300_000)
+    let tombstoneObservedAt = denialObservedAt.addingTimeInterval(60)
+    let newerDenialObservedAt = tombstoneObservedAt.addingTimeInterval(1)
+    let clock = AllowOffCacheTestClock(denialObservedAt)
+    let cache = PersistentListeningModeAllowOffCache(
+      fileURL: fileURL,
+      ttl: 60,
+      now: clock.read,
+      saltGenerator: { allowOffCacheTestSalt }
+    )
+    let rawUID = "tombstone-denial-ordering-uid"
+
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: denialObservedAt
+      ) == .applied,
+      "tombstone-ordering test seeds denial evidence"
+    )
+    clock.value = tombstoneObservedAt
+    check(
+      cache.invalidatePositiveObservation(
+        rawDeviceUID: rawUID,
+        observedAt: tombstoneObservedAt
+      ) == .applied,
+      "an expired denial can be replaced by a newer omission tombstone"
+    )
+    check(
+      cache.lookup(rawDeviceUID: rawUID) == .miss,
+      "an older denial marker cannot override a newer omission tombstone"
+    )
+
+    clock.value = newerDenialObservedAt
+    check(
+      cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: false,
+        observedAt: newerDenialObservedAt
+      ) == .applied,
+      "a newer definitive denial replaces the omission tombstone"
+    )
+    check(
+      allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+        == newerDenialObservedAt,
+      "the newer denial marker wins over the omission tombstone"
+    )
+  }
+
+  withTemporaryAllowOffCache { fileURL in
     let cache = PersistentListeningModeAllowOffCache(
       fileURL: fileURL,
       saltGenerator: { allowOffCacheTestSalt }
