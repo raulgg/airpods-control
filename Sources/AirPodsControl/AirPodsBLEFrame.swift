@@ -14,33 +14,21 @@ enum AirPodsBLEFrameParser {
   static func parse(manufacturerData: Data) -> AirPodsBLEPlacementFrame? {
     let bytes = [UInt8](manufacturerData)
     guard bytes.count == 29,
-          Array(bytes.prefix(2)) == appleCompanyIdentifier
-    else {
-      return nil
-    }
-    return parseAppleContinuityData(Data(bytes.dropFirst(2)))
-  }
-
-  private static func parseAppleContinuityData(
-    _ data: Data
-  ) -> AirPodsBLEPlacementFrame? {
-    let continuity = [UInt8](data)[...]
-
-    guard continuity.count == 27,
-          continuity[continuity.startIndex] == proximityType,
-          continuity[continuity.startIndex + 1] == proximityPayloadLength,
-          continuity[continuity.startIndex + 2] == plaintextPrefix
+          bytes[0] == appleCompanyIdentifier[0],
+          bytes[1] == appleCompanyIdentifier[1],
+          bytes[2] == proximityType,
+          bytes[3] == proximityPayloadLength,
+          bytes[4] == plaintextPrefix
     else {
       return nil
     }
 
-    let productID = Int(continuity[continuity.startIndex + 3])
-      | Int(continuity[continuity.startIndex + 4]) << 8
+    let productID = Int(bytes[5]) | Int(bytes[6]) << 8
     guard AppleAudioProducts.supportsBLEEarPlacement(productID: productID) else {
       return nil
     }
 
-    let status = continuity[continuity.startIndex + 5]
+    let status = bytes[7]
     let valuesAreFlipped = status & (1 << 5) == 0
     let podInCaseFlip = status & (1 << 6) != 0
     let useBitThreeForLeft = valuesAreFlipped != podInCaseFlip

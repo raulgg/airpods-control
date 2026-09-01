@@ -44,7 +44,6 @@ struct BluetoothPeripheralObservation: Equatable {
   let peripheralIdentifier: UUID
   let productID: Int
   let placement: BluetoothEarPlacement
-  let callbackCount: Int
 }
 
 enum AirPodsBLEScanNormalizer {
@@ -65,8 +64,7 @@ enum AirPodsBLEScanNormalizer {
         return BluetoothPeripheralObservation(
           peripheralIdentifier: identifier,
           productID: first.productID,
-          placement: first.placement,
-          callbackCount: frames.count
+          placement: first.placement
         )
       }
   }
@@ -85,12 +83,8 @@ final class SystemBluetoothScanner: BluetoothScanning {
       queue: nil,
       options: [CBCentralManagerOptionShowPowerAlertKey: false]
     )
-    let deadline = Date(timeIntervalSinceNow: 0.25)
-    while manager.state == .unknown, Date() < deadline {
-      RunLoop.current.run(
-        mode: .default,
-        before: min(deadline, Date(timeIntervalSinceNow: 0.05))
-      )
+    Self.pumpRunLoop(until: Date(timeIntervalSinceNow: 0.25)) {
+      manager.state == .unknown
     }
     return Self.radioState(manager.state)
   }
@@ -110,12 +104,8 @@ final class SystemBluetoothScanner: BluetoothScanning {
       queue: nil,
       options: [CBCentralManagerOptionShowPowerAlertKey: false]
     )
-    let deadline = Date(timeIntervalSinceNow: max(0, timeout))
-    while authorization() == .notDetermined, Date() < deadline {
-      RunLoop.current.run(
-        mode: .default,
-        before: min(deadline, Date(timeIntervalSinceNow: 0.05))
-      )
+    Self.pumpRunLoop(until: Date(timeIntervalSinceNow: max(0, timeout))) {
+      authorization() == .notDetermined
     }
     return BluetoothScanResult(
       authorization: authorization(),
@@ -140,12 +130,8 @@ final class SystemBluetoothScanner: BluetoothScanning {
       queue: nil,
       options: [CBCentralManagerOptionShowPowerAlertKey: false]
     )
-    let stateDeadline = Date(timeIntervalSinceNow: 1)
-    while manager.state == .unknown, Date() < stateDeadline {
-      RunLoop.current.run(
-        mode: .default,
-        before: min(stateDeadline, Date(timeIntervalSinceNow: 0.05))
-      )
+    Self.pumpRunLoop(until: Date(timeIntervalSinceNow: 1)) {
+      manager.state == .unknown
     }
     guard manager.state == .poweredOn else {
       return BluetoothScanResult(
@@ -158,19 +144,25 @@ final class SystemBluetoothScanner: BluetoothScanning {
       withServices: nil,
       options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
     )
-    let scanDeadline = Date(timeIntervalSinceNow: max(0, duration))
-    while Date() < scanDeadline {
-      RunLoop.current.run(
-        mode: .default,
-        before: min(scanDeadline, Date(timeIntervalSinceNow: 0.05))
-      )
-    }
+    Self.pumpRunLoop(until: Date(timeIntervalSinceNow: max(0, duration)))
     manager.stopScan()
     return BluetoothScanResult(
       authorization: authorization(),
       radio: Self.radioState(manager.state),
       advertisements: session.advertisements
     )
+  }
+
+  private static func pumpRunLoop(
+    until deadline: Date,
+    while shouldContinue: () -> Bool = { true }
+  ) {
+    while shouldContinue(), Date() < deadline {
+      RunLoop.current.run(
+        mode: .default,
+        before: min(deadline, Date(timeIntervalSinceNow: 0.05))
+      )
+    }
   }
 
   private static func authorizationState(

@@ -60,54 +60,40 @@ struct BluetoothSettingsDocument: Codable, Equatable {
   }
 
   func validate() -> Bool {
-    guard version == Self.currentVersion,
-          digestSalt.count == 32,
-          associations.allSatisfy({ association in
-            !association.displayName.isEmpty
-              && association.displayName.unicodeScalars.count <= 512
-              && AppleAudioProducts.supportsBLEEarPlacement(
-                productID: association.productID
-              )
-              && !association.coreAudioUIDDigests.isEmpty
-              && Set(association.coreAudioUIDDigests).count
-                == association.coreAudioUIDDigests.count
-              && association.coreAudioUIDDigests.allSatisfy(Self.validDigest)
-          }),
-          Set(associations.map(\.associationID)).count == associations.count,
-          Set(associations.map(\.peripheralIdentifier)).count == associations.count,
-          candidates.allSatisfy({ candidate in
-            !candidate.displayName.isEmpty
-              && candidate.displayName.unicodeScalars.count <= 512
-              && AppleAudioProducts.supportsBLEEarPlacement(
-                productID: candidate.productID
-              )
-              && candidate.observedStates != 0
-              && candidate.observedStates & ~0x0F == 0
-              && !candidate.coreAudioUIDDigests.isEmpty
-              && Set(candidate.coreAudioUIDDigests).count
-                == candidate.coreAudioUIDDigests.count
-              && candidate.coreAudioUIDDigests.allSatisfy(Self.validDigest)
-          })
-    else {
+    guard version == Self.currentVersion, digestSalt.count == 32 else {
+      return false
+    }
+    guard associations.allSatisfy({ association in
+      Self.validIdentity(
+        displayName: association.displayName,
+        productID: association.productID,
+        digests: association.coreAudioUIDDigests
+      )
+    }) else {
+      return false
+    }
+    guard candidates.allSatisfy({ candidate in
+      Self.validIdentity(
+        displayName: candidate.displayName,
+        productID: candidate.productID,
+        digests: candidate.coreAudioUIDDigests
+      )
+        && candidate.observedStates != 0
+        && candidate.observedStates & ~0x0F == 0
+    }) else {
       return false
     }
     let associationDigests = associations.flatMap(\.coreAudioUIDDigests)
-    guard Set(associationDigests).count == associationDigests.count else {
-      return false
-    }
-    guard Self.uniqueProductNames(
-      candidates.map { ($0.productID, $0.displayName) }
-    ) else {
-      return false
-    }
     let allDigests = associationDigests
       + candidates.flatMap(\.coreAudioUIDDigests)
-    guard Set(allDigests).count == allDigests.count else { return false }
-    guard Set(candidates.map(\.peripheralIdentifier)).count == candidates.count
-    else {
-      return false
-    }
-    return true
+    return Self.allUnique(associations.map(\.associationID))
+      && Self.allUnique(associations.map(\.peripheralIdentifier))
+      && Self.allUnique(associationDigests)
+      && Self.allUnique(allDigests)
+      && Self.allUnique(candidates.map(\.peripheralIdentifier))
+      && Self.uniqueProductNames(
+        candidates.map { ($0.productID, $0.displayName) }
+      )
   }
 
   func digestCoreAudioUID(_ uid: String) -> String {
@@ -268,6 +254,23 @@ struct BluetoothSettingsDocument: Codable, Equatable {
       Self.namesMatch($0.displayName, name)
     }
     return .unenrolled(document)
+  }
+
+  private static func validIdentity(
+    displayName: String,
+    productID: Int,
+    digests: [String]
+  ) -> Bool {
+    !displayName.isEmpty
+      && displayName.unicodeScalars.count <= 512
+      && AppleAudioProducts.supportsBLEEarPlacement(productID: productID)
+      && !digests.isEmpty
+      && allUnique(digests)
+      && digests.allSatisfy(validDigest)
+  }
+
+  private static func allUnique<T: Hashable>(_ items: [T]) -> Bool {
+    Set(items).count == items.count
   }
 
   private static func uniqueProductNames(

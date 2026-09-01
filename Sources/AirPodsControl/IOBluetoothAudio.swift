@@ -656,28 +656,13 @@ final class IOBluetoothStatusController {
         logger.debug("\(prefix).in_ear_placement_error", status)
       }
       logger.debug("\(prefix).name_available", name != nil)
-      var bluetoothProductID: Int?
+      let bluetoothProductID: Int?
       let coreAudioUID: String?
       if readBluetoothCorrelationMetadata {
-        if case let .value(.some(modelUID)) = routingBackend.readModelUID(
-          for: audioDeviceID
-        ) {
-          bluetoothProductID = AppleAudioProducts.product(
-            for: modelUID
-          )?.bluetoothProductID
-        } else {
-          bluetoothProductID = nil
-        }
-        if bluetoothProductID == nil {
-          switch runtime.productIdentifiers(bluetoothDevice) {
-          case let .value(identifiers)
-          where AppleAudioProducts.isAppleBluetoothVendor(identifiers.vendorID)
-            && identifiers.productID != 0:
-            bluetoothProductID = identifiers.productID
-          case .value, .unavailable:
-            break
-          }
-        }
+        bluetoothProductID = Self.bluetoothProductID(
+          modelUID: routingBackend.readModelUID(for: audioDeviceID),
+          identifiers: { runtime.productIdentifiers(bluetoothDevice) }
+        )
         if case let .value(.some(uid)) = routingBackend.readDeviceUID(
           for: audioDeviceID
         ), !uid.isEmpty {
@@ -985,6 +970,26 @@ final class IOBluetoothStatusController {
       return .value(placement)
     }
     return .unavailable
+  }
+
+  private static func bluetoothProductID(
+    modelUID: AudioRoutingRead<String?>,
+    identifiers: () -> BluetoothRuntimeRead<(vendorID: Int, productID: Int)>
+  ) -> Int? {
+    if case let .value(.some(modelUID)) = modelUID,
+       let productID = AppleAudioProducts.product(
+         for: modelUID
+       )?.bluetoothProductID
+    {
+      return productID
+    }
+    if case let .value(identifiers) = identifiers(),
+       AppleAudioProducts.isAppleBluetoothVendor(identifiers.vendorID),
+       identifiers.productID != 0
+    {
+      return identifiers.productID
+    }
+    return nil
   }
 
   private static func resolveBluetoothProductID(

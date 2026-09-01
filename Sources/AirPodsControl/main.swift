@@ -110,9 +110,6 @@ func bootstrapAndResolveAudioDevices(
     case .ambiguousDevice: return .failed(.ambiguousDevice)
     }
 
-  case .status:
-    preconditionFailure("status uses bootstrapStatusSession")
-
   case .supportReport:
     // Preserve the name-free, plural-only support-report discovery contract.
     // In particular, do not query outputDevice or private device identifiers.
@@ -141,14 +138,12 @@ func bootstrapStatusSession(logger: DebugLogger) -> StatusSessionResolution {
   if let store {
     switch store.load() {
     case let .value(value): document = value
-    case .missing: document = nil
+    case .missing: break
     case .invalid:
       logger.warning("bluetooth.settings", "invalid")
-      document = nil
     }
   } else {
     logger.warning("bluetooth.settings", "location-unavailable")
-    document = nil
   }
   let scanner = SystemBluetoothScanner()
   let bluetoothEnabled = document?.enabled == true

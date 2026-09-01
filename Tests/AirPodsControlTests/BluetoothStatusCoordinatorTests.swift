@@ -63,8 +63,7 @@ struct CoordinatorInventory {
         scanResult: scanResult,
         bluetoothUsable: bluetoothUsable
       ),
-      named: named,
-      logger: DebugLogger(enabled: false)
+      named: named
     )
   }
 

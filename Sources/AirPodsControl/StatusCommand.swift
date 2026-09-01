@@ -256,18 +256,13 @@ enum StatusCommand {
   static let noDevicePlain = "No compatible AirPods or Beats device is connected."
 
   static func outcome(devices: [any CompatibleAudioDevice]) -> CommandOutcome {
-    outcome(
-      session: StatusSession(devices: devices),
-      named: nil,
-      logger: DebugLogger(enabled: false)
-    )
+    outcome(session: StatusSession(devices: devices), named: nil)
   }
 
   static func outcome(
     session: StatusSession,
     named requestedName: String?,
-    policy: DeviceSelectionPolicy = .allOrExact,
-    logger: DebugLogger
+    logger: DebugLogger = DebugLogger(enabled: false)
   ) -> CommandOutcome {
     let snapshots = records(from: session)
     guard session.hal.allSatisfy({ $0.device.name != nil }) else {
@@ -278,7 +273,7 @@ enum StatusCommand {
       snapshots,
       named: requestedName,
       name: { $0.deviceName },
-      policy: policy,
+      policy: .allOrExact,
       logger: logger
     ) {
     case let .selected(selected):
@@ -300,20 +295,26 @@ enum StatusCommand {
     let overlayEnabled = session.bluetoothUsable
       && session.document?.enabled == true
     let document = session.document
-    let halSnapshots: [DeviceStatusSnapshot] = session.hal.compactMap { record in
+    var halSnapshots: [DeviceStatusSnapshot] = []
+    for record in session.hal {
       guard let snapshot = DeviceStatusSnapshot.capture(record.device) else {
-        return nil
+        continue
       }
-      guard overlayEnabled, let document else { return snapshot }
+      guard overlayEnabled, let document else {
+        halSnapshots.append(snapshot)
+        continue
+      }
       let association = record.target.flatMap { document.association(matching: $0) }
       if let association {
         matchedAssociationIDs.insert(association.associationID)
       }
-      return snapshot.overlayingPlacement(
-        BluetoothPlacement.resolved(
-          hal: snapshot.inEarPlacement,
-          ble: observation(for: association, in: session.observations),
-          enrolled: association != nil
+      halSnapshots.append(
+        snapshot.overlayingPlacement(
+          BluetoothPlacement.resolved(
+            hal: snapshot.inEarPlacement,
+            ble: observation(for: association, in: session.observations),
+            enrolled: association != nil
+          )
         )
       )
     }
