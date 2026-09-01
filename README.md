@@ -44,9 +44,9 @@ without polling in the background or automating the UI.
   `noise-cancellation` listening modes.
 - Read or set Conversation Awareness.
 - Report listening mode, Conversation Awareness, left/right ear placement, and
-  whether each eligible connected AirPods or Beats device represented by Core
-  Audio is selected as the macOS audio output or input with one `status`
-  command.
+  whether each eligible AirPods or Beats device is selected as the macOS audio
+  output or input with one `status` command. A matching advertisement from an
+  enrolled AirPods device can report placement when Core Audio has no endpoint.
 - Select a compatible output device by exact name.
 - Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`.
   Operational commands have stable stdout, documented exit codes, JSON output,
@@ -133,6 +133,10 @@ airpods-control conversation-awareness set off
 # Read status for every eligible device represented by Core Audio
 airpods-control status
 
+# Enable the optional BLE ear-placement fallback
+airpods-control bluetooth setup
+airpods-control bluetooth status
+
 # Target a device or request structured output
 airpods-control --device "My AirPods Pro" listening-mode get
 airpods-control status --device "My AirPods Pro" --json
@@ -141,18 +145,20 @@ airpods-control status --device "My AirPods Pro" --json
 `listening-mode` can be shortened to `lm`, and `conversation-awareness` to `ca`;
 `status` has no alias. Without `--device`, `status` reports every eligible
 AirPods or Beats record derived from the currently available Core Audio device
-list, even when it is not the selected audio output. The individual resource
-commands retain their documented adapters. Listening-mode commands combine AV
-and eligible HAL representations into logical targets, select one target
-automatically, and prompt in a fully interactive terminal when several remain.
-Declining the chooser, automated ambiguity, and duplicate exact names all report
-`ambiguous-device` (exit `8`). Multiple selected HAL targets fail closed when
-ambiguity remains; leftover AV records do not enter the HAL chooser. On systems
-where HAL control is entirely unavailable, a single compatible AV output is
-selected; multiple outputs are ambiguous. Run `airpods-control --help` for
-built-in help. The [complete CLI reference](docs/cli.md) covers aliases, JSON
-output, diagnostics, write verification, and exit codes. After installation, you
-can also run `man airpods-control`.
+list, even when it is not the selected audio output. It may also report an
+enrolled AirPods device seen during the current BLE scan when Core Audio has no
+endpoint. The individual resource commands retain their documented adapters.
+Listening-mode commands combine AV and eligible HAL representations into
+logical targets, select one target automatically, and prompt in a fully
+interactive terminal when several remain. Declining the chooser, automated
+ambiguity, and duplicate exact names all report `ambiguous-device` (exit `8`).
+Multiple selected HAL targets fail when ambiguity remains; leftover AV records
+do not enter the HAL chooser. When HAL control is unavailable, a single
+compatible AV output is selected; multiple outputs are ambiguous. Run
+`airpods-control --help` for built-in help. The [complete CLI
+reference](docs/cli.md) covers aliases, JSON output, diagnostics, write
+verification, and exit codes. After installation, you can also run
+`man airpods-control`.
 
 ## Documentation
 
@@ -172,10 +178,9 @@ command-ready AirPods endpoint is selected, and the mapped BTAudio HAL
 when the device is unselected. For a Bluetooth device group with several Core
 Audio outputs, the HAL provider targets an output that exposes `lstm`; that
 control endpoint may differ from the named sibling used for display. Provider
-selection and
-all pre-write state, capability, setter, and bounded readback operations are
-sticky for one command. The CLI never changes the default route or starts an
-audio stream. `status` remains a separate read-only Core Audio adapter.
+selection and all pre-write state, capability, setter, and bounded readback
+operations are sticky for one command. The CLI never changes the default route
+or starts an audio stream. `status` remains a separate read-only adapter.
 
 HAL's supported-mode mask does not expose the user-configured Allow Off
 setting. After the exact output endpoint advertises Off in an eligible AV
@@ -226,19 +231,36 @@ when this join is unavailable.
 When macOS exposes the runtime-gated ear-detection properties, `status` also
 reports `leftEarPlacement` and `rightEarPlacement` as `in-ear`, `out-of-ear`, or
 `in-case`. The read is one-pass and read-only; missing placement properties omit
-the fields, while unknown or conflicting evidence is rendered as `unknown` (or
-JSON `null`). This status path does not scan BLE advertisements or change
-Conversation Awareness.
+the fields, while unknown or conflicting HAL evidence is rendered as `unknown`
+or JSON `null`.
 
-Core Audio handles and the identifiers used by the enrichment probe stay inside
-the process. The CLI does not parse or log them. Status inventory and target
-selection do not read Bluetooth addresses, Core Audio UIDs, or private route
-identifiers, and raw HAL values are not emitted. After target selection, Allow
-Off cache correlation reads the exact public Core Audio UID transiently and
-persists a random per-cache salt, a salted full SHA-256 digest, and the
-observation time. The raw UID is never persisted; the raw UID, digest, and salt
-are never printed or logged. `support-report` accesses neither this cache nor
-the status path.
+Run `airpods-control bluetooth setup` to grant permission and enable the
+optional passive BLE fallback. A regular `status` invocation never prompts. It
+scans for at most two seconds only when permission was already granted, and
+requires two matching AirPods proximity frames from an enrolled CoreBluetooth
+identifier. A valid HAL pair always wins. BLE fills placement only when HAL is
+unsupported; HAL conflicts, read failures, missing frames, conflicting frames,
+and ambiguous identity remain `unknown`. BLE cannot distinguish an unworn bud
+from one in its case, so it reports only `in-ear` or `out-of-ear`.
+
+The CLI normally enrolls an accessory after HAL and BLE agree across two
+distinct states within 24 hours, including one state with exactly one bud in
+ear. It does not enroll when two same-model candidates are present. Advanced
+users can run `bluetooth enroll --device NAME` for an interactive one-ear
+verification. `bluetooth unenroll --device NAME` deletes that association,
+while `bluetooth disable` stops scans without deleting it or changing macOS
+Bluetooth settings.
+
+Core Audio handles and the identifiers used by enrichment stay inside the
+process. The CLI does not parse or log them. BLE association uses the public
+CoreBluetooth identifier and salted digests of public Core Audio UIDs. It never
+reads IRKs, keys, Bluetooth addresses, or AAP data. The Application Support file
+is owner-only and never stores raw advertisements, RSSI, or status history.
+After target selection, Allow Off cache correlation reads the exact public Core
+Audio UID transiently and persists a random per-cache salt, a salted full
+SHA-256 digest, and the observation time. The raw UID is never persisted; the
+raw UID, digest, and salt are never printed or logged. `support-report` accesses
+neither this cache nor the status path.
 
 To reach the shared system audio context used by feature controls, the
 `airpods-control` process loads the small interpose library in

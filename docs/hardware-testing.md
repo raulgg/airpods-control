@@ -124,16 +124,29 @@ capture directory after recording the Boolean outcomes.
 
 ## Left/right ear placement status check
 
-This check verifies the additive placement fields on the AirPods Pro 3 baseline.
-It is read-only and does not require the AirPods to be the selected audio
-output. Build once with `make`, then run `status` in each state below:
+This check verifies HAL precedence and the optional BLE fallback. It is
+read-only and does not require the AirPods to be the selected audio output.
+Build once with `make`, then run the only command allowed to request Bluetooth
+permission:
+
+```sh
+build/airpods-control bluetooth setup
+build/airpods-control bluetooth status --json
+```
+
+Test Terminal, a source shell, Homebrew installation, and any supported
+automation launch context separately. Record authorized, denied, restricted,
+powered-off, and not-determined behavior. `status` must never show a permission
+prompt or crash. Then run `status` in each state below:
 
 | State | Left bud | Right bud |
 | --- | --- | --- |
 | Both worn | in ear | in ear |
 | Left removed | out of ear or in case | in ear |
 | Right removed | in ear | out of ear or in case |
-| Both in case | in case | in case |
+| Both removed | out of ear | out of ear |
+| Both in case, lid open | HAL: in case; BLE: unknown or stale | HAL: in case; BLE: unknown or stale |
+| Both in case, lid closed | HAL: in case; BLE: unknown | HAL: in case; BLE: unknown |
 
 Capture plain and JSON output for every state, allowing a short pause after
 each placement change for macOS to publish the state:
@@ -145,20 +158,22 @@ build/airpods-control status --device "My AirPods" --json \
   >"$capture_dir/placement-both.json"
 ```
 
-Replace the suffix for the remaining states. The two fields must use the
-canonical `in-ear`, `out-of-ear`, and `in-case` values in both plain and JSON
-output. Missing HAL placement support may omit the fields, but an unknown or
-conflicting result on baseline hardware is a failed verification, not evidence
-of a placement state. Core Audio endpoint presence is route- and session-
-dependent: macOS can retain the Bluetooth control and battery connection while
-removing the AirPods audio endpoints. In that case `status` returns
-`no-device`; record the endpoint absence rather than inferring a placement from
-Bluetooth connectivity. Forcing AirPods as output can create or retain the
-endpoints, and switching back to MacBook output may leave them present
-temporarily before macOS tears them down. Repeat the capture after settling and
-keep the compatibility entry Pending until endpoint-absent states have a safe
-BLE/AAP implementation. Do not record raw HAL values, Core Audio handles, or
-Bluetooth addresses in the capture or issue.
+Replace the suffix for the remaining states. HAL may use `in-case`; BLE may use
+only `in-ear` or `out-of-ear`. Closed-case silence, a single frame, conflicts,
+and missing identity must be `unknown`. Repeat the matrix with AirPods selected
+for output, selected for input only, selected for neither, while playing audio,
+and after Core Audio removes its endpoints. An enrolled accessory seen during
+the current scan may create a record without an endpoint. Its route and
+listening-mode fields must remain `unknown`.
+
+Also verify primary-side flips, one-bud transitions, open and closed case,
+reconnect, sleep/wake, reboot, and Bluetooth privacy-address rotation. The
+public CoreBluetooth identifier must continue to select the same enrolled
+accessory. With two same-model accessories nearby, automatic learning must stay
+incomplete rather than guess. BLE frames can contain stale sensor state, so
+repeat each transition after settling and record that nuance separately from
+callback freshness. Do not record raw frames, identifiers, UID digests, Core
+Audio handles, or Bluetooth addresses in the capture or issue.
 
 ## One-earbud feature-control regression check
 

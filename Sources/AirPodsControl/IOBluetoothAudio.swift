@@ -378,6 +378,8 @@ private struct CoreAudioBluetoothEndpoint {
   let appleAudioAdmission: AppleAudioAdmission
   let listeningMode: AudioRoutingRead<UInt32>
   let inEarPlacement: BluetoothEarPlacementRead
+  let bluetoothProductID: Int?
+  let coreAudioUID: String?
 }
 
 private struct CoreAudioBluetoothDeviceGroup {
@@ -398,8 +400,14 @@ enum IOBluetoothStatusControllerCreationResult {
   case readError(OSStatus)
 }
 
+struct BluetoothEndpointCorrelation: Equatable {
+  let productID: Int
+  let coreAudioUIDs: [String]
+}
+
 final class IOBluetoothStatusController {
   private let devices: [IOBluetoothStatusDevice]
+  private let correlations: [ObjectIdentifier: BluetoothEndpointCorrelation]
   private let listeningModeBindings: [IOBluetoothListeningModeBinding]
   private let routingBackend: any AudioRoutingBackend
   private let routingObserver: AudioRoutingObserver
@@ -410,6 +418,7 @@ final class IOBluetoothStatusController {
     activeOutputContext: AnyObject?,
     readStatusListeningMode: Bool = true,
     readStatusInEarPlacement: Bool = true,
+    readBluetoothCorrelationMetadata: Bool = false,
     allowOffCache: (any ListeningModeAllowOffCaching)? = nil
   ) -> IOBluetoothStatusControllerCreationResult {
     let runtime = SystemBluetoothAudioRuntime(logger: logger)
@@ -419,6 +428,7 @@ final class IOBluetoothStatusController {
       activeEndpointProbe: activeOutputContext.map(SystemActiveAudioEndpointProbe.init),
       readStatusListeningMode: readStatusListeningMode,
       readStatusInEarPlacement: readStatusInEarPlacement,
+      readBluetoothCorrelationMetadata: readBluetoothCorrelationMetadata,
       allowOffCache: allowOffCache,
       logger: logger
     )
@@ -430,6 +440,7 @@ final class IOBluetoothStatusController {
     activeEndpointProbe: (any ActiveAudioEndpointProbing)? = nil,
     readStatusListeningMode: Bool = true,
     readStatusInEarPlacement: Bool = false,
+    readBluetoothCorrelationMetadata: Bool = false,
     allowOffCache: (any ListeningModeAllowOffCaching)? = nil,
     logger: DebugLogger
   ) -> IOBluetoothStatusControllerCreationResult {
@@ -453,6 +464,7 @@ final class IOBluetoothStatusController {
         activeEndpointProbe: activeEndpointProbe,
         readStatusListeningMode: readStatusListeningMode,
         readStatusInEarPlacement: readStatusInEarPlacement,
+        readBluetoothCorrelationMetadata: readBluetoothCorrelationMetadata,
         allowOffCache: allowOffCache,
         logger: logger
       )
@@ -466,6 +478,7 @@ final class IOBluetoothStatusController {
     activeEndpointProbe: (any ActiveAudioEndpointProbing)?,
     readStatusListeningMode: Bool,
     readStatusInEarPlacement: Bool,
+    readBluetoothCorrelationMetadata: Bool,
     allowOffCache: (any ListeningModeAllowOffCaching)?,
     logger: DebugLogger
   ) {
@@ -620,6 +633,31 @@ final class IOBluetoothStatusController {
         logger.debug("\(prefix).in_ear_placement_error", status)
       }
       logger.debug("\(prefix).name_available", name != nil)
+      let bluetoothProductID: Int?
+      let coreAudioUID: String?
+      if readBluetoothCorrelationMetadata {
+        if case let .value(.some(modelUID)) = routingBackend.readModelUID(
+          for: audioDeviceID
+        ) {
+          bluetoothProductID = AppleAudioProducts.product(
+            for: modelUID
+          )?.bluetoothProductID
+        } else {
+          bluetoothProductID = nil
+        }
+        if case let .value(.some(uid)) = routingBackend.readDeviceUID(
+          for: audioDeviceID
+        ), !uid.isEmpty {
+          coreAudioUID = uid
+        } else {
+          coreAudioUID = nil
+        }
+        logger.debug("\(prefix).bluetooth_product_id_available", bluetoothProductID != nil)
+        logger.debug("\(prefix).core_audio_uid_available", coreAudioUID != nil)
+      } else {
+        bluetoothProductID = nil
+        coreAudioUID = nil
+      }
       logger.debug("\(prefix).eligible", appleAudioAdmission == .positive)
       mappedEndpointCount += 1
       let endpoint = CoreAudioBluetoothEndpoint(
@@ -629,7 +667,9 @@ final class IOBluetoothStatusController {
         name: name,
         appleAudioAdmission: appleAudioAdmission,
         listeningMode: listeningModeRead,
-        inEarPlacement: inEarPlacementRead
+        inEarPlacement: inEarPlacementRead,
+        bluetoothProductID: bluetoothProductID,
+        coreAudioUID: coreAudioUID
       )
       if let groupIndex = groups.firstIndex(where: {
         bluetoothDevicesAreExactlyEqual($0.equalityAnchor, bluetoothDevice)
@@ -647,12 +687,15 @@ final class IOBluetoothStatusController {
     logger.info("bluetooth.mapped_endpoint_count", mappedEndpointCount)
     logger.info("bluetooth.mapped_device_count", groups.count)
 
-    let compatibleDevices: [IOBluetoothStatusDevice] = groups.compactMap { group in
+    var compatibleDevices: [IOBluetoothStatusDevice] = []
+    var collectedCorrelations: [ObjectIdentifier: BluetoothEndpointCorrelation] =
+      [:]
+    for group in groups {
       guard !group.endpoints.contains(where: {
         $0.appleAudioAdmission == .negative
       }) else {
         logger.debug("bluetooth.apple_audio_consistency", "conflict")
-        return nil
+        continue
       }
       let positiveEndpoints = group.endpoints.filter {
         $0.appleAudioAdmission == .positive
@@ -662,8 +705,8 @@ final class IOBluetoothStatusController {
       guard let primary = endpoints.first,
             let namedEndpoint = endpoints.first(where: { $0.name != nil }),
             let name = namedEndpoint.name
-      else { return nil }
-      return IOBluetoothStatusDevice(
+      else { continue }
+      let device = IOBluetoothStatusDevice(
         object: primary.bluetoothDevice,
         name: name,
         coreAudioListeningMode: Self.resolveListeningMode(
@@ -677,8 +720,21 @@ final class IOBluetoothStatusController {
         runtime: runtime,
         routingObserver: routingObserver
       )
+      compatibleDevices.append(device)
+      let coreAudioUIDs = group.endpoints.compactMap(\.coreAudioUID)
+      if readBluetoothCorrelationMetadata,
+         let productID = Self.resolveBluetoothProductID(from: group.endpoints),
+         !coreAudioUIDs.isEmpty
+      {
+        collectedCorrelations[ObjectIdentifier(device)] =
+          BluetoothEndpointCorrelation(
+            productID: productID,
+            coreAudioUIDs: coreAudioUIDs
+          )
+      }
     }
     devices = compatibleDevices
+    correlations = collectedCorrelations
     let cacheCollisionAudioDeviceIDs = groups.flatMap { group -> [AudioDeviceID] in
       guard !group.endpoints.contains(where: {
         $0.appleAudioAdmission == .negative
@@ -783,38 +839,23 @@ final class IOBluetoothStatusController {
     named requestedName: String?,
     policy: DeviceSelectionPolicy
   ) -> DeviceSelection<IOBluetoothStatusDevice> {
-    if let requestedName {
-      let matches = devices.filter {
-        $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
-      }
-      guard let selected = matches.first else {
-        logger.warning("device_selection", "no-exact-name-match")
-        return .noDevice
-      }
-      guard matches.count == 1 else {
-        logger.warning("device_selection", "ambiguous-device-name")
-        return .ambiguousDevice
-      }
-      logger.info("selected_device", selected.name)
-      return .selected([selected])
-    }
+    DeviceNameSelection.select(
+      devices,
+      named: requestedName,
+      name: \.name,
+      policy: policy,
+      logger: logger
+    )
+  }
 
-    guard !devices.isEmpty else {
-      logger.warning("device_selection", "no-compatible-device")
-      return .noDevice
-    }
-    switch policy {
-    case .singleOrExact:
-      guard devices.count == 1, let selected = devices.first else {
-        logger.warning("device_selection", "ambiguous-device")
-        return .ambiguousDevice
-      }
-      logger.info("selected_device", selected.name)
-      return .selected([selected])
-    case .allOrExact:
-      logger.info("selected_device_count", devices.count)
-      return .selected(devices)
-    }
+  func statusDevices() -> [IOBluetoothStatusDevice] {
+    devices
+  }
+
+  func bluetoothCorrelation(
+    for device: IOBluetoothStatusDevice
+  ) -> BluetoothEndpointCorrelation? {
+    correlations[ObjectIdentifier(device)]
   }
 
   private static func positiveValue(_ read: AudioRoutingRead<Bool>) -> Bool {
@@ -911,5 +952,13 @@ final class IOBluetoothStatusController {
       return .value(placement)
     }
     return .unavailable
+  }
+
+  private static func resolveBluetoothProductID(
+    from endpoints: [CoreAudioBluetoothEndpoint]
+  ) -> Int? {
+    let productIDs = Set(endpoints.compactMap(\.bluetoothProductID))
+    guard productIDs.count == 1 else { return nil }
+    return productIDs.first
   }
 }

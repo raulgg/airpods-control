@@ -79,13 +79,20 @@ they do not determine Bluetooth identity or selection.
 not enumerate the Core Audio status inventory, inspect default routes, call the
 selection mapper, or run active-output enrichment.
 
-The status adapter can read left and right ear placement from three
-runtime-gated HAL properties (`iesb`, `pris`, and `iede`) when macOS exposes
-them. It reports `in-ear`, `out-of-ear`, or `in-case` without changing settings.
-Missing or disabled properties are unsupported; unknown or conflicting evidence
-is unresolved. This implementation does not use BLE advertisements as a
-fallback, because a scan cannot safely join a rotating advertisement to the
-already-resolved `IOBluetoothDevice` without heuristic identity matching.
+The status adapter reads left and right ear placement from three runtime-gated
+HAL properties (`iesb`, `pris`, and `iede`) when macOS exposes them. It reports
+`in-ear`, `out-of-ear`, or `in-case` without changing settings. Missing or
+disabled properties are unsupported; unknown or conflicting evidence is
+unresolved.
+
+An optional CoreBluetooth fallback covers unsupported HAL placement and missing
+Core Audio endpoints. It accepts these verified two-earbud AirPods product IDs:
+`0x2002`, `0x200E`, `0x200F`, `0x2013`, `0x2014`, `0x2019`, `0x201B`, `0x2024`,
+and `0x2027`. It excludes AirPods Max, Beats, catalog-only AirPods 4 variants,
+unknown products, and clones. HAL remains authoritative. BLE requires an
+enrolled public CoreBluetooth identifier, two matching frames in one bounded
+scan, and prior permission. It cannot report `in-case`, and an advertisement
+can contain stale sensor bits even when the callback just arrived.
 
 ## Candidates pending verification
 

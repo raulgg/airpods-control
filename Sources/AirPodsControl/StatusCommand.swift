@@ -20,6 +20,39 @@ private enum StatusFieldKey: String {
   }
 }
 
+struct StatusHALRecord {
+  let device: any CompatibleAudioDevice
+  let target: BluetoothCorrelationTarget?
+}
+
+struct StatusSession {
+  let hal: [StatusHALRecord]
+  let document: BluetoothSettingsDocument?
+  let observations: [BluetoothPeripheralObservation]
+  let bluetoothUsable: Bool
+
+  init(
+    hal: [StatusHALRecord],
+    document: BluetoothSettingsDocument? = nil,
+    observations: [BluetoothPeripheralObservation] = [],
+    bluetoothUsable: Bool = false
+  ) {
+    self.hal = hal
+    self.document = document
+    self.observations = observations
+    self.bluetoothUsable = bluetoothUsable
+  }
+
+  init(devices: [any CompatibleAudioDevice]) {
+    self.init(hal: devices.map { StatusHALRecord(device: $0, target: nil) })
+  }
+}
+
+enum StatusSessionResolution {
+  case session(StatusSession)
+  case failed(TerminalReason)
+}
+
 private struct DeviceStatusSnapshot {
   let deviceName: String
   let listeningMode: DeviceStatusField<ListeningMode>
@@ -37,6 +70,33 @@ private struct DeviceStatusSnapshot {
       audioOutputSelection: device.readAudioOutputSelectionStatus(),
       audioInputSelection: device.readAudioInputSelectionStatus(),
       inEarPlacement: device.readInEarPlacementStatus()
+    )
+  }
+
+  static func bleOnly(
+    name: String,
+    placement: BluetoothEarPlacement
+  ) -> DeviceStatusSnapshot {
+    DeviceStatusSnapshot(
+      deviceName: name,
+      listeningMode: .unresolved,
+      conversationAwareness: .unresolved,
+      audioOutputSelection: .unresolved,
+      audioInputSelection: .unresolved,
+      inEarPlacement: .value(placement)
+    )
+  }
+
+  func overlayingPlacement(
+    _ placement: DeviceStatusField<BluetoothEarPlacement>
+  ) -> DeviceStatusSnapshot {
+    DeviceStatusSnapshot(
+      deviceName: deviceName,
+      listeningMode: listeningMode,
+      conversationAwareness: conversationAwareness,
+      audioOutputSelection: audioOutputSelection,
+      audioInputSelection: audioInputSelection,
+      inEarPlacement: placement
     )
   }
 
@@ -196,17 +256,91 @@ enum StatusCommand {
   static let noDevicePlain = "No compatible AirPods or Beats device is connected."
 
   static func outcome(devices: [any CompatibleAudioDevice]) -> CommandOutcome {
-    let snapshots = devices.compactMap(DeviceStatusSnapshot.capture)
-    guard !snapshots.isEmpty, snapshots.count == devices.count else {
+    outcome(
+      session: StatusSession(devices: devices),
+      named: nil,
+      logger: DebugLogger(enabled: false)
+    )
+  }
+
+  static func outcome(
+    session: StatusSession,
+    named requestedName: String?,
+    policy: DeviceSelectionPolicy = .allOrExact,
+    logger: DebugLogger
+  ) -> CommandOutcome {
+    let snapshots = records(from: session)
+    guard session.hal.allSatisfy({ $0.device.name != nil }) else {
       return noDeviceOutcome()
     }
 
-    let hasNonErrorResult = snapshots.contains(where: \.hasNonErrorResult)
-    return CommandOutcome(
-      plain: snapshots.map(\.plain).joined(separator: "\n\n"),
-      terminalReason: hasNonErrorResult ? .success : .readError,
-      data: ["devices": snapshots.map(\.payload)]
-    )
+    switch DeviceNameSelection.select(
+      snapshots,
+      named: requestedName,
+      name: { $0.deviceName },
+      policy: policy,
+      logger: logger
+    ) {
+    case let .selected(selected):
+      let hasNonErrorResult = selected.contains(where: \.hasNonErrorResult)
+      return CommandOutcome(
+        plain: selected.map(\.plain).joined(separator: "\n\n"),
+        terminalReason: hasNonErrorResult ? .success : .readError,
+        data: ["devices": selected.map(\.payload)]
+      )
+    case .noDevice:
+      return noDeviceOutcome()
+    case .ambiguousDevice:
+      return resolutionFailureOutcome(.ambiguousDevice)
+    }
+  }
+
+  private static func records(from session: StatusSession) -> [DeviceStatusSnapshot] {
+    var matchedAssociationIDs = Set<UUID>()
+    let overlayEnabled = session.bluetoothUsable
+      && session.document?.enabled == true
+    let document = session.document
+    let halSnapshots: [DeviceStatusSnapshot] = session.hal.compactMap { record in
+      guard let snapshot = DeviceStatusSnapshot.capture(record.device) else {
+        return nil
+      }
+      guard overlayEnabled, let document else { return snapshot }
+      let association = record.target.flatMap { document.association(matching: $0) }
+      if let association {
+        matchedAssociationIDs.insert(association.associationID)
+      }
+      return snapshot.overlayingPlacement(
+        BluetoothPlacement.resolved(
+          hal: snapshot.inEarPlacement,
+          ble: observation(for: association, in: session.observations),
+          enrolled: association != nil
+        )
+      )
+    }
+    guard overlayEnabled, let document else { return halSnapshots }
+    let bleOnly = document.associations.compactMap { association -> DeviceStatusSnapshot? in
+      guard !matchedAssociationIDs.contains(association.associationID),
+            let placement = observation(
+              for: association,
+              in: session.observations
+            )
+      else {
+        return nil
+      }
+      return .bleOnly(name: association.displayName, placement: placement)
+    }
+    return halSnapshots + bleOnly
+  }
+
+  private static func observation(
+    for association: BluetoothAssociation?,
+    in observations: [BluetoothPeripheralObservation]
+  ) -> BluetoothEarPlacement? {
+    guard let association else { return nil }
+    return observations.first {
+      $0.peripheralIdentifier == association.peripheralIdentifier
+        && $0.productID == association.productID
+    }?.placement
   }
 
   static func noDeviceOutcome() -> CommandOutcome {

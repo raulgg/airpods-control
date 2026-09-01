@@ -13,6 +13,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   var manufacturers: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   var names: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   var deviceUIDs: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
+  var modelUIDs: [AudioDeviceID: AudioRoutingRead<String?>] = [:]
   var appleAudioDevices: [AudioDeviceID: AudioRoutingRead<Bool>] = [:]
   var listeningModes: [AudioDeviceID: AudioRoutingRead<UInt32>] = [:]
   var listeningModePresence: [AudioDeviceID: Bool] = [:]
@@ -29,6 +30,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   private(set) var listeningModeReads: [AudioDeviceID] = []
   private(set) var inEarPlacementReads: [AudioDeviceID] = []
   private(set) var deviceUIDReads: [AudioDeviceID] = []
+  private(set) var modelUIDReads: [AudioDeviceID] = []
 
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]> {
     audioDeviceReadCount += 1
@@ -91,6 +93,13 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   ) -> AudioRoutingRead<String?> {
     deviceUIDReads.append(deviceID)
     return deviceUIDs[deviceID] ?? .unavailable
+  }
+
+  func readModelUID(
+    for deviceID: AudioDeviceID
+  ) -> AudioRoutingRead<String?> {
+    modelUIDReads.append(deviceID)
+    return modelUIDs[deviceID] ?? .unavailable
   }
 
   func readIsAppleAudioDevice(
@@ -223,6 +232,8 @@ struct FakeInventoryEndpoint {
   var listeningModePresent = true
   var listeningMode: AudioRoutingRead<UInt32> = .unavailable
   var inEarPlacement: BluetoothEarPlacementRead = .unavailable
+  var deviceUID: AudioRoutingRead<String?> = .unavailable
+  var modelUID: AudioRoutingRead<String?> = .unavailable
   var mapping: AudioRoutingRead<AnyObject?>? = nil
 }
 
@@ -235,6 +246,7 @@ func makeBluetoothController(
   activeProbe: (any ActiveAudioEndpointProbing)? = nil,
   readStatusListeningMode: Bool = true,
   readStatusInEarPlacement: Bool? = nil,
+  readBluetoothCorrelationMetadata: Bool = false,
   allowOffCache: (any ListeningModeAllowOffCaching)? = nil
 ) -> (IOBluetoothStatusController, FakeBluetoothAudioRuntime) {
   let (result, runtime) = makeBluetoothControllerResult(
@@ -246,6 +258,7 @@ func makeBluetoothController(
     activeProbe: activeProbe,
     readStatusListeningMode: readStatusListeningMode,
     readStatusInEarPlacement: readStatusInEarPlacement,
+    readBluetoothCorrelationMetadata: readBluetoothCorrelationMetadata,
     allowOffCache: allowOffCache
   )
   guard case let .success(controller) = result else {
@@ -263,6 +276,7 @@ func makeBluetoothControllerResult(
   activeProbe: (any ActiveAudioEndpointProbing)? = nil,
   readStatusListeningMode: Bool = true,
   readStatusInEarPlacement: Bool? = nil,
+  readBluetoothCorrelationMetadata: Bool = false,
   allowOffCache: (any ListeningModeAllowOffCaching)? = nil
 ) -> (IOBluetoothStatusControllerCreationResult, FakeBluetoothAudioRuntime) {
   let runtime = FakeBluetoothAudioRuntime()
@@ -281,6 +295,14 @@ func makeBluetoothControllerResult(
     backend.listeningModePresence[id] = endpoint.listeningModePresent
     backend.listeningModes[id] = endpoint.listeningMode
     backend.inEarPlacements[id] = endpoint.inEarPlacement
+    switch endpoint.deviceUID {
+    case .unavailable: break
+    default: backend.deviceUIDs[id] = endpoint.deviceUID
+    }
+    switch endpoint.modelUID {
+    case .unavailable: break
+    default: backend.modelUIDs[id] = endpoint.modelUID
+    }
     runtime.mappings[id] = endpoint.mapping ?? .value(endpoint.bluetoothDevice)
   }
   configureRuntime(runtime)
@@ -290,6 +312,7 @@ func makeBluetoothControllerResult(
     activeEndpointProbe: activeProbe,
     readStatusListeningMode: readStatusListeningMode,
     readStatusInEarPlacement: readStatusInEarPlacement ?? readStatusListeningMode,
+    readBluetoothCorrelationMetadata: readBluetoothCorrelationMetadata,
     allowOffCache: allowOffCache,
     logger: DebugLogger(enabled: false)
   )

@@ -111,24 +111,7 @@ func bootstrapAndResolveAudioDevices(
     }
 
   case .status:
-    let activeOutputContext = PrivateAudioDiscovery.systemStatusOutputContext(
-      logger: logger
-    )
-    let controllerResult = IOBluetoothStatusController.create(
-      logger: logger,
-      activeOutputContext: activeOutputContext
-    )
-    let controller: IOBluetoothStatusController
-    switch controllerResult {
-    case let .success(value): controller = value
-    case .unavailable: return .failed(.unavailable)
-    case .readError: return .failed(.readError)
-    }
-    switch controller.resolveDevices(named: requestedName, policy: policy) {
-    case let .selected(devices): return .devices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
-    }
+    preconditionFailure("status uses bootstrapStatusSession")
 
   case .supportReport:
     // Preserve the name-free, plural-only support-report discovery contract.
@@ -146,6 +129,85 @@ func bootstrapAndResolveAudioDevices(
     case .ambiguousDevice: return .failed(.ambiguousDevice)
     }
   }
+}
+
+func bootstrapStatusSession(logger: DebugLogger) -> StatusSessionResolution {
+  ensureBypass(logger: logger)
+  let activeOutputContext = PrivateAudioDiscovery.systemStatusOutputContext(
+    logger: logger
+  )
+  let store = PersistentBluetoothAssociationStore.systemDefault()
+  var document: BluetoothSettingsDocument?
+  if let store {
+    switch store.load() {
+    case let .value(value): document = value
+    case .missing: document = nil
+    case .invalid:
+      logger.warning("bluetooth.settings", "invalid")
+      document = nil
+    }
+  } else {
+    logger.warning("bluetooth.settings", "location-unavailable")
+    document = nil
+  }
+  let scanner = SystemBluetoothScanner()
+  let bluetoothEnabled = document?.enabled == true
+  let bluetoothAuthorized = scanner.authorization() == .authorized
+  let bluetoothUsable = bluetoothEnabled && bluetoothAuthorized
+  let controller: IOBluetoothStatusController
+  switch IOBluetoothStatusController.create(
+    logger: logger,
+    activeOutputContext: activeOutputContext,
+    readBluetoothCorrelationMetadata: bluetoothUsable
+  ) {
+  case let .success(value): controller = value
+  case .unavailable: return .failed(.unavailable)
+  case .readError: return .failed(.readError)
+  }
+
+  let devices = controller.statusDevices()
+  let hal = devices.map { device in
+    StatusHALRecord(
+      device: device,
+      target: document?.target(
+        name: device.name,
+        correlation: controller.bluetoothCorrelation(for: device),
+        placement: device.readInEarPlacementStatus()
+      )
+    )
+  }
+  var observations: [BluetoothPeripheralObservation] = []
+  if bluetoothUsable, var learned = document {
+    let scan = scanner.scan(duration: BluetoothScan.duration)
+    let advertisements = scan.radio == .poweredOn ? scan.advertisements : []
+    observations = AirPodsBLEScanNormalizer.normalize(advertisements)
+    learned = BluetoothLearning.learn(
+      document: learned,
+      targets: hal.compactMap(\.target),
+      observations: observations,
+      conflictingProductIDs: BluetoothLearning.conflictingProductIDs(
+        advertisements
+      ),
+      now: Date()
+    )
+    if learned != document, let store {
+      do {
+        try store.save(learned)
+      } catch {
+        logger.warning("bluetooth.settings", "write-error")
+      }
+    }
+    document = learned
+  }
+
+  return .session(
+    StatusSession(
+      hal: hal,
+      document: document,
+      observations: observations,
+      bluetoothUsable: bluetoothUsable
+    )
+  )
 }
 
 func bootstrapAndResolveListeningMode(
@@ -262,7 +324,45 @@ let supportReport = SupportReportCommand(
 )
 
 let outcome: CommandOutcome
-if ListeningModeCommand(invocation.command) != nil {
+if BluetoothCommandKind(invocation.command) != nil {
+  if let store = PersistentBluetoothAssociationStore.systemDefault() {
+    let logger = DebugLogger(enabled: invocation.debugEnabled)
+    outcome = CommandExecution.executeBluetooth(
+      invocation,
+      store: store,
+      scanner: SystemBluetoothScanner(),
+      resolveStatusInventory: {
+        switch IOBluetoothStatusController.create(
+          logger: logger,
+          activeOutputContext: nil,
+          readStatusListeningMode: false,
+          readStatusInEarPlacement: true,
+          readBluetoothCorrelationMetadata: true
+        ) {
+        case let .success(controller):
+          return (
+            controller.statusDevices(),
+            controller.bluetoothCorrelation(for:)
+          )
+        case .unavailable, .readError:
+          return ([], { _ in nil })
+        }
+      },
+      interactive: isatty(STDIN_FILENO) == 1 && isatty(STDERR_FILENO) == 1,
+      readResponse: { readLine() },
+      writePrompt: { text in
+        fputs(text, stderr)
+        fflush(stderr)
+      }
+    )
+  } else {
+    outcome = CommandOutcome(
+      plain: "bluetooth-settings",
+      terminalReason: .unavailable,
+      data: ["detail": "bluetooth-settings"]
+    )
+  }
+} else if ListeningModeCommand(invocation.command) != nil {
   outcome = CommandExecution.executeListeningMode(
     invocation,
     resolveSession: { command, _, logger in
@@ -273,6 +373,10 @@ if ListeningModeCommand(invocation.command) != nil {
       )
     }
   )
+} else if case .status = invocation.command {
+  outcome = CommandExecution.executeStatus(invocation) { logger in
+    bootstrapStatusSession(logger: logger)
+  }
 } else {
   outcome = CommandExecution.execute(
     invocation,
@@ -280,8 +384,6 @@ if ListeningModeCommand(invocation.command) != nil {
       let accessPolicy: PrivateAudioAccessPolicy
       if case .supportReport = invocation.command {
         accessPolicy = .supportReport
-      } else if case .status = invocation.command {
-        accessPolicy = .status
       } else {
         accessPolicy = .operational
       }

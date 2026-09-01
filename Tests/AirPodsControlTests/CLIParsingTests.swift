@@ -228,9 +228,46 @@ func testNextCycleMode() {
   )
 }
 
+func testBluetoothParsing() {
+  let commands: [([String], String)] = [
+    (["bluetooth", "setup"], "setup"),
+    (["bluetooth", "status", "--json"], "status"),
+    (["bluetooth", "disable"], "disable"),
+    (["bluetooth", "enroll", "--device", "Test AirPods"], "enroll"),
+    (["bluetooth", "unenroll", "--device", "Test AirPods"], "unenroll"),
+  ]
+  for (arguments, label) in commands {
+    do {
+      _ = try parseInvocation(arguments)
+      check(true, "bluetooth \(label) parses")
+    } catch {
+      check(false, "bluetooth \(label) parses")
+    }
+  }
+
+  expectParseFailure(["bluetooth", "enroll"], "enroll requires --device")
+  expectParseFailure(
+    ["bluetooth", "unenroll"],
+    "unenroll requires --device"
+  )
+  expectParseFailure(
+    ["bluetooth", "status", "--device", "Test AirPods"],
+    "bluetooth status rejects --device"
+  )
+  expectParseFailure(
+    ["bluetooth", "setup", "--json"],
+    "bluetooth setup rejects JSON"
+  )
+  check(
+    helpText(for: ["bluetooth", "--help"]) == bluetoothHelp,
+    "bluetooth help is contextual"
+  )
+}
+
 func runCLIParsingTests() {
   testCLIParsing()
   testStatusParsing()
   testCycleParsing()
   testNextCycleMode()
+  testBluetoothParsing()
 }

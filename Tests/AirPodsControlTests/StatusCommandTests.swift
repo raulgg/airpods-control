@@ -5,16 +5,13 @@ private func statusOutcome(
   devices: [any CompatibleAudioDevice]?
 ) -> CommandOutcome {
   let invocation = try! parseInvocation(arguments)
-  return CommandExecution.execute(
-    invocation,
-    resolveDevices: { _, _, _ in
-      guard let devices else { return .failed(.noDevice) }
-      return .devices(devices)
-    }
-  )
+  return CommandExecution.executeStatus(invocation) { _ in
+    guard let devices else { return .failed(.noDevice) }
+    return .session(StatusSession(devices: devices))
+  }
 }
 
-private func statusRecords(_ outcome: CommandOutcome) -> [[String: Any]]? {
+func statusRecords(_ outcome: CommandOutcome) -> [[String: Any]]? {
   outcome.payload["devices"] as? [[String: Any]]
 }
 
@@ -303,16 +300,11 @@ func testStatusIsOnePassAndReadOnly() {
 func testStatusResolutionFailuresAndPolicy() {
   for arguments in [["status"], ["status", "--device", "Missing AirPods"]] {
     var capturedName: String?
-    var capturedPolicy: DeviceSelectionPolicy?
     let invocation = try! parseInvocation(arguments)
-    let outcome = CommandExecution.execute(
-      invocation,
-      resolveDevices: { name, policy, _ in
-        capturedName = name
-        capturedPolicy = policy
-        return .failed(.noDevice)
-      }
-    )
+    let outcome = CommandExecution.executeStatus(invocation) { _ in
+      capturedName = invocation.requestedDeviceName
+      return .failed(.noDevice)
+    }
     check(outcome.exitCode == 1, "status no-device exits one")
     check(
       outcome.plain == "No compatible AirPods or Beats device is connected.",
@@ -326,18 +318,12 @@ func testStatusResolutionFailuresAndPolicy() {
     } else {
       check(capturedName == "Missing AirPods", "named status forwards the requested name")
     }
-    if case .allOrExact? = capturedPolicy {
-      check(true, "status requests all-or-exact device resolution")
-    } else {
-      check(false, "status requests all-or-exact device resolution")
-    }
   }
 
   let invocation = try! parseInvocation(["status"])
-  let readError = CommandExecution.execute(
-    invocation,
-    resolveDevices: { _, _, _ in .failed(.readError) }
-  )
+  let readError = CommandExecution.executeStatus(invocation) { _ in
+    .failed(.readError)
+  }
   check(
     readError.terminalReason == .readError,
     "status preserves a discovery read error"

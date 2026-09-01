@@ -30,10 +30,16 @@ enum CLICommand {
   case listeningModeCycle(requested: [ListeningMode]?)
   case conversationAwarenessGet
   case conversationAwarenessSet(Bool)
+  case bluetoothSetup
+  case bluetoothStatus
+  case bluetoothDisable
+  case bluetoothEnroll
+  case bluetoothUnenroll
 
   var resource: CLIResource? {
     switch self {
-    case .version, .status, .supportReport:
+    case .version, .status, .supportReport, .bluetoothSetup, .bluetoothStatus,
+      .bluetoothDisable, .bluetoothEnroll, .bluetoothUnenroll:
       return nil
     case .listeningModeGet, .listeningModeSet, .listeningModeList, .listeningModeCycle:
       return .listeningMode
@@ -53,6 +59,11 @@ enum CLICommand {
     case .listeningModeCycle: return "listening-mode.cycle"
     case .conversationAwarenessGet: return "conversation-awareness.get"
     case .conversationAwarenessSet: return "conversation-awareness.set"
+    case .bluetoothSetup: return "bluetooth.setup"
+    case .bluetoothStatus: return "bluetooth.status"
+    case .bluetoothDisable: return "bluetooth.disable"
+    case .bluetoothEnroll: return "bluetooth.enroll"
+    case .bluetoothUnenroll: return "bluetooth.unenroll"
     }
   }
 }
@@ -77,6 +88,7 @@ Usage:
 Resources:
   listening-mode, lm            Read, set, list, or cycle listening modes.
   conversation-awareness, ca    Read or set Conversation Awareness.
+  bluetooth                    Manage the optional Bluetooth status fallback.
 
 Command:
   status       Read modes and macOS audio output/input selection for every
@@ -105,6 +117,42 @@ Run 'airpods-control status --help' or
 'airpods-control <resource> --help' for command-specific help.
 """
 
+let bluetoothHelp = """
+Usage:
+  airpods-control bluetooth setup [--debug]
+  airpods-control bluetooth status [--json] [--debug]
+  airpods-control bluetooth disable [--debug]
+  airpods-control bluetooth enroll --device NAME [--debug]
+  airpods-control bluetooth unenroll --device NAME [--debug]
+
+The Bluetooth integration extends left/right ear placement when Core Audio has
+no endpoint or its HAL placement property is unavailable. It passively scans
+AirPods proximity advertisements for at most two seconds. HAL remains the
+primary source and always wins when it returns a valid placement pair.
+
+Commands:
+  setup       Request macOS Bluetooth permission and enable CLI-local scans.
+  status      Show local enablement, permission/radio, and enrollments.
+              This command does not scan or request permission.
+  disable     Stop CLI scans without changing macOS Bluetooth permission or
+              deleting enrolled accessories.
+  enroll      Verify one accessory with an interactive one-ear transition.
+  unenroll    Delete the exact named accessory's CLI association evidence.
+              This does not unpair it from macOS. Automatic learning may
+              enroll it again while the integration remains enabled.
+
+Automatic enrollment compares HAL and BLE placement across two distinct
+states within 24 hours. One state must have exactly one earbud in ear. Product
+codes only reject incompatible candidates; they never establish identity by
+themselves. Same-model ambiguity remains unenrolled.
+
+Options:
+  --device NAME
+               Select one exact accessory name for enroll or unenroll.
+  --json       Emit structured JSON for bluetooth status.
+  --debug      Emit sanitized diagnostics to stderr.
+"""
+
 let statusHelp = """
 Usage:
   airpods-control status [--device NAME] [--json] [--debug]
@@ -125,6 +173,9 @@ or Beats manufacturer. Input and output endpoints form one record when their
 mapped objects compare equal in both directions, with the output endpoint
 preferred. With --device, the Core Audio name must have one case-insensitive
 exact match. Names are used for display and targeting, not identity.
+An enabled and enrolled AirPods device seen during the current BLE scan may add
+a record when Core Audio has no endpoint. Its feature and route fields remain
+unresolved.
 
 Input and output are checked separately. Aggregate routes and known unrelated
 transports produce no. Bluetooth LE, USB, unknown transports, missing
@@ -146,14 +197,20 @@ When macOS exposes the runtime-gated HAL ear-detection properties, status also
 reports the left and right placement as `in-ear`, `out-of-ear`, or `in-case`.
 The placement read is one-pass and read-only. If those properties are missing,
 unsupported placement is omitted; unknown or conflicting evidence is `unknown`.
-This status path does not scan BLE advertisements or change Conversation
-Awareness.
+When the optional Bluetooth integration is enabled and permission was already
+granted, status scans passively for at most two seconds. Two matching valid
+AirPods proximity frames can fill placement only for an enrolled accessory and
+only when HAL placement is unsupported. HAL values win; HAL conflict or failure
+blocks BLE. Missing or conflicting frames and ambiguous identity are unknown.
+Status never requests Bluetooth permission.
 
 Core Audio handles are passed unchanged to macOS and never parsed. They and the
 enrichment identifiers stay inside the process and are never printed or logged.
-Inventory and selection do not read Bluetooth/MAC addresses, Core Audio UIDs,
-or private route identifiers. Raw HAL values are not emitted, and support-report
-does not use this status path.
+Inventory and selection do not read Bluetooth/MAC addresses or private route
+identifiers. When Bluetooth integration is enabled, association reads public
+model and Core Audio UIDs transiently and persists only salted UID digests and
+the public CoreBluetooth identifier. Raw HAL values are not emitted, and
+support-report does not use this status path.
 
 Plain selection values are yes, no, or unknown; fields follow listening mode,
 Conversation Awareness, audio output selection, audio input selection, left/right
@@ -297,7 +354,8 @@ func helpText(for rawArgs: [String]) -> String? {
   }
 
   let contextualCommands = [
-    "status", "listening-mode", "lm", "conversation-awareness", "ca", "support-report",
+    "status", "listening-mode", "lm", "conversation-awareness", "ca",
+    "support-report", "bluetooth",
   ]
   let arguments = Array(rawArgs[..<helpIndex])
   var resource: String?
@@ -325,6 +383,8 @@ func helpText(for rawArgs: [String]) -> String? {
     return conversationAwarenessHelp
   case "support-report":
     return supportReportHelp
+  case "bluetooth":
+    return bluetoothHelp
   default:
     return globalHelp
   }
@@ -452,6 +512,36 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
     guard requestedCycleModes == nil else { throw CLIParseError() }
     return CLIInvocation(
       command: .status,
+      jsonOutput: jsonOutput,
+      debugEnabled: debugEnabled,
+      requestedDeviceName: requestedDeviceName
+    )
+  }
+
+  if positional.count == 2, positional[0] == "bluetooth" {
+    guard requestedCycleModes == nil else { throw CLIParseError() }
+    let command: CLICommand
+    switch positional[1] {
+    case "setup":
+      guard requestedDeviceName == nil, !jsonOutput else { throw CLIParseError() }
+      command = .bluetoothSetup
+    case "status":
+      guard requestedDeviceName == nil else { throw CLIParseError() }
+      command = .bluetoothStatus
+    case "disable":
+      guard requestedDeviceName == nil, !jsonOutput else { throw CLIParseError() }
+      command = .bluetoothDisable
+    case "enroll":
+      guard requestedDeviceName != nil, !jsonOutput else { throw CLIParseError() }
+      command = .bluetoothEnroll
+    case "unenroll":
+      guard requestedDeviceName != nil, !jsonOutput else { throw CLIParseError() }
+      command = .bluetoothUnenroll
+    default:
+      throw CLIParseError()
+    }
+    return CLIInvocation(
+      command: command,
       jsonOutput: jsonOutput,
       debugEnabled: debugEnabled,
       requestedDeviceName: requestedDeviceName

@@ -67,6 +67,17 @@ enum AppleAudioProducts {
       0x202F: (.beats, "Powerbeats Fit"),
     ]
 
+  // CAPod decodes these product IDs with the shared two-earbud AirPods frame
+  // layout. Catalog-only variants and over-ear products stay excluded until a
+  // captured frame proves that they use the same orientation bits.
+  private static let bleEarPlacementProductIDs: Set<Int> = [
+    0x2002, 0x200E, 0x200F, 0x2013, 0x2014, 0x2019, 0x201B, 0x2024, 0x2027,
+  ]
+
+  static func supportsBLEEarPlacement(productID: Int) -> Bool {
+    bleEarPlacementProductIDs.contains(productID)
+  }
+
   static func family(for modelIdentifier: String?) -> SupportReportDeviceFamily? {
     product(for: modelIdentifier)?.family
   }
