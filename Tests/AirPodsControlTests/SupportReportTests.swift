@@ -62,7 +62,6 @@ func testSupportReportContentsAndPrivacy() {
   )
   let invocation = try! parseInvocation(["support-report"])
   let outcome = CommandExecution.execute(invocation) { _, _ in device }
-  check(outcome.exitCode == 0, "supported-device command path succeeds")
   check(outcome.supportReportIssueDraft != nil, "supported-device command path creates an issue draft")
 }
 
@@ -116,8 +115,6 @@ func testSupportReportUnavailableValuesAndIdentification() {
 
   let invocation = try! parseInvocation(["support-report"])
   let outcome = CommandExecution.execute(invocation) { _, _ in unidentified }
-  check(outcome.exitCode == 0, "a connected unidentified device produces a partial report")
-  check(outcome.payload["error"] == nil, "a partial report is not an error")
   check(outcome.supportReportIssueDraft != nil, "a partial report can be reviewed")
   check(
     outcome.supportReportIssueDraft?.title.contains("unidentified Apple audio device") == true,

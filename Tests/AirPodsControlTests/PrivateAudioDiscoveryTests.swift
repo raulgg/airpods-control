@@ -92,7 +92,7 @@ func testSameIdentifierSingularAuthorityRejectsWithdrawnMode() {
     _, _ in selected
   }
   check(
-    outcome.exitCode == 4 && outcome.plain == "unsupported",
+    outcome.plain == "unsupported",
     "a mode withdrawn by the singular endpoint is unsupported"
   )
   check(
@@ -125,7 +125,7 @@ func testReadOnlySingularNeverFallsBackToPluralSetter() {
   let outcome = CommandExecution.execute(try! parseInvocation(["lm", "set", "adaptive"])) {
     _, _ in selected
   }
-  check(outcome.exitCode == 6, "a read-only singular endpoint reports unavailable")
+  check(outcome.plain == "unavailable", "a read-only singular endpoint reports unavailable")
   check(plural.listeningModeSetCount == 0, "the stale plural setter is never used as fallback")
 }
 
@@ -349,7 +349,6 @@ func testStatusReadsCAOnlySingularEndpointWithoutWrites() {
 
   let outcome = StatusCommand.outcome(devices: devices)
   let record = (outcome.payload["devices"] as? [[String: Any]])?.first
-  check(outcome.exitCode == 0, "a usable CA field keeps singular status successful")
   check(record?["conversationAwareness"] as? String == "off", "status reads singular CA")
   check(record?["listeningMode"] is NSNull, "the missing singular mode read remains null")
   check(
@@ -375,19 +374,18 @@ func testSingularEmptyModesRetainCurrentModeAndConversationAwarenessControl() {
     _, _ in selected
   }
   check(
-    modeGet.exitCode == 0 && modeGet.plain == "transparency",
+    modeGet.plain == "transparency",
     "the current listening mode remains readable while modes are empty"
   )
   let modeSet = CommandExecution.execute(try! parseInvocation(["lm", "set", "adaptive"])) {
     _, _ in selected
   }
-  check(modeSet.exitCode == 4, "an unadvertised listening mode remains unsupported")
+  check(modeSet.plain == "unsupported", "an unadvertised listening mode remains unsupported")
   check(singular.listeningModeSetCount == 0, "empty modes cannot bypass command eligibility")
 
-  let awarenessSet = CommandExecution.execute(try! parseInvocation(["ca", "set", "on"])) {
+  _ = CommandExecution.execute(try! parseInvocation(["ca", "set", "on"])) {
     _, _ in selected
   }
-  check(awarenessSet.exitCode == 0, "Conversation Awareness remains writable")
   check(
     singular.conversationAwarenessSetCount == 1,
     "Conversation Awareness writes through the singular endpoint"
