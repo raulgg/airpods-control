@@ -14,20 +14,6 @@ func check(
   }
 }
 
-func expectParseFailure(
-  _ args: [String],
-  _ description: String,
-  file: StaticString = #fileID,
-  line: UInt = #line
-) {
-  do {
-    _ = try parseInvocation(args)
-    check(false, description, file: file, line: line)
-  } catch {
-    check(true, description, file: file, line: line)
-  }
-}
-
 // Debug diagnostics and support-report prompts are written straight to the
 // process's standard error, so asserting on them means redirecting the real file
 // descriptor. Nothing inside body may call check(): its failure text would be

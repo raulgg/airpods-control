@@ -27,8 +27,9 @@ compatibility. Report these regressions with the same details as other bugs.
 
 You need:
 
-- macOS
-- Command Line Tools or Xcode
+- macOS 14 or newer to run Swift Testing. Production builds still target
+  macOS 12.
+- Command Line Tools or Xcode with Swift 6
 - `make`, `clang`, `swiftc`, `lipo`, and `codesign`
 
 ### Development setup
