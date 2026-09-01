@@ -127,7 +127,7 @@ in plain output and JSON
 .IP
 Without
 .BR --device ,
-print one record for every eligible canonical device derived from the Core Audio inventory, including Beats candidates. Status also prints an enrolled AirPods device seen during the current BLE scan when its endpoint is absent. This inventory is independent of the selected defaults, so an eligible device selected only for input, or for neither direction, still appears. Core Audio does not guarantee a stable inventory order. With
+print one record for every eligible canonical device derived from the Core Audio inventory, including Beats candidates. If Core Audio has no endpoint, status also prints an enrolled AirPods device seen in the current BLE scan. This inventory is independent of the selected defaults, so an eligible device selected only for input, or for neither direction, still appears. Core Audio does not guarantee a stable inventory order. With
 .BR --device ,
 print only the unique case-insensitive whole-name match. No match produces
 .BR no-device ;
@@ -175,15 +175,15 @@ a genuine read failure keeps those fallbacks and names both placement keys in th
 .B errors
 object. The placement read is one-pass and read-only.
 .IP
-When the optional Bluetooth integration is enabled and permission was already granted, status performs one passive CoreBluetooth scan for at most two seconds. It accepts only valid Apple proximity frames from an exact two-earbud AirPods product allowlist and requires two matching normalized callbacks from an enrolled public CoreBluetooth identifier. BLE can fill placement only when HAL placement is unsupported. A valid HAL pair always wins; HAL unknown, conflict, or read failure blocks BLE. No frame, conflicting frames, closed-case silence, or ambiguous identity is
+If Bluetooth is enabled and already authorized, status scans for at most two seconds. It accepts Apple proximity frames from the two-earbud AirPods product allowlist and needs two matching normalized callbacks from an enrolled public CoreBluetooth identifier. BLE can fill placement only when HAL placement is unsupported. A valid HAL pair always wins. HAL unknown, conflict, or read failure blocks BLE. No frame, conflicting frames, a closed case, or ambiguous identity is
 .BR unknown ,
 never
 .BR out-of-ear .
 BLE reports only
 .B in-ear
 or
-.BR out-of-ear ;
-it cannot safely distinguish an unworn bud from one in its case. An advertisement may contain stale AirPods sensor bits even when the callback just arrived. Status never requests Bluetooth permission.
+.BR out-of-ear .
+It cannot tell an unworn bud from one in its case. A fresh advertisement can still carry stale sensor bits. Status never asks for Bluetooth permission.
 .IP
 A feature field is omitted only when the feature is known to be unsupported. An unresolved or failed listening-mode or Conversation Awareness read is displayed as
 .BR unknown .
@@ -235,35 +235,35 @@ The exit status is 1. JSON is exactly
 .IP
 Each invocation reads the available Core Audio inventory once and shares the same default-route observations across its records. Input and output are read independently, so the pair is not an atomic system-wide snapshot. The selected defaults do not affect inventory or deduplication. Core Audio names are used only for display and targeting.
 .IP
-An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to Core Audio and the system mapper. Its numeric value is never parsed, logged, printed, or compared as identity. Inventory and selection do not read Bluetooth/MAC addresses, serial numbers, or private route identifiers. When Bluetooth integration is enabled, association reads public model and Core Audio UIDs transiently and persists only salted UID digests and the public CoreBluetooth identifier. Raw HAL values are not logged or printed.
+An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to Core Audio and the system mapper. Its numeric value is never parsed, logged, printed, or compared as identity. Inventory and selection do not read Bluetooth/MAC addresses, serial numbers, or private route identifiers. When Bluetooth is enabled, association reads public model and Core Audio UIDs and stores only salted UID digests plus the public CoreBluetooth identifier. Raw HAL values are not logged or printed.
 .IP
 The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
 .SS BLUETOOTH EAR-PLACEMENT FALLBACK
 .TP
 .B bluetooth setup
-Request macOS Bluetooth permission and enable the CLI-local passive BLE integration. No other command may request this permission. The command does not pair an accessory or change the Bluetooth radio.
+Request macOS Bluetooth permission and enable BLE scans in this CLI. No other command may request this permission. The command does not pair an accessory or change the Bluetooth radio.
 .TP
 .B bluetooth status
-Report local enablement, CoreBluetooth authorization, radio state when observable, enrolled accessory display names and product codes, association provenance, and whether automatic learning is incomplete. This command does not scan or request permission. With
+Report enablement, CoreBluetooth authorization, radio state if the radio can be read, enrolled accessory display names and product codes, association provenance, and whether automatic learning is still in progress. This command does not scan or request permission. With
 .BR --json ,
 the same data is returned as structured JSON. Identifiers, UID digests, salts, and raw frames are never printed.
 .TP
 .B bluetooth disable
-Stop CLI BLE scans while retaining enrolled accessories. This does not revoke macOS permission, turn off Bluetooth, or unpair an accessory.
+Stop CLI BLE scans. Enrolled accessories stay. This does not revoke macOS permission, turn off Bluetooth, or unpair an accessory.
 .TP
 .BI "bluetooth enroll --device " name
-Interactively verify one exact Core Audio target. The command requires a terminal, valid HAL placement, granted Bluetooth permission, and two matching scans around a prompted one-ear transition. It records
+Verify one exact Core Audio target in an interactive terminal. The command needs valid HAL placement, granted Bluetooth permission, and two matching scans around a prompted one-ear transition. It records
 .B user-verified
-provenance. It may upgrade the same automatic association but never silently replaces a different identifier.
+provenance. It can upgrade the same automatic association. It cannot replace a different identifier.
 .TP
 .BI "bluetooth unenroll --device " name
-Delete the exact named association and provisional evidence. This does not unpair the accessory, revoke permission, or disable scans. Automatic learning may enroll the accessory again while integration remains enabled.
+Delete the named association and any in-progress learning. This does not unpair the accessory, revoke permission, or disable scans. Automatic learning may enroll the accessory again while BLE remains enabled.
 .PP
-Automatic enrollment compares HAL and BLE for each product code. It requires one unmatched Core Audio target, one BLE candidate, and agreement across two distinct states within 24 hours. One state must have exactly one earbud in ear. Each state requires a conflict-free scan and two matching callbacks. Product code, name, battery, color, and signal strength do not prove identity. The CLI does not enroll while two same-model candidates are present.
+Automatic enrollment compares HAL and BLE for each product code. It needs one unmatched Core Audio target, one BLE candidate, and agreement on two different states within 24 hours. One state must have exactly one earbud in ear. Each state needs a conflict-free scan and two matching callbacks. Product code, name, battery, color, and signal strength do not prove identity. Two same-model candidates nearby stay unenrolled.
 .PP
 The versioned settings file is stored under
 .BR "~/Library/Application Support/io.github.raulgg.airpods-control/bluetooth.json" .
-Its directory uses mode 0700 and the file uses mode 0600. It contains a random local association ID, public CoreBluetooth identifier, salted Core Audio UID digests, product, display name, bounded learning evidence, and provenance. It never contains IRKs, keys, Bluetooth addresses, AAP data, raw advertisements, RSSI, battery, or status history. Malformed settings disable BLE for regular status and make management commands fail without overwriting the file.
+Its directory uses mode 0700 and the file uses mode 0600. It stores an association ID, public CoreBluetooth identifier, salted Core Audio UID digests, product, display name, learning progress, and provenance. See SECURITY.md for what stays out. A malformed file disables BLE for status. Management commands fail and do not overwrite the file.
 .SS LISTENING MODE
 For each command, a command-ready selected AirPods output uses the private AV
 provider; an eligible device proven unselected uses its mapped Core Audio HAL
@@ -449,7 +449,7 @@ or end of input declines the chooser and reports
 .BR ambiguous-device .
 Conversation Awareness also requires a unique target.
 .B status
-instead reports every eligible canonical device derived from the currently available Core Audio endpoint list. It also reports an enrolled AirPods device seen during the current BLE scan, regardless of which device is the selected output.
+instead reports every eligible canonical device derived from the currently available Core Audio endpoint list. If Core Audio has no endpoint, it also reports an enrolled AirPods device seen in the current BLE scan, regardless of which device is the selected output.
 .TP
 .B --json
 Emit structured JSON instead of plain script-friendly output. Accepted anywhere in an operational command or global version command. Every JSON response has a

@@ -124,7 +124,7 @@ capture directory after recording the Boolean outcomes.
 
 ## Left/right ear placement status check
 
-This check verifies HAL precedence and the optional BLE fallback. It is
+This check verifies that HAL wins and that BLE fills in when HAL cannot. It is
 read-only and does not require the AirPods to be the selected audio output.
 Build once with `make`, then run the only command allowed to request Bluetooth
 permission:
@@ -136,8 +136,8 @@ build/airpods-control bluetooth status --json
 
 Test Terminal, a source shell, Homebrew installation, and any supported
 automation launch context separately. Record authorized, denied, restricted,
-powered-off, and not-determined behavior. `status` must never show a permission
-prompt or crash. Then run `status` in each state below:
+powered-off, and not-determined behavior. `status` must not show a permission
+prompt. Then run `status` in each state below:
 
 | State | Left bud | Right bud |
 | --- | --- | --- |
@@ -158,22 +158,22 @@ build/airpods-control status --device "My AirPods" --json \
   >"$capture_dir/placement-both.json"
 ```
 
-Replace the suffix for the remaining states. HAL may use `in-case`; BLE may use
-only `in-ear` or `out-of-ear`. Closed-case silence, a single frame, conflicts,
-and missing identity must be `unknown`. Repeat the matrix with AirPods selected
-for output, selected for input only, selected for neither, while playing audio,
-and after Core Audio removes its endpoints. An enrolled accessory seen during
-the current scan may create a record without an endpoint. Its route and
-listening-mode fields must remain `unknown`.
+Replace the suffix for the remaining states. HAL may use `in-case`. BLE may
+use only `in-ear` or `out-of-ear`. Closed-case silence, a single frame,
+conflicts, and missing identity must be `unknown`. Repeat the matrix with
+AirPods selected for output, selected for input only, selected for neither,
+while playing audio, and after Core Audio drops the endpoints. An enrolled
+accessory seen in the current scan can create a record without an endpoint.
+Route and listening-mode fields on that record must stay `unknown`.
 
-Also verify primary-side flips, one-bud transitions, open and closed case,
-reconnect, sleep/wake, reboot, and Bluetooth privacy-address rotation. The
-public CoreBluetooth identifier must continue to select the same enrolled
-accessory. With two same-model accessories nearby, automatic learning must stay
-incomplete rather than guess. BLE frames can contain stale sensor state, so
-repeat each transition after settling and record that nuance separately from
-callback freshness. Do not record raw frames, identifiers, UID digests, Core
-Audio handles, or Bluetooth addresses in the capture or issue.
+Also check primary-side flips, one-bud transitions, open and closed case,
+reconnect, sleep/wake, reboot, and Bluetooth privacy-address rotation. The same
+public CoreBluetooth identifier should still select the same enrolled accessory.
+With two same-model accessories nearby, automatic learning must stay incomplete
+rather than guess. BLE frames can carry stale sensor state, so wait after each
+transition and record stale bits separately from a missing second callback. Do
+not record raw frames, identifiers, UID digests, Core Audio handles, or
+Bluetooth addresses in the capture or issue.
 
 ## One-earbud feature-control regression check
 

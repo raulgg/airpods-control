@@ -45,8 +45,8 @@ without polling in the background or automating the UI.
 - Read or set Conversation Awareness.
 - Report listening mode, Conversation Awareness, left/right ear placement, and
   whether each eligible AirPods or Beats device is selected as the macOS audio
-  output or input with one `status` command. A matching advertisement from an
-  enrolled AirPods device can report placement when Core Audio has no endpoint.
+  output or input with one `status` command. An enrolled pair can still show
+  placement after Core Audio drops the endpoint.
 - Select a compatible output device by exact name.
 - Use it from scripts, hotkeys, Stream Decks, Shortcuts, or `launchd`.
   Operational commands have stable stdout, documented exit codes, JSON output,
@@ -133,7 +133,7 @@ airpods-control conversation-awareness set off
 # Read status for every eligible device represented by Core Audio
 airpods-control status
 
-# Enable the optional BLE ear-placement fallback
+# Enable BLE ear-placement fallback
 airpods-control bluetooth setup
 airpods-control bluetooth status
 
@@ -145,9 +145,9 @@ airpods-control status --device "My AirPods Pro" --json
 `listening-mode` can be shortened to `lm`, and `conversation-awareness` to `ca`;
 `status` has no alias. Without `--device`, `status` reports every eligible
 AirPods or Beats record derived from the currently available Core Audio device
-list, even when it is not the selected audio output. It may also report an
-enrolled AirPods device seen during the current BLE scan when Core Audio has no
-endpoint. The individual resource commands retain their documented adapters.
+list, even when it is not the selected audio output. If Core Audio has no
+endpoint, it also reports an enrolled AirPods device seen in the current BLE
+scan. The individual resource commands retain their documented adapters.
 Listening-mode commands combine AV and eligible HAL representations into
 logical targets, select one target automatically, and prompt in a fully
 interactive terminal when several remain. Declining the chooser, automated
@@ -234,28 +234,28 @@ reports `leftEarPlacement` and `rightEarPlacement` as `in-ear`, `out-of-ear`, or
 the fields, while unknown or conflicting HAL evidence is rendered as `unknown`
 or JSON `null`.
 
-Run `airpods-control bluetooth setup` to grant permission and enable the
-optional passive BLE fallback. A regular `status` invocation never prompts. It
-scans for at most two seconds only when permission was already granted, and
-requires two matching AirPods proximity frames from an enrolled CoreBluetooth
-identifier. A valid HAL pair always wins. BLE fills placement only when HAL is
-unsupported; HAL conflicts, read failures, missing frames, conflicting frames,
-and ambiguous identity remain `unknown`. BLE cannot distinguish an unworn bud
-from one in its case, so it reports only `in-ear` or `out-of-ear`.
+Run `airpods-control bluetooth setup` once to grant permission and turn on BLE
+placement. Later `status` commands never prompt. They scan for at most two
+seconds when permission is already granted, and they need two matching AirPods
+proximity frames from an enrolled CoreBluetooth identifier. A valid HAL pair
+always wins.
+BLE fills placement only when HAL is unsupported. HAL conflicts, read failures,
+missing frames, conflicting frames, and ambiguous identity stay `unknown`. BLE
+cannot tell an unworn bud from one in its case, so it reports only `in-ear` or
+`out-of-ear`.
 
-The CLI normally enrolls an accessory after HAL and BLE agree across two
-distinct states within 24 hours, including one state with exactly one bud in
-ear. It does not enroll when two same-model candidates are present. Advanced
-users can run `bluetooth enroll --device NAME` for an interactive one-ear
-verification. `bluetooth unenroll --device NAME` deletes that association,
-while `bluetooth disable` stops scans without deleting it or changing macOS
-Bluetooth settings.
+The CLI enrolls an accessory after HAL and BLE agree on two different states
+within 24 hours. One of those states must have exactly one bud in ear. Two
+same-model candidates nearby stay unenrolled. `bluetooth enroll --device NAME`
+does the same check interactively. `bluetooth unenroll --device NAME` deletes
+the association. `bluetooth disable` stops scans and leaves the association
+alone.
 
-Core Audio handles and the identifiers used by enrichment stay inside the
-process. The CLI does not parse or log them. BLE association uses the public
-CoreBluetooth identifier and salted digests of public Core Audio UIDs. It never
-reads IRKs, keys, Bluetooth addresses, or AAP data. The Application Support file
-is owner-only and never stores raw advertisements, RSSI, or status history.
+Core Audio handles and enrichment identifiers stay inside the process. The CLI
+does not parse or log them. BLE association stores the public CoreBluetooth
+identifier and salted digests of public Core Audio UIDs. See
+[SECURITY.md](SECURITY.md) for what is not stored.
+
 After target selection, Allow Off cache correlation reads the exact public Core
 Audio UID transiently and persists a random per-cache salt, a salted full
 SHA-256 digest, and the observation time. The raw UID is never persisted; the

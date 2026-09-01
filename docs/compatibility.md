@@ -85,14 +85,14 @@ HAL properties (`iesb`, `pris`, and `iede`) when macOS exposes them. It reports
 disabled properties are unsupported; unknown or conflicting evidence is
 unresolved.
 
-An optional CoreBluetooth fallback covers unsupported HAL placement and missing
-Core Audio endpoints. It accepts these verified two-earbud AirPods product IDs:
+A CoreBluetooth fallback covers unsupported HAL placement and missing Core
+Audio endpoints. It accepts these verified two-earbud AirPods product IDs:
 `0x2002`, `0x200E`, `0x200F`, `0x2013`, `0x2014`, `0x2019`, `0x201B`, `0x2024`,
 and `0x2027`. It excludes AirPods Max, Beats, catalog-only AirPods 4 variants,
-unknown products, and clones. HAL remains authoritative. BLE requires an
-enrolled public CoreBluetooth identifier, two matching frames in one bounded
-scan, and prior permission. It cannot report `in-case`, and an advertisement
-can contain stale sensor bits even when the callback just arrived.
+unknown products, and clones. HAL wins. BLE needs an enrolled public
+CoreBluetooth identifier, two matching frames in one two-second scan, and
+permission granted earlier. It cannot report `in-case`. A new advertisement can
+still carry stale sensor bits.
 
 ## Candidates pending verification
 

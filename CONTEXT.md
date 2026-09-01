@@ -77,10 +77,10 @@
 
 **Bluetooth setup**
 : The only command that may request Bluetooth permission. It also enables BLE
-  ear placement for this CLI. It does not change the Bluetooth radio or enroll
-  an accessory. Disabling the integration stops CLI BLE scans without changing
-  macOS permission or deleting associations. Ordinary status execution never
-  requests permission and continues to use HAL when setup is absent or unusable.
+  ear placement for this CLI. It does not change the radio or enroll an
+  accessory. `bluetooth disable` stops CLI scans. It does not change macOS
+  permission or delete associations. Ordinary `status` never requests
+  permission. If setup is missing or unusable, HAL still runs.
 
 **Status snapshot**
 : A read-only observation of selection, listening mode, Conversation Awareness,
@@ -92,41 +92,37 @@
   and read errors are displayed as `unknown`; read errors also name the affected
   field. Unsupported feature fields are omitted. Records follow the adapter's
   deduplicated inventory order, with output endpoints preferred, but that order
-  is not a stable interface. HAL ear placement outranks BLE ear placement. BLE
-  is considered only when the Core Audio endpoint or HAL placement support is
-  unavailable; it does not replace unknown, conflicting, or failed HAL reads.
+  is not a stable interface. HAL ear placement outranks BLE. BLE is used only
+  when the Core Audio endpoint is missing or HAL placement is unsupported. It
+  does not replace unknown, conflicting, or failed HAL reads.
 
 **Enrolled BLE accessory**
-: A compatible device enrolled automatically or through manual verification.
-  The association uses a public CoreBluetooth identifier. It does not prove
-  cryptographic ownership or macOS pairing identity. The saved Core Audio name
-  is only for display and command targeting. Digests of public Core Audio device
-  UIDs can recognize an endpoint later, but cannot prove the initial match
-  between Core Audio and BLE. Manual verification outranks automatic evidence.
-  Neither may silently replace a different identifier. A lost or changed
-  association remains unknown until the accessory is unenrolled and learned or
-  verified again.
+: A device the CLI has bound to one public CoreBluetooth identifier, either
+  automatically or through `bluetooth enroll`. Enrollment is not macOS pairing
+  and is not proof of ownership. The saved Core Audio name is for display and
+  `--device` only. UID digests can recognize the same endpoint later. They
+  cannot prove that the first Core Audio-to-BLE match was correct. Manual
+  verification outranks automatic evidence. Neither may replace a different
+  identifier. If the association is lost or the identifier changes, placement
+  stays unknown until the accessory is unenrolled and enrolled again.
   _Avoid_: Paired BLE device, authenticated accessory
 
 **BLE association evidence**
-: Local metadata used to enroll a BLE accessory across invocations. It may
-  contain a local association identifier, the public CoreBluetooth identifier,
-  salted Core Audio UID digests, product and display metadata, automatic
-  enrollment progress, and provenance. It contains no raw frames, RSSI history,
-  battery data, or status history. Status still requires a matching frame from
-  the current scan.
+: The local record that keeps an enrollment across invocations: association ID,
+  public CoreBluetooth identifier, salted Core Audio UID digests, product,
+  display name, learning progress, and provenance. Raw frames, RSSI, battery,
+  and status history stay out. Status still needs a matching frame from the
+  current scan.
 
 **BLE ear-placement observation**
-: A physical left/right placement reading for an enrolled accessory from the
-  current AirPods scan. It is not cached device state or proof that the
-  accessory is a current audio endpoint. Enrollment alone cannot create a status
-  record.
-  Missing, silent, ambiguous, or conflicting BLE evidence remains unknown and
-  never proves out-of-ear placement. The product code must match a supported
-  two-earbud AirPods model. AirPods Max, Beats, clones, and unknown products are
-  ineligible. At least two frames must arrive during the two-second scan, and
-  every normalized physical placement pair must agree. A new advertisement may
-  still repeat stale accessory sensor state.
+: Left and right placement for an enrolled accessory, taken from the current
+  AirPods scan. It is not cached state, and it does not prove the accessory is
+  a current audio endpoint. Enrollment alone does not create a status record.
+  Missing, silent, ambiguous, or conflicting BLE evidence stays unknown. It
+  never proves out-of-ear. Only the verified two-earbud AirPods product IDs
+  qualify. AirPods Max, Beats, clones, and unknown products do not. The scan
+  needs at least two frames, and every normalized pair must agree. A fresh
+  advertisement can still carry stale sensor bits.
 
 **Status device inventory**
 : The status-only inventory from public `kAudioHardwarePropertyDevices`. An
@@ -139,9 +135,9 @@
   directions. The output endpoint is preferred. A Core Audio name supplies the
   heading and `--device` target but is not used as identity. Because the
   inventory is independent of the selected defaults, input-only and unselected
-  devices remain visible. A matching observation from the current BLE scan may
-  add an enrolled accessory when no eligible endpoint exists. It does not
-  establish audio-route selection.
+  devices remain visible. If no eligible endpoint exists, a matching observation
+  from the current BLE scan can add an enrolled accessory. That record does not
+  mean the accessory is selected for audio.
 
 **Selected audio device**
 : A device whose identity exactly matches the macOS default route for ordinary
@@ -228,9 +224,9 @@
   captures a typed left/right ear-placement pair during status inventory. The
   placement observation is one-pass and read-only; missing or disabled
   properties are unsupported, while unknown or conflicting evidence remains
-  unresolved. An authorized, enrolled BLE source may supply placement only for
-  missing or disabled HAL placement. It cannot replace unresolved or failed HAL
-  evidence. BLE advertisements are not used as an identity fallback.
+  unresolved. An authorized, enrolled BLE source may fill placement only when
+  HAL placement is missing or disabled. It cannot replace unresolved or failed
+  HAL evidence. BLE advertisements are not an identity fallback.
 
 **Support report document**
 : Compatibility data built from a pre-write device snapshot and optional

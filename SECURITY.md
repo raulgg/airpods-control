@@ -65,14 +65,14 @@ emitted. Inventory and selection do not read raw Bluetooth/MAC addresses,
 private route identifiers, serial numbers, or other private identifier
 properties.
 
-The optional BLE placement fallback reads public CoreBluetooth identifiers and
-public Core Audio model and device UIDs only after `bluetooth setup` enables the
-integration and macOS has granted Bluetooth permission. It stores the public
-CoreBluetooth identifier and salted SHA-256 digests of Core Audio UIDs in an
-owner-only Application Support file. It never reads or stores IRKs, pairing
-keys, Bluetooth addresses, AAP data, raw advertisements, RSSI, battery, or
-status history. These identifiers, digests, and salts never appear in command
-output or debug logs. A regular `status` command never prompts for permission.
+The BLE placement fallback reads public CoreBluetooth identifiers and public
+Core Audio model and device UIDs only after `bluetooth setup` and a granted
+macOS Bluetooth permission. It stores the public CoreBluetooth identifier and
+salted SHA-256 digests of Core Audio UIDs in an owner-only Application Support
+file. It does not read or store IRKs, pairing keys, Bluetooth addresses, AAP
+data, raw advertisements, RSSI, battery, or status history. Identifiers,
+digests, and salts do not appear in command output or debug logs. A regular
+`status` command never prompts for permission.
 
 The optional active-output feature probe is separate from selection. Its bounded
 `associatedAudioDeviceID`, translated Core Audio handle, and private endpoint

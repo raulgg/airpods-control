@@ -59,9 +59,9 @@ logical target even when optional status enrichment cannot join them; this
 pairing is based on selected-route evidence, never a matching name. A named
 AV-only target remains reachable when no HAL name matches.
 `status` reports every eligible compatible record it can derive from current
-Core Audio endpoints. It also reports an enrolled AirPods device seen during
-the current BLE scan when its endpoint is absent. Inventory remains independent
-of the selected output.
+Core Audio endpoints. If Core Audio has no endpoint, it also reports an
+enrolled AirPods device seen in the current BLE scan. Inventory remains
+independent of the selected output.
 
 `support-report` is a separate contributor command. It accepts
 `--with-write-tests` or `--no-write-tests` (mutually exclusive), which answer
@@ -343,23 +343,20 @@ and omits both fields. Unknown or conflicting evidence is shown as `unknown`
 and JSON `null`; a genuine read failure keeps those fallbacks and names both
 fields in `errors`.
 
-When the optional Bluetooth integration is enabled and already authorized,
-`status` runs one passive scan for at most two seconds. It accepts only valid
-Apple proximity frames for the exact two-earbud AirPods product allowlist and
-requires at least two callbacks whose normalized left/right placement agrees.
-The orientation bits map advertisement slots to physical left and right. A BLE
-observation can fill placement only when HAL is unsupported and the public
-CoreBluetooth identifier has been enrolled for the exact Core Audio target. A
-HAL value wins; HAL unknown, conflict, or read failure blocks BLE. No frame,
-conflicting frames, closed-case silence, or ambiguous identity becomes
-`unknown`, never `out-of-ear`.
+If Bluetooth is enabled and already authorized, `status` scans for at most two
+seconds. It accepts Apple proximity frames for the two-earbud AirPods product
+allowlist, and it needs at least two callbacks whose normalized left/right
+placement agrees. Orientation bits map advertisement slots to physical left and
+right. BLE can fill placement only when HAL is unsupported and the public
+CoreBluetooth identifier is enrolled for that Core Audio target. A HAL value
+wins. HAL unknown, conflict, or read failure blocks BLE. No frame, conflicting
+frames, a closed case, or ambiguous identity is `unknown`, never `out-of-ear`.
 
-An enrolled accessory seen during the scan can create a status record when Core
-Audio has no endpoint. That record uses the stored device name and BLE
-placement. Listening mode, Conversation Awareness, and both route-selection
-fields remain `unknown`. BLE cannot distinguish `in-case` here and reports only
-`in-ear` or `out-of-ear`. An AirPods advertisement can contain stale sensor
-state even when the callback just arrived.
+If Core Audio has no endpoint, an enrolled accessory seen in the scan can still
+create a status record. That record uses the stored name and BLE placement.
+Listening mode, Conversation Awareness, and both route fields stay `unknown`.
+BLE cannot report `in-case` here, only `in-ear` or `out-of-ear`. A fresh
+advertisement can still carry stale sensor bits.
 
 A feature field is omitted only when the device is known not to support that
 feature. An unresolved listening-mode or Conversation Awareness read appears as
@@ -432,10 +429,10 @@ An `AudioDeviceID` is an opaque Core Audio handle. `status` passes it unchanged
 to Core Audio and the system mapper. Its numeric value is not parsed, logged,
 printed, or compared as identity. Inventory and selection do not read
 Bluetooth/MAC addresses, serial numbers, or private route IDs. When Bluetooth
-integration is enabled, association reads public model and Core Audio UIDs
-transiently. It persists only salted UID digests and the public CoreBluetooth
-identifier. HAL property values are converted to bounded capability and state
-values, but the raw values are not logged or printed.
+is enabled, association reads public model and Core Audio UIDs and stores only
+salted UID digests plus the public CoreBluetooth identifier. HAL property
+values are converted to bounded capability and state values, but the raw values
+are not logged or printed.
 
 Active-output enrichment is the exception that reads route identifiers. It asks
 Core Audio to translate `AVOutputContext.associatedAudioDeviceID`, then compares
@@ -447,48 +444,44 @@ a support report. Enrichment failure does not change input or output selection.
 
 ## Bluetooth ear-placement fallback
 
-`bluetooth setup` requests macOS Bluetooth permission and enables the
-integration in the CLI's local settings. Regular `status` never requests
-permission. If permission is missing, denied, restricted, or unavailable in the
-launch context, the CLI skips BLE and preserves its existing HAL result without
-crashing. `bluetooth disable` stops scans but retains enrolled accessories and
-does not change the Bluetooth radio or macOS permission.
+`bluetooth setup` requests macOS Bluetooth permission and enables BLE in the
+CLI's local settings. Regular `status` never requests permission. If permission
+is missing, denied, restricted, or unavailable, the CLI skips BLE and keeps the
+HAL result. `bluetooth disable` stops scans. Enrolled accessories stay. The
+radio and macOS permission stay as they are.
 
-`bluetooth status [--json]` does not scan or prompt. It reports local
-enablement, CoreBluetooth authorization, radio state when observable, enrolled
+`bluetooth status [--json]` does not scan or prompt. It reports enablement,
+CoreBluetooth authorization, radio state if the radio can be read, enrolled
 display name, product code, association provenance, and whether automatic
-learning is incomplete. It never prints CoreBluetooth identifiers, UID digests,
-salts, or raw frames.
+learning is still in progress. It does not print CoreBluetooth identifiers, UID
+digests, salts, or raw frames.
 
-Setup enables automatic enrollment. For each product code, enrollment requires
+Setup turns on automatic enrollment. For each product code, enrollment needs
 one unmatched Core Audio target and one BLE candidate. HAL and BLE must agree
-across two distinct normalized states within 24 hours. One state must have
-exactly one earbud in ear. Each state requires a conflict-free scan with at
-least two callbacks. A competing identifier resets the provisional evidence.
-Product code, name, battery, color, and signal strength do not prove identity.
-The CLI does not enroll while two same-model candidates are present.
+on two different normalized states within 24 hours. One state must have exactly
+one earbud in ear. Each state needs a conflict-free scan with at least two
+callbacks. A competing identifier resets the in-progress evidence. Product
+code, name, battery, color, and signal strength do not prove identity. Two
+same-model candidates nearby stay unenrolled.
 
-Manual enrollment uses `bluetooth enroll --device NAME`. It requires a unique
-exact Core Audio name, valid HAL placement, an interactive terminal, granted
-Bluetooth permission, and two matching scans around a prompted one-ear
-transition. It records `user-verified` provenance. It can upgrade the same
-automatic association but cannot silently replace a different identifier.
-There is no raw UUID or force option.
+`bluetooth enroll --device NAME` verifies one unique Core Audio name. It needs
+valid HAL placement, an interactive terminal, granted Bluetooth permission, and
+two matching scans around a prompted one-ear transition. It records
+`user-verified` provenance. It can upgrade the same automatic association. It
+cannot replace a different identifier.
 
-`bluetooth unenroll --device NAME` deletes the exact named CLI association and
-provisional evidence. It does not unpair the accessory, revoke permission, or
-disable scanning. Automatic learning may enroll the accessory again while the
-integration remains enabled.
+`bluetooth unenroll --device NAME` deletes the named CLI association and any
+in-progress learning. It does not unpair the accessory, revoke permission, or
+stop scanning. Automatic learning may enroll the accessory again while BLE
+remains enabled.
 
 The versioned settings file lives under
 `~/Library/Application Support/io.github.raulgg.airpods-control/bluetooth.json`.
-Its directory mode is `0700` and file mode is `0600`. It stores a random local
-association ID, public CoreBluetooth identifier, salted Core Audio UID digests,
-product, display name, bounded learning evidence, and provenance. It never
-stores IRKs, keys, Bluetooth addresses, AAP data, raw advertisements, RSSI,
-battery, or status history. Malformed or unsupported settings disable BLE for
-regular status; management commands return an error and do not overwrite the
-file.
+Directory mode is `0700`, file mode `0600`. The file stores an association ID,
+the public CoreBluetooth identifier, salted Core Audio UID digests, product,
+display name, learning progress, and provenance. See
+[SECURITY.md](../SECURITY.md) for what stays out. A malformed file disables BLE
+for `status`. Management commands return an error and do not overwrite it.
 
 ## Contributor compatibility report
 

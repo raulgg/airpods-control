@@ -88,7 +88,7 @@ Usage:
 Resources:
   listening-mode, lm            Read, set, list, or cycle listening modes.
   conversation-awareness, ca    Read or set Conversation Awareness.
-  bluetooth                    Manage the optional Bluetooth status fallback.
+  bluetooth                     Manage the BLE ear-placement fallback.
 
 Command:
   status       Read modes and macOS audio output/input selection for every
@@ -125,32 +125,31 @@ Usage:
   airpods-control bluetooth enroll --device NAME [--debug]
   airpods-control bluetooth unenroll --device NAME [--debug]
 
-The Bluetooth integration extends left/right ear placement when Core Audio has
-no endpoint or its HAL placement property is unavailable. It passively scans
-AirPods proximity advertisements for at most two seconds. HAL remains the
-primary source and always wins when it returns a valid placement pair.
+Bluetooth fills left and right ear placement when Core Audio has no endpoint,
+or when HAL has no placement property. A status scan lasts at most two seconds.
+If HAL returns a valid pair, that pair wins.
 
 Commands:
-  setup       Request macOS Bluetooth permission and enable CLI-local scans.
-  status      Show local enablement, permission/radio, and enrollments.
+  setup       Request macOS Bluetooth permission and enable CLI scans.
+  status      Show enablement, permission, radio, and enrollments.
               This command does not scan or request permission.
-  disable     Stop CLI scans without changing macOS Bluetooth permission or
-              deleting enrolled accessories.
+  disable     Stop CLI scans. macOS Bluetooth permission and enrolled
+              accessories stay as they are.
   enroll      Verify one accessory with an interactive one-ear transition.
-  unenroll    Delete the exact named accessory's CLI association evidence.
-              This does not unpair it from macOS. Automatic learning may
-              enroll it again while the integration remains enabled.
+  unenroll    Delete the named accessory's CLI association. This does not
+              unpair it from macOS. Automatic learning may enroll it again
+              while BLE remains enabled.
 
 Automatic enrollment compares HAL and BLE placement across two distinct
 states within 24 hours. One state must have exactly one earbud in ear. Product
 codes only reject incompatible candidates; they never establish identity by
-themselves. Same-model ambiguity remains unenrolled.
+themselves. Same-model ambiguity stays unenrolled.
 
 Options:
   --device NAME
                Select one exact accessory name for enroll or unenroll.
   --json       Emit structured JSON for bluetooth status.
-  --debug      Emit sanitized diagnostics to stderr.
+  --debug      Emit diagnostic logs to stderr without changing command output.
 """
 
 let statusHelp = """
@@ -173,9 +172,9 @@ or Beats manufacturer. Input and output endpoints form one record when their
 mapped objects compare equal in both directions, with the output endpoint
 preferred. With --device, the Core Audio name must have one case-insensitive
 exact match. Names are used for display and targeting, not identity.
-An enabled and enrolled AirPods device seen during the current BLE scan may add
-a record when Core Audio has no endpoint. Its feature and route fields remain
-unresolved.
+If Core Audio has no endpoint, an enrolled AirPods device seen in the current
+BLE scan can still add a record. Listening mode, Conversation Awareness, and
+route fields stay unknown.
 
 Input and output are checked separately. Aggregate routes and known unrelated
 transports produce no. Bluetooth LE, USB, unknown transports, missing
@@ -197,20 +196,19 @@ When macOS exposes the runtime-gated HAL ear-detection properties, status also
 reports the left and right placement as `in-ear`, `out-of-ear`, or `in-case`.
 The placement read is one-pass and read-only. If those properties are missing,
 unsupported placement is omitted; unknown or conflicting evidence is `unknown`.
-When the optional Bluetooth integration is enabled and permission was already
-granted, status scans passively for at most two seconds. Two matching valid
-AirPods proximity frames can fill placement only for an enrolled accessory and
-only when HAL placement is unsupported. HAL values win; HAL conflict or failure
-blocks BLE. Missing or conflicting frames and ambiguous identity are unknown.
-Status never requests Bluetooth permission.
+If Bluetooth is enabled and already authorized, status scans for at most two
+seconds. BLE can fill placement only for an enrolled accessory, and only when
+HAL placement is unsupported. HAL values win. A HAL conflict or read failure
+blocks BLE. Missing frames, conflicting frames, and ambiguous identity stay
+unknown. Status never asks for Bluetooth permission.
 
 Core Audio handles are passed unchanged to macOS and never parsed. They and the
 enrichment identifiers stay inside the process and are never printed or logged.
 Inventory and selection do not read Bluetooth/MAC addresses or private route
-identifiers. When Bluetooth integration is enabled, association reads public
-model and Core Audio UIDs transiently and persists only salted UID digests and
-the public CoreBluetooth identifier. Raw HAL values are not emitted, and
-support-report does not use this status path.
+identifiers. When Bluetooth is enabled, association reads public model and Core
+Audio UIDs and stores only salted UID digests plus the public CoreBluetooth
+identifier. Raw HAL values are not printed. support-report does not use this
+status path.
 
 Plain selection values are yes, no, or unknown; fields follow listening mode,
 Conversation Awareness, audio output selection, audio input selection, left/right
