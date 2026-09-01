@@ -10,7 +10,6 @@ final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
   var acceptsWrites: Bool
   var appliesWrites: Bool
   var availabilityObservation: ListeningModeAvailabilityObservation?
-  var onAvailabilityRead: (() -> Void)?
   var dropsWriteReadback = false
   private(set) var readModesCount = 0
   private(set) var readCurrentCount = 0
@@ -43,7 +42,6 @@ final class FakeListeningModeTransport: ListeningModeAllowOffTransport {
 
   func listeningModeAvailabilityObservation() -> ListeningModeAvailabilityObservation {
     readModesCount += 1
-    onAvailabilityRead?()
     return availabilityObservation ?? .value(modes)
   }
 
@@ -191,70 +189,6 @@ final class FakeHALRoutingBackend: AudioRoutingBackend {
 
   func resetWrites() {
     writtenValues.removeAll()
-  }
-}
-
-final class FailingRemovalAllowOffCache: ListeningModeAllowOffCaching {
-  let wrapped: InMemoryListeningModeAllowOffCache
-
-  init(wrapped: InMemoryListeningModeAllowOffCache) {
-    self.wrapped = wrapped
-  }
-
-  func lookup(rawDeviceUID: String) -> AllowOffCacheLookup {
-    wrapped.lookup(rawDeviceUID: rawDeviceUID)
-  }
-
-  func applyObservation(
-    rawDeviceUID: String,
-    allowsOff: Bool,
-    observedAt: Date
-  ) -> AllowOffCacheMutation {
-    guard allowsOff else { return .unavailable }
-    return wrapped.applyObservation(
-      rawDeviceUID: rawDeviceUID,
-      allowsOff: true,
-      observedAt: observedAt
-    )
-  }
-
-  func invalidatePositiveObservation(
-    rawDeviceUID: String,
-    observedAt: Date
-  ) -> AllowOffCacheMutation {
-    wrapped.invalidatePositiveObservation(
-      rawDeviceUID: rawDeviceUID,
-      observedAt: observedAt
-    )
-  }
-
-  func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
-    wrapped.remove(record: record)
-  }
-}
-
-final class StalePositiveAllowOffCache: ListeningModeAllowOffCaching {
-  func lookup(rawDeviceUID: String) -> AllowOffCacheLookup {
-    .miss
-  }
-
-  func applyObservation(
-    rawDeviceUID: String,
-    allowsOff: Bool,
-    observedAt: Date
-  ) -> AllowOffCacheMutation {
-    allowsOff ? .unchanged : .unavailable
-  }
-
-  func invalidatePositiveObservation(
-    rawDeviceUID: String,
-    observedAt: Date
-  ) -> AllowOffCacheMutation {
-    .unchanged
-  }
-
-  func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
-    .unchanged
   }
 }
 

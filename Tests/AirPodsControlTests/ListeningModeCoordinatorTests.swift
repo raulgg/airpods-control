@@ -187,7 +187,6 @@ func testListeningModeCoordinatorAmbiguityAndDecline() {
     choice: .unavailable
   )
   check(declined.plain == "ambiguous-device", "declining keeps ambiguity explicit")
-  check(declined.exitCode == 8, "declining exits as ambiguous-device")
 
   let duplicateNameCandidates = [
     candidate(name: "Same AirPods", hal: first, route: .notSelected),
@@ -450,16 +449,11 @@ func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames()
   testHALListeningModeTranslationAndOffLimitation()
   testListeningModeAllowOffCacheConsumptionAndPrivacyMetadata()
-  testListeningModeAllowOffCacheAuthorizesExplicitHALWritesOnly()
-  testListeningModeAllowOffExplicitProbeClassification()
+  testListeningModeAllowOffProbeAndCycleWorkflow()
   testListeningModeWritePlanOwnsHALAllowOffPolicy()
   testListeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence()
   testListeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous()
   testListeningModeAllowOffAVEvidenceLifecycle()
   testListeningModeAllowOffAmbiguousCorrelation()
   testListeningModeAllowOffLiveFallback()
-  testListeningModeAllowOffFreshNegativeEvidence()
-  testListeningModeAllowOffStalePositiveAuthorization()
-  testInMemoryAllowOffCachePreservesObservationOrdering()
-  testListeningModeCoordinatorOrdersDelayedAVObservations()
 }

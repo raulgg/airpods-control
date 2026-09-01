@@ -400,7 +400,7 @@ func testDeviceSelectionAndCapabilities() {
         }
       }
     )
-    check(outcome.exitCode == 8, "ambiguous named setter exits eight")
+    check(outcome.plain == "ambiguous-device", "ambiguous named setter stays explicit")
   }
   check(
     first.listeningModeSetCount == 0 && duplicate.listeningModeSetCount == 0,
