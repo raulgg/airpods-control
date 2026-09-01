@@ -104,6 +104,129 @@ func testListeningModeCoordinatorPreservesAVUnknownStateWrites() {
   check(cycleAV.setterTargets == [.transparency], "unknown AV cycle writes its first target")
 }
 
+func testListeningModeCoordinatorPreservesHALDiscoveryFailures() {
+  let unavailableCases: [([String], TerminalReason)] = [
+    (["lm", "get"], .unavailable),
+    (["lm", "list"], .unavailable),
+    (["lm", "set", "adaptive"], .unavailable),
+    (["lm", "cycle"], .unavailable),
+  ]
+  for (arguments, expectedReason) in unavailableCases {
+    let outcome = coordinatorOutcome(
+      arguments,
+      candidates: [],
+      halDiscovery: .unavailable
+    )
+    check(
+      outcome.terminalReason == expectedReason,
+      "\(arguments) preserves HAL unavailability"
+    )
+    check(
+      outcome.plain == expectedReason.token,
+      "\(arguments) reports HAL unavailability plainly"
+    )
+  }
+
+  let readOnlyCases: [([String], TerminalReason)] = [
+    (["lm", "get"], .readError),
+    (["lm", "list"], .readError),
+    (["lm", "set", "adaptive"], .unavailable),
+    (["lm", "cycle"], .unavailable),
+  ]
+  for (arguments, expectedReason) in readOnlyCases {
+    let outcome = coordinatorOutcome(
+      arguments,
+      candidates: [],
+      halDiscovery: .readError
+    )
+    check(
+      outcome.terminalReason == expectedReason,
+      "\(arguments) maps HAL discovery read errors to \(expectedReason.token)"
+    )
+  }
+
+  let successfulEmptyDiscovery = coordinatorOutcome(
+    ["lm", "get"],
+    candidates: [],
+    halDiscovery: .available
+  )
+  check(
+    successfulEmptyDiscovery.terminalReason == .noDevice,
+    "an empty successful HAL inventory remains no-device"
+  )
+
+  let fallbackAV = FakeListeningModeTransport(
+    name: "AV fallback AirPods",
+    kind: .av,
+    current: .transparency
+  )
+  let fallbackOutcome = coordinatorOutcome(
+    ["lm", "get"],
+    candidates: [candidate(av: fallbackAV, route: .unknown)],
+    halDiscovery: .readError
+  )
+  check(
+    fallbackOutcome.terminalReason == .success,
+    "HAL discovery errors do not hide a usable AV fallback"
+  )
+
+  let namedAV = FakeListeningModeTransport(
+    name: "Named AV AirPods",
+    kind: .av,
+    current: .transparency
+  )
+  let namedOutcome = coordinatorOutcome(
+    ["--device", "named av airpods", "lm", "get"],
+    candidates: [candidate(name: "Named AV AirPods", av: namedAV, route: .unknown)],
+    halDiscovery: .unavailable
+  )
+  check(
+    namedOutcome.terminalReason == .success,
+    "an exact AV match survives HAL discovery failure"
+  )
+
+  let namedMiss = coordinatorOutcome(
+    ["--device", "Missing AirPods", "lm", "get"],
+    candidates: [candidate(name: "Named AV AirPods", av: namedAV, route: .unknown)],
+    halDiscovery: .readError
+  )
+  check(
+    namedMiss.terminalReason == .readError,
+    "a named miss retains the HAL read error when no AV name matches"
+  )
+
+  let firstAV = FakeListeningModeTransport(name: "First AV AirPods", kind: .av)
+  let secondAV = FakeListeningModeTransport(name: "Second AV AirPods", kind: .av)
+  let ambiguousAV = coordinatorOutcome(
+    ["lm", "get", "--json"],
+    candidates: [
+      candidate(name: "First AV AirPods", av: firstAV, route: .unknown),
+      candidate(name: "Second AV AirPods", av: secondAV, route: .unknown),
+    ],
+    halDiscovery: .unavailable
+  )
+  check(
+    ambiguousAV.terminalReason == .ambiguousDevice,
+    "multiple AV candidates remain ambiguous when HAL discovery fails"
+  )
+
+  let unavailableAV = FakeListeningModeTransport(
+    name: "Unavailable AV AirPods",
+    kind: .av,
+    current: .transparency
+  )
+  unavailableAV.availabilityObservation = .readError
+  let avReadError = coordinatorOutcome(
+    ["lm", "list"],
+    candidates: [candidate(av: unavailableAV, route: .unknown)],
+    halDiscovery: .readError
+  )
+  check(
+    avReadError.terminalReason == .readError,
+    "a resolved AV read error is not replaced by the HAL discovery error"
+  )
+}
+
 func testListeningModeCoordinatorReadsOnlyCommandRequirements() {
   let getTransport = FakeListeningModeTransport(
     name: "Get AirPods",
@@ -362,7 +485,7 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
       return .unavailable
     }
   )
-  if case .ambiguousDevice = unnamedMixed {
+  if case .failed(.ambiguousDevice) = unnamedMixed {
     check(true, "unnamed mixed providers retain every logical candidate")
   } else {
     check(false, "unnamed mixed providers remain ambiguous")
@@ -379,7 +502,7 @@ func testListeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() {
     named: nil,
     chooseAmbiguous: { _ in .unavailable }
   )
-  if case .ambiguousDevice = avOnly {
+  if case .failed(.ambiguousDevice) = avOnly {
     check(true, "multiple AV-only candidates remain ambiguous")
   } else {
     check(false, "HAL absence never selects the first AV candidate")
@@ -442,6 +565,7 @@ func testHALListeningModeTranslationAndOffLimitation() {
 func runListeningModeCoordinatorTests() {
   testListeningModeCoordinatorRouteAndPreflightSelection()
   testListeningModeCoordinatorPreservesAVUnknownStateWrites()
+  testListeningModeCoordinatorPreservesHALDiscoveryFailures()
   testListeningModeCoordinatorReadsOnlyCommandRequirements()
   testListeningModeCoordinatorNeverFallsBackAfterASetter()
   testListeningModeCoordinatorAmbiguityAndDecline()

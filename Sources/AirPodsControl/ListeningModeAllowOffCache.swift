@@ -214,17 +214,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard validTTL,
       case .value(let document) = readPersistedCache(),
       let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID),
-      let observation = document.observations[key],
-      let evidence = usableEvidence(observedAt: observation.observedAt)
+      let observation = document.observations[key]
     else { return .miss }
-    let record = AllowOffCacheRecord(evidence: evidence, key: key)
-    if !observation.allowsOff {
-      guard case let .value(deniedAt) = readDenyMarker(for: key),
-        deniedAt >= observation.observedAt,
-        let deniedEvidence = usableEvidence(observedAt: deniedAt)
-      else { return .miss }
-      return .denied(AllowOffCacheRecord(evidence: deniedEvidence, key: key))
-    }
     switch readDenyMarker(for: key) {
     case let .value(deniedAt) where deniedAt >= observation.observedAt:
       guard let deniedEvidence = usableEvidence(observedAt: deniedAt) else {
@@ -232,6 +223,10 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       }
       return .denied(AllowOffCacheRecord(evidence: deniedEvidence, key: key))
     case .missing, .value:
+      guard observation.allowsOff,
+        let evidence = usableEvidence(observedAt: observation.observedAt)
+      else { return .miss }
+      let record = AllowOffCacheRecord(evidence: evidence, key: key)
       return .allowed(record)
     case .invalid:
       return .miss

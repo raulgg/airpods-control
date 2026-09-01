@@ -301,6 +301,13 @@ enum ListeningModeAmbiguousChoice {
   case unavailable
 }
 
+enum ListeningModeHALDiscovery {
+  // An empty candidate list is meaningful only when discovery succeeded.
+  case available
+  case unavailable
+  case readError
+}
+
 struct ListeningModeSession {
   let name: String?
   let transport: any ListeningModeTransport
@@ -319,18 +326,19 @@ struct ListeningModeSession {
 
 enum ListeningModeResolution {
   case session(ListeningModeSession)
-  case noDevice
-  case ambiguousDevice
+  case failed(TerminalReason)
 }
 
 final class ListeningModeCoordinator {
   private let avCandidates: [ListeningModeCandidate]
   private let halCandidates: [ListeningModeCandidate]
+  private let halDiscovery: ListeningModeHALDiscovery
   private let logger: DebugLogger
 
   init(
     avDevices: [PrivateAudioDevice],
     halCandidates: [ListeningModeCandidate],
+    halDiscovery: ListeningModeHALDiscovery = .available,
     logger: DebugLogger
   ) {
     avCandidates = avDevices.compactMap { device in
@@ -345,12 +353,18 @@ final class ListeningModeCoordinator {
       )
     }
     self.halCandidates = halCandidates
+    self.halDiscovery = halDiscovery
     self.logger = logger
   }
 
-  init(candidates: [ListeningModeCandidate], logger: DebugLogger) {
+  init(
+    candidates: [ListeningModeCandidate],
+    halDiscovery: ListeningModeHALDiscovery = .available,
+    logger: DebugLogger
+  ) {
     avCandidates = candidates.filter { $0.halTransport == nil }
     halCandidates = candidates.filter { $0.halTransport != nil }
+    self.halDiscovery = halDiscovery
     self.logger = logger
   }
 
@@ -375,12 +389,16 @@ final class ListeningModeCoordinator {
           "device_selection",
           matchCount == 0 ? "no-exact-name-match" : "ambiguous-device-name"
         )
-        return matchCount == 0 ? .noDevice : .ambiguousDevice
+        return matchCount == 0
+          ? discoveryFailureResolution(for: command) ?? .failed(.noDevice)
+          : .failed(.ambiguousDevice)
       }
       selectedCandidate = halMatches.first ?? avMatches[0]
     } else {
       let candidates = logicalCandidates()
-      guard !candidates.isEmpty else { return .noDevice }
+      guard !candidates.isEmpty else {
+        return discoveryFailureResolution(for: command) ?? .failed(.noDevice)
+      }
       if candidates.count == 1, let only = candidates.first {
         selectedCandidate = only
       } else {
@@ -388,16 +406,34 @@ final class ListeningModeCoordinator {
         case .selected(let index) where candidates.indices.contains(index):
           selectedCandidate = candidates[index]
         case .selected, .unavailable:
-          return .ambiguousDevice
+          return .failed(.ambiguousDevice)
         }
       }
     }
 
     guard let session = selectTransport(for: selectedCandidate, command: command) else {
-      return .noDevice
+      return discoveryFailureResolution(for: command) ?? .failed(.noDevice)
     }
     logger.info("listening_mode.transport", session.transport.listeningModeTransportKind.rawValue)
     return .session(session)
+  }
+
+  private func discoveryFailureResolution(
+    for command: ListeningModeCommand
+  ) -> ListeningModeResolution? {
+    switch halDiscovery {
+    case .available:
+      return nil
+    case .unavailable:
+      return .failed(.unavailable)
+    case .readError:
+      switch command {
+      case .get, .list:
+        return .failed(.readError)
+      case .set, .cycle:
+        return .failed(.unavailable)
+      }
+    }
   }
 
   private func logicalCandidates() -> [ListeningModeCandidate] {
