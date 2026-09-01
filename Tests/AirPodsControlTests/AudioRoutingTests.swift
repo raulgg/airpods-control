@@ -644,7 +644,76 @@ func testActiveAVFeatureEnrichmentRequiresExactStableOutputJoin() {
         "a wrong-device enrichment cannot attribute Conversation Awareness")
 }
 
+func testBluetoothCorrelationPrefersModelUIDThenMappedDevice() {
+  let object = EqualBluetoothObject(identity: 91)
+  let modelUIDEndpoint = FakeInventoryEndpoint(
+    audioDeviceID: AudioDeviceID(91),
+    bluetoothDevice: object,
+    name: .value("Test AirPods"),
+    deviceUID: .value("core-audio-uid"),
+    modelUID: .value("BTHeadphones76,8228")
+  )
+  let (modelUIDController, _) = makeBluetoothController(
+    inventory: [modelUIDEndpoint],
+    configureRuntime: { runtime in
+      runtime.productIDs[ObjectIdentifier(object)] = (76, 0x2027)
+    },
+    readBluetoothCorrelationMetadata: true
+  )
+  check(
+    modelUIDController.bluetoothCorrelation(
+      for: modelUIDController.statusDevices()[0]
+    )?.productID == 0x2024,
+    "a BTHeadphones model UID wins over the mapped Bluetooth product ID"
+  )
+
+  let fallbackObject = EqualBluetoothObject(identity: 92)
+  let fallbackEndpoint = FakeInventoryEndpoint(
+    audioDeviceID: AudioDeviceID(92),
+    bluetoothDevice: fallbackObject,
+    name: .value("Test AirPods"),
+    deviceUID: .value("core-audio-uid"),
+    modelUID: .value("AirPodsPro3,1")
+  )
+  let (fallbackController, _) = makeBluetoothController(
+    inventory: [fallbackEndpoint],
+    configureRuntime: { runtime in
+      runtime.productIDs[ObjectIdentifier(fallbackObject)] = (76, 0x2027)
+    },
+    readBluetoothCorrelationMetadata: true
+  )
+  check(
+    fallbackController.bluetoothCorrelation(
+      for: fallbackController.statusDevices()[0]
+    )?.productID == 0x2027,
+    "a mapped Apple Bluetooth product ID fills a non-BTHeadphones model UID"
+  )
+
+  let rejectedObject = EqualBluetoothObject(identity: 93)
+  let rejectedEndpoint = FakeInventoryEndpoint(
+    audioDeviceID: AudioDeviceID(93),
+    bluetoothDevice: rejectedObject,
+    name: .value("Test AirPods"),
+    deviceUID: .value("core-audio-uid"),
+    modelUID: .value("AirPodsPro3,1")
+  )
+  let (rejectedController, _) = makeBluetoothController(
+    inventory: [rejectedEndpoint],
+    configureRuntime: { runtime in
+      runtime.productIDs[ObjectIdentifier(rejectedObject)] = (123, 0x2027)
+    },
+    readBluetoothCorrelationMetadata: true
+  )
+  check(
+    rejectedController.bluetoothCorrelation(
+      for: rejectedController.statusDevices()[0]
+    ) == nil,
+    "a non-Apple mapped vendor does not create correlation"
+  )
+}
+
 func runAudioRoutingTests() {
+  testBluetoothCorrelationPrefersModelUIDThenMappedDevice()
   testCoreAudioControllerCreationPreservesInventoryReadOutcome()
   testCoreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping()
   testCoreAudioStatusPlacementJourneyUsesGroupedEvidenceOnlyForStatus()

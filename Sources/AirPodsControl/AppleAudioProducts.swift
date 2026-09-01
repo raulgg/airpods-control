@@ -78,6 +78,10 @@ enum AppleAudioProducts {
     bleEarPlacementProductIDs.contains(productID)
   }
 
+  static func isAppleBluetoothVendor(_ vendorID: Int) -> Bool {
+    vendorID == appleVendorID
+  }
+
   static func family(for modelIdentifier: String?) -> SupportReportDeviceFamily? {
     product(for: modelIdentifier)?.family
   }

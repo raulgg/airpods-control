@@ -3,6 +3,8 @@ import Darwin
 import Foundation
 
 private let bluetoothListeningModeSelector = NSSelectorFromString("listeningMode")
+private let bluetoothProductIDSelector = NSSelectorFromString("productID")
+private let bluetoothVendorIDSelector = NSSelectorFromString("vendorID")
 private let bluetoothDeviceForAudioIDSelector = NSSelectorFromString("bluetoothDevice:")
 private let statusAVDeviceIDSelector = NSSelectorFromString("deviceID")
 private let statusAVCurrentModeSelector = NSSelectorFromString(
@@ -28,10 +30,18 @@ enum BluetoothRuntimeRead<Value> {
 
 protocol BluetoothAudioRuntime: BluetoothAudioDeviceMappingBackend {
   func listeningMode(_ device: AnyObject) -> BluetoothRuntimeRead<UInt8>
+  func productIdentifiers(
+    _ device: AnyObject
+  ) -> BluetoothRuntimeRead<(vendorID: Int, productID: Int)>
 }
 
 @objc private protocol IOBluetoothDeviceScalarShim {
   @objc(listeningMode) func listeningModeValue() -> UInt8
+}
+
+@objc private protocol IOBluetoothDevicePnPShim {
+  @objc(productID) func productIDValue() -> UInt16
+  @objc(vendorID) func vendorIDValue() -> UInt16
 }
 
 @objc private protocol IOBluetoothAudioManagerClassShim {
@@ -71,6 +81,19 @@ final class SystemBluetoothAudioRuntime: BluetoothAudioRuntime {
 
   func listeningMode(_ device: AnyObject) -> BluetoothRuntimeRead<UInt8> {
     scalar(device, selector: bluetoothListeningModeSelector) { $0.listeningModeValue() }
+  }
+
+  func productIdentifiers(
+    _ device: AnyObject
+  ) -> BluetoothRuntimeRead<(vendorID: Int, productID: Int)> {
+    guard isExpectedDevice(device),
+          device.responds(to: bluetoothProductIDSelector),
+          device.responds(to: bluetoothVendorIDSelector)
+    else {
+      return .unavailable
+    }
+    let shim = unsafeBitCast(device, to: IOBluetoothDevicePnPShim.self)
+    return .value((Int(shim.vendorIDValue()), Int(shim.productIDValue())))
   }
 
   func bluetoothDevice(
@@ -633,7 +656,7 @@ final class IOBluetoothStatusController {
         logger.debug("\(prefix).in_ear_placement_error", status)
       }
       logger.debug("\(prefix).name_available", name != nil)
-      let bluetoothProductID: Int?
+      var bluetoothProductID: Int?
       let coreAudioUID: String?
       if readBluetoothCorrelationMetadata {
         if case let .value(.some(modelUID)) = routingBackend.readModelUID(
@@ -644,6 +667,16 @@ final class IOBluetoothStatusController {
           )?.bluetoothProductID
         } else {
           bluetoothProductID = nil
+        }
+        if bluetoothProductID == nil {
+          switch runtime.productIdentifiers(bluetoothDevice) {
+          case let .value(identifiers)
+          where AppleAudioProducts.isAppleBluetoothVendor(identifiers.vendorID)
+            && identifiers.productID != 0:
+            bluetoothProductID = identifiers.productID
+          case .value, .unavailable:
+            break
+          }
         }
         if case let .value(.some(uid)) = routingBackend.readDeviceUID(
           for: audioDeviceID

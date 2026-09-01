@@ -168,6 +168,7 @@ struct FakeBluetoothEntry {
 final class FakeBluetoothAudioRuntime: BluetoothAudioRuntime {
   var entries: [ObjectIdentifier: FakeBluetoothEntry] = [:]
   var mappings: [AudioDeviceID: AudioRoutingRead<AnyObject?>] = [:]
+  var productIDs: [ObjectIdentifier: (vendorID: Int, productID: Int)] = [:]
   private(set) var mappingReads: [AudioDeviceID] = []
 
   func add(_ device: AnyObject, entry: FakeBluetoothEntry) {
@@ -176,6 +177,12 @@ final class FakeBluetoothAudioRuntime: BluetoothAudioRuntime {
 
   func listeningMode(_ device: AnyObject) -> BluetoothRuntimeRead<UInt8> {
     optional(entries[ObjectIdentifier(device)]?.mode)
+  }
+
+  func productIdentifiers(
+    _ device: AnyObject
+  ) -> BluetoothRuntimeRead<(vendorID: Int, productID: Int)> {
+    optional(productIDs[ObjectIdentifier(device)])
   }
 
   func bluetoothDevice(
