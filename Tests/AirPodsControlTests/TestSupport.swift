@@ -2,19 +2,15 @@ import Foundation
 
 var failureCount = 0
 
-func check(_ condition: @autoclosure () -> Bool, _ description: String) {
+func check(
+  _ condition: @autoclosure () -> Bool,
+  _ description: String,
+  file: StaticString = #fileID,
+  line: UInt = #line
+) {
   if !condition() {
-    fputs("FAIL: \(description)\n", stderr)
+    fputs("FAIL: \(file):\(line): \(description)\n", stderr)
     failureCount += 1
-  }
-}
-
-func expectParseFailure(_ args: [String], _ description: String) {
-  do {
-    _ = try parseInvocation(args)
-    check(false, description)
-  } catch {
-    check(true, description)
   }
 }
 
@@ -77,7 +73,7 @@ extension CommandExecution {
         resolveSession: { command, requestedName, logger in
           guard let transport = resolveDevice(requestedName, logger)
             as? any ListeningModeTransport
-          else { return .noDevice }
+          else { return .failed(.noDevice) }
           let name = transport.name ?? "Compatible device"
           let coordinator = ListeningModeCoordinator(
             candidates: [

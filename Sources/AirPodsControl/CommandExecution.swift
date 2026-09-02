@@ -44,15 +44,10 @@ enum CommandExecution {
     switch resolution {
     case .session(let resolved):
       session = resolved
-    case .noDevice:
+    case let .failed(reason):
       return deviceResolutionFailureOutcome(
         for: invocation.command,
-        reason: .noDevice
-      )
-    case .ambiguousDevice:
-      return deviceResolutionFailureOutcome(
-        for: invocation.command,
-        reason: .ambiguousDevice
+        reason: reason
       )
     }
 
@@ -170,8 +165,8 @@ enum CommandExecution {
 
     if case .version = invocation.command {
       return CommandOutcome(
-        plain: VERSION,
-        data: ["version": VERSION]
+        plain: BuildVersion.current,
+        data: ["version": BuildVersion.current]
       )
     }
 

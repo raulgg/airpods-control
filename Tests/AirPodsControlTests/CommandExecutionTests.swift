@@ -27,7 +27,7 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
       } else {
         check(false, "listening-mode execution must pass get")
       }
-      return .noDevice
+      return .failed(.noDevice)
     }
   )
   check(resolverCallCount == 1, "resource command resolves a device exactly once")
@@ -41,7 +41,7 @@ func testCommandExecutionLifecycleAndNoDeviceOutcomes() {
 
   let listInvocation = try! parseInvocation(["lm", "list"])
   let noDeviceList = CommandExecution.executeListeningMode(listInvocation) { _, _, _ in
-    .noDevice
+    .failed(.noDevice)
   }
   check(
     noDeviceList.payload["supportedListeningModes"] as? [String] == [],

@@ -118,7 +118,7 @@ struct SupportReportDocument {
         modelIdentifier: snapshot.modelIdentifier,
         bluetoothProductID: snapshot.bluetoothProductID,
         macOS: snapshot.macOS,
-        cliVersion: VERSION
+        cliVersion: BuildVersion.current
       ),
       capabilities: Capabilities(
         listeningModes: snapshot.listeningModes,

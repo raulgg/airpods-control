@@ -5,6 +5,8 @@ DEPLOYMENT_TARGET ?= 12.0
 ARCHS ?= arm64 x86_64
 
 SWIFTC ?= swiftc
+SWIFT_TOOLCHAIN_DRIVER := $(shell xcrun --find swift)
+SWIFT ?= $(SWIFT_TOOLCHAIN_DRIVER)
 CLANG ?= clang
 LIPO ?= lipo
 CODESIGN ?= codesign
@@ -32,6 +34,25 @@ BYPASS_PROBE_MODULE_MAP := $(BYPASS_PROBE_INCLUDE_DIR)/module.modulemap
 SIGNAL_MONITOR_RACE_TEST_SOURCE := Tests/SignalMonitorTests/signal_monitor_race_test.c
 SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass Sources/BypassProbe Sources/SignalMonitor
 SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
+SWIFT_PACKAGE_SCRATCH := $(BUILD_DIR)/swiftpm
+SWIFT_PACKAGE_CACHE := $(BUILD_DIR)/swiftpm-cache
+SWIFT_PACKAGE_CONFIG := $(BUILD_DIR)/swiftpm-config
+SWIFT_PACKAGE_SECURITY := $(BUILD_DIR)/swiftpm-security
+SWIFT_PACKAGE_MODULE_CACHE := $(abspath $(SWIFT_PACKAGE_SCRATCH)/module-cache)
+SWIFT_DEVELOPER_DIR := $(patsubst %/usr/bin/swift,%,$(SWIFT_TOOLCHAIN_DRIVER))
+SWIFT_TESTING_FRAMEWORKS := $(SWIFT_DEVELOPER_DIR)/Library/Developer/Frameworks
+SWIFT_TESTING_INTEROP := $(SWIFT_DEVELOPER_DIR)/Library/Developer/usr/lib
+# CLT installations need these fallback paths. SwiftPM supplies Xcode's paths.
+SWIFT_TESTING_FLAGS :=
+ifneq ($(shell test -d "$(SWIFT_TESTING_FRAMEWORKS)" && echo yes),)
+SWIFT_TESTING_FLAGS += \
+	-Xswiftc -F -Xswiftc "$(SWIFT_TESTING_FRAMEWORKS)" \
+	-Xlinker -rpath -Xlinker "$(SWIFT_TESTING_FRAMEWORKS)"
+endif
+ifneq ($(shell test -d "$(SWIFT_TESTING_INTEROP)" && echo yes),)
+SWIFT_TESTING_FLAGS += -Xlinker -rpath -Xlinker "$(SWIFT_TESTING_INTEROP)"
+endif
+SWIFT_PACKAGE_EXTRA_FLAGS ?=
 SIGNAL_MONITOR_TEST_OBJECT := $(BUILD_DIR)/signal-monitor-tests.o
 SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
@@ -147,6 +168,14 @@ test: all
 		$(SWIFT_LIBRARY_SOURCES) $(VERSION_SOURCE) $(SWIFT_TEST_SOURCES) \
 		"$(SIGNAL_MONITOR_TEST_OBJECT)"
 	"$(SWIFT_TEST_BINARY)"
+	CLANG_MODULE_CACHE_PATH="$(SWIFT_PACKAGE_MODULE_CACHE)" \
+	SWIFTPM_MODULECACHE_OVERRIDE="$(SWIFT_PACKAGE_MODULE_CACHE)" \
+	"$(SWIFT)" test --scratch-path "$(SWIFT_PACKAGE_SCRATCH)" \
+		--cache-path "$(SWIFT_PACKAGE_CACHE)" \
+		--config-path "$(SWIFT_PACKAGE_CONFIG)" \
+		--security-path "$(SWIFT_PACKAGE_SECURITY)" \
+		$(SWIFT_PACKAGE_EXTRA_FLAGS) \
+		--enable-swift-testing --no-parallel $(SWIFT_TESTING_FLAGS)
 
 # Deliberately outside `test`: the result depends on the macOS version of
 # whoever runs it, so a stale system would fail the suite for no fault of the
