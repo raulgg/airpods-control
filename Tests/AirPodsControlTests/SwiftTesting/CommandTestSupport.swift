@@ -29,7 +29,7 @@ extension CommandExecution {
         resolveSession: { command, requestedName, logger in
           guard let transport = resolveDevice(requestedName, logger)
             as? any ListeningModeTransport
-          else { return .noDevice }
+          else { return .failed(.noDevice) }
           let name = transport.name ?? "Compatible device"
           let coordinator = ListeningModeCoordinator(
             candidates: [

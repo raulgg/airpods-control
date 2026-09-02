@@ -30,9 +30,9 @@ struct CommandExecutionTests {
         capturedLoggerEnabled = logger.enabled
         guard case .get = command else {
           Issue.record("listening-mode execution must pass get")
-          return .noDevice
+          return .failed(.noDevice)
         }
-        return .noDevice
+        return .failed(.noDevice)
       }
     )
     #expect(resolverCallCount == 1, "resource command resolves a device exactly once")
@@ -47,7 +47,7 @@ struct CommandExecutionTests {
 
     let listInvocation = try parseInvocation(["lm", "list"])
     let noDeviceList = CommandExecution.executeListeningMode(listInvocation) { _, _, _ in
-      .noDevice
+      .failed(.noDevice)
     }
     #expect(
       noDeviceList.payload["supportedListeningModes"] as? [String] == [],
