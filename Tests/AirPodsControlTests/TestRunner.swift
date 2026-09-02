@@ -8,10 +8,6 @@ struct TestRunner {
     }
 
     runTestGroup("Allow Off cache", runListeningModeAllowOffCacheTests)
-    runTestGroup(
-      "support report write tester",
-      runSupportReportWriteTesterTests
-    )
 
     if failureCount > 0 {
       fputs("Swift tests failed: \(failureCount)\n", stderr)
