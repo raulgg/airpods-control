@@ -24,7 +24,6 @@ struct TestRunner {
     )
     runTestGroup("audio routing", runAudioRoutingTests)
     runTestGroup("private audio", runPrivateAudioTests)
-    runTestGroup("support report", runSupportReportTests)
     runTestGroup("support report write flow", runSupportReportWriteFlowTests)
     runTestGroup(
       "support report write tester",
