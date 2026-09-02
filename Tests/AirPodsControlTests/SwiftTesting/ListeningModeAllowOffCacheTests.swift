@@ -1,0 +1,1241 @@
+import Darwin
+import Dispatch
+import Foundation
+import Testing
+
+@testable import AirPodsControlCore
+
+
+private final class AllowOffCacheTestClock {
+  var value: Date
+
+  init(_ value: Date) {
+    self.value = value
+  }
+
+  func read() -> Date {
+    value
+  }
+}
+
+private enum AllowOffCacheTestError: Error {
+  case unavailable
+}
+
+private let allowOffCacheTestSalt = Data(0..<32)
+private let allowOffCacheLockHolderArgument = "--hold-allow-off-cache-lock"
+
+private func withTemporaryAllowOffCache(
+  _ body: (URL) -> Void
+) {
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "airpods-control-allow-off-cache-tests-\(UUID().uuidString)",
+    isDirectory: true
+  )
+  do {
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: false
+    )
+  } catch {
+    Issue.record("allow-off cache test creates its temporary root")
+    return
+  }
+  defer { try? FileManager.default.removeItem(at: root) }
+  body(
+    root
+      .appendingPathComponent("cache", isDirectory: true)
+      .appendingPathComponent("allow-off-v1.json", isDirectory: false)
+  )
+}
+
+private func allowOffRecord(
+  from lookup: AllowOffCacheLookup
+) -> AllowOffCacheRecord? {
+  guard case .allowed(let record) = lookup else { return nil }
+  return record
+}
+
+private func allowOffDenialRecord(
+  from lookup: AllowOffCacheLookup
+) -> AllowOffCacheRecord? {
+  guard case .denied(let record) = lookup else { return nil }
+  return record
+}
+
+private func allowOffCacheJSON(
+  at fileURL: URL
+) -> [String: Any]? {
+  guard let data = try? Data(contentsOf: fileURL),
+    let value = try? JSONSerialization.jsonObject(with: data),
+    let object = value as? [String: Any]
+  else { return nil }
+  return object
+}
+
+private func allowOffCachePermissions(at url: URL) -> Int? {
+  guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+    let permissions = attributes[.posixPermissions] as? NSNumber
+  else { return nil }
+  return permissions.intValue
+}
+
+private func allowOffCacheFileLockIsContended(fileURL: URL) -> Bool {
+  let lockURL = fileURL.deletingLastPathComponent()
+    .appendingPathComponent("allow-off-v1.lock")
+  let descriptor = Darwin.open(lockURL.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+  guard descriptor >= 0 else { return false }
+  defer { Darwin.close(descriptor) }
+  if Darwin.lockf(descriptor, F_TLOCK, 0) == 0 {
+    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+    return false
+  }
+  return errno == EACCES || errno == EAGAIN
+}
+
+private func withHeldAllowOffCacheFileLock(
+  fileURL: URL,
+  holdFor seconds: String = "2",
+  _ body: () -> Void
+) {
+  let lockURL = fileURL.deletingLastPathComponent()
+    .appendingPathComponent("allow-off-v1.lock")
+  let executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    .appendingPathComponent("build/swift-tests")
+  guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
+    Issue.record("lock contention test resolves the swift-tests executable")
+    return
+  }
+
+  let process = Process()
+  let startPipe = Pipe()
+  process.executableURL = executableURL
+  process.arguments = [allowOffCacheLockHolderArgument, lockURL.path, seconds]
+  process.standardInput = startPipe
+  do {
+    try process.run()
+  } catch {
+    Issue.record("lock contention test starts a lock holder: \(error)")
+    return
+  }
+  defer {
+    try? startPipe.fileHandleForWriting.close()
+    if process.isRunning { process.terminate() }
+    process.waitUntilExit()
+  }
+
+  let descriptor = Darwin.open(lockURL.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+  guard descriptor >= 0 else {
+    Issue.record("lock contention test opens the cache lock file")
+    return
+  }
+  defer { Darwin.close(descriptor) }
+
+  let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+  while DispatchTime.now().uptimeNanoseconds < deadline {
+    if Darwin.lockf(descriptor, F_TLOCK, 0) == -1,
+      errno == EACCES || errno == EAGAIN
+    {
+      do {
+        try startPipe.fileHandleForWriting.write(contentsOf: Data([1]))
+        try startPipe.fileHandleForWriting.close()
+      } catch {
+        Issue.record("lock contention test signals the lock holder: \(error)")
+        return
+      }
+      body()
+      return
+    }
+    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+    if !process.isRunning {
+      process.waitUntilExit()
+      Issue.record(
+        "lock contention holder exited before acquiring the lock (status \(process.terminationStatus))"
+      )
+      return
+    }
+    _ = Darwin.usleep(1_000)
+  }
+  Issue.record("lock contention fixture acquires the cache lock")
+}
+
+@Suite("Persistent Allow Off cache")
+struct PersistentListeningModeAllowOffCacheTests {
+  @Test("Uses the versioned user Caches path and a side-effect-free factory")
+  func allowOffCacheUsesVersionedCachesPathAndFactory() {
+    do {
+      let expectedSuffix =
+        "/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json"
+      let defaultURL = try? PersistentListeningModeAllowOffCache.defaultFileURL()
+      #expect(
+        defaultURL?.path.hasSuffix(expectedSuffix) == true,
+        "allow-off cache uses the versioned user Caches path"
+      )
+      #expect(
+        PersistentListeningModeAllowOffCache.systemDefault() != nil,
+        "allow-off cache has a side-effect-free system-default factory"
+      )
+    }
+  }
+
+  @Test("Stores positive evidence and expires it at the fixed TTL")
+  func persistentCacheStoresAndExpiresPositiveEvidence() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "AppleHDAEngineOutput:AirPods:CaseSensitive-UID"
+  
+      #expect(cache.lookup(rawDeviceUID: rawUID) == .miss, "missing cache is a miss")
+      #expect(
+        !FileManager.default.fileExists(atPath: fileURL.deletingLastPathComponent().path),
+        "cache lookup does not create its directory"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "positive Allow Off evidence is stored"
+      )
+  
+      guard let original = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
+        Issue.record("stored Allow Off evidence is returned")
+        return
+      }
+      #expect(
+        original.evidence.observedAt == clock.value,
+        "cache preserves the observation timestamp"
+      )
+      #expect(
+        original.evidence.expiresAt
+          == clock.value.addingTimeInterval(PersistentListeningModeAllowOffCache.defaultTTL),
+        "cache reports the fixed seven-day expiry"
+      )
+  
+      clock.value = clock.value.addingTimeInterval(123)
+      guard let later = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
+        Issue.record("unexpired Allow Off evidence remains a hit")
+        return
+      }
+      #expect(
+        later.evidence.observedAt == original.evidence.observedAt
+          && later.evidence.expiresAt == original.evidence.expiresAt,
+        "cache reads do not refresh TTL"
+      )
+      clock.value = original.evidence.expiresAt
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "Allow Off evidence expires at exactly seven days"
+      )
+    }
+  }
+
+  @Test("Persists a privacy-preserving document with safe permissions")
+  func persistentCachePersistsPrivacyPreservingDocument() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_710_000_000))
+      var excludedPaths = Set<String>()
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt },
+        markExcludedFromBackup: { excludedPaths.insert($0.path) }
+      )
+      let rawUID = "UID-secret-material-A"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "cache writes a privacy-preserving document"
+      )
+  
+      let directoryURL = fileURL.deletingLastPathComponent()
+      let lockURL = directoryURL.appendingPathComponent("allow-off-v1.lock")
+      #expect(
+        allowOffCachePermissions(at: directoryURL) == 0o700,
+        "allow-off cache directory is mode 0700"
+      )
+      #expect(
+        allowOffCachePermissions(at: fileURL) == 0o600,
+        "allow-off cache file is mode 0600"
+      )
+      #expect(
+        allowOffCachePermissions(at: lockURL) == 0o600,
+        "allow-off cache lock file is mode 0600"
+      )
+      #expect(
+        excludedPaths.contains(directoryURL.path),
+        "allow-off cache marks its directory as excluded from backup"
+      )
+      #expect(
+        excludedPaths.contains(fileURL.path),
+        "allow-off cache marks its file as excluded from backup"
+      )
+      #expect(
+        excludedPaths.contains(lockURL.path),
+        "allow-off cache marks its lock file as excluded from backup"
+      )
+  
+      guard let data = try? Data(contentsOf: fileURL),
+        let text = String(data: data, encoding: .utf8),
+        let object = allowOffCacheJSON(at: fileURL),
+        let schemaVersion = object["schemaVersion"] as? NSNumber,
+        let salt = object["salt"] as? String,
+        let entries = object["positiveEvidence"] as? [String: Any]
+      else {
+        Issue.record("allow-off cache document is readable JSON")
+        return
+      }
+      #expect(schemaVersion.intValue == 1, "allow-off cache persists schema version 1")
+      #expect(Data(base64Encoded: salt)?.count == 32, "allow-off cache persists a 32-byte salt")
+      #expect(!text.contains(rawUID), "allow-off cache never persists the raw device UID")
+      #expect(entries.count == 1, "allow-off cache stores one positive evidence entry")
+      if let key = entries.keys.first {
+        #expect(
+          key.utf8.count == 64
+            && key.utf8.allSatisfy {
+              ($0 >= 48 && $0 <= 57) || ($0 >= 97 && $0 <= 102)
+            },
+          "allow-off cache keys are full lowercase SHA-256 digests"
+        )
+      }
+      let directoryNames =
+        (try? FileManager.default.contentsOfDirectory(
+          atPath: directoryURL.path
+        )) ?? []
+      #expect(
+        !directoryNames.contains(where: { $0.hasSuffix(".tmp") }),
+        "atomic cache replacement leaves no temporary file"
+      )
+  
+      let reopened = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { throw AllowOffCacheTestError.unavailable }
+      )
+      #expect(
+        allowOffRecord(from: reopened.lookup(rawDeviceUID: rawUID)) != nil,
+        "persisted salt allows lookup after reopening without regenerating salt"
+      )
+      #expect(
+        reopened.lookup(rawDeviceUID: rawUID.lowercased()) == .miss,
+        "raw device UID hashing is exact and case-sensitive"
+      )
+    }
+  }
+
+  @Test("Uses opaque records for conditional eviction and preserves unrelated evidence")
+  func persistentCacheUsesOpaqueRecordsAndPreservesUnrelatedEvidence() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_720_000_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "conditional-eviction-uid"
+  
+      _ = cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      )
+      guard let oldRecord = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
+        Issue.record("conditional eviction obtains its original record")
+        return
+      }
+      clock.value = clock.value.addingTimeInterval(5)
+      _ = cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      )
+      guard let refreshedRecord = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
+        Issue.record("conditional eviction obtains its refreshed record")
+        return
+      }
+      #expect(
+        cache.remove(record: oldRecord) == .unchanged,
+        "stale record cannot erase refreshed Allow Off evidence"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) == refreshedRecord,
+        "refreshed Allow Off evidence survives stale eviction"
+      )
+      #expect(
+        cache.remove(record: refreshedRecord) == .applied,
+        "current opaque record evicts its exact evidence"
+      )
+      #expect(cache.lookup(rawDeviceUID: rawUID) == .miss, "record eviction removes evidence")
+  
+      _ = cache.applyObservation(
+        rawDeviceUID: "first",
+        allowsOff: true,
+        observedAt: clock.value
+      )
+      _ = cache.applyObservation(
+        rawDeviceUID: "second",
+        allowsOff: true,
+        observedAt: clock.value
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: "first",
+          allowsOff: false,
+          observedAt: clock.value
+        ) == .applied,
+        "raw UID removal deletes its positive evidence"
+      )
+      #expect(
+        allowOffDenialRecord(from: cache.lookup(rawDeviceUID: "first")) != nil,
+        "a negative raw UID observation remains available as denial evidence"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: "second")) != nil,
+        "raw UID removal preserves unrelated evidence"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: "missing",
+          allowsOff: false,
+          observedAt: clock.value
+        ) == .applied,
+        "negative observations retain a tombstone even without positive evidence"
+      )
+    }
+  }
+
+  @Test("Preserves denial through omission and accepts newer positive evidence")
+  func persistentCachePreservesDenialThroughOmissionAndAcceptsNewerPositive() {
+    withTemporaryAllowOffCache { fileURL in
+      let denialObservedAt = Date(timeIntervalSince1970: 1_730_100_000)
+      let clock = AllowOffCacheTestClock(denialObservedAt)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        ttl: 60,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "denial-omission-positive-uid"
+  
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: denialObservedAt
+        ) == .applied,
+        "persistent cache stores the initial denial"
+      )
+      guard let initialDenial = allowOffDenialRecord(
+        from: cache.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("persistent cache returns the initial denial")
+        return
+      }
+  
+      let omissionObservedAt = denialObservedAt.addingTimeInterval(10)
+      clock.value = omissionObservedAt
+      #expect(
+        cache.invalidatePositiveObservation(
+          rawDeviceUID: rawUID,
+          observedAt: omissionObservedAt
+        ) == .unchanged,
+        "an omission does not replace an unexpired denial tombstone"
+      )
+      guard let preservedDenial = allowOffDenialRecord(
+        from: cache.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("an omission preserves denial evidence")
+        return
+      }
+      #expect(
+        preservedDenial.evidence.observedAt == initialDenial.evidence.observedAt
+          && preservedDenial.evidence.expiresAt == initialDenial.evidence.expiresAt,
+        "an omission does not extend the denial TTL"
+      )
+  
+      let positiveObservedAt = denialObservedAt.addingTimeInterval(20)
+      clock.value = positiveObservedAt
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: positiveObservedAt
+        ) == .applied,
+        "strictly newer positive evidence supersedes denial"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+          == positiveObservedAt,
+        "newer positive evidence is returned after denial"
+      )
+    }
+  }
+
+  @Test("Recovers safely from corruption and unsafe file modes")
+  func persistentCacheRecoversFromCorruptionAndUnsafeModes() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_730_000_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "corruption-test-uid"
+      _ = cache.applyObservation(
+        rawDeviceUID: rawUID,
+        allowsOff: true,
+        observedAt: clock.value
+      )
+      do {
+        try Data("{not-json".utf8).write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o600)],
+          ofItemAtPath: fileURL.path
+        )
+      } catch {
+        Issue.record("corruption test prepares a malformed cache")
+        return
+      }
+      #expect(cache.lookup(rawDeviceUID: rawUID) == .miss, "malformed cache is a safe miss")
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "positive observation replaces a malformed disposable cache"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+        "rebuilt cache returns its positive evidence"
+      )
+  
+      do {
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o644)],
+          ofItemAtPath: fileURL.path
+        )
+      } catch {
+        Issue.record("permissions test changes the cache mode")
+        return
+      }
+      #expect(cache.lookup(rawDeviceUID: rawUID) == .miss, "unsafe file mode is a safe miss")
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: clock.value
+        ) == .applied,
+        "negative observation replaces a malformed disposable cache"
+      )
+      #expect(
+        allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+        "negative observation is returned as denial evidence"
+      )
+    }
+  }
+
+  @Test("Purges positive evidence when negative persistence fails")
+  func persistentCachePurgesPositiveEvidenceWhenNegativePersistenceFails() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_000_000))
+      var failTemporaryBackup = false
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt },
+        markExcludedFromBackup: { url in
+          if failTemporaryBackup && url.pathExtension == "tmp" {
+            throw AllowOffCacheTestError.unavailable
+          }
+        }
+      )
+      let rawUID = "failed-negative-write-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "failed negative write test seeds positive evidence"
+      )
+      failTemporaryBackup = true
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: clock.value
+        ) == .applied,
+        "failed negative persistence purges stale positive evidence"
+      )
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "failed primary persistence cannot expose stale positive evidence"
+      )
+    }
+  }
+
+  @Test("Rejects symlinked cache files without touching their targets")
+  func persistentCacheRejectsSymlinkedCacheFiles() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_500_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "untrusted-cache-file-uid"
+      let directoryURL = fileURL.deletingLastPathComponent()
+      let externalURL = directoryURL.appendingPathComponent("external.json")
+      let externalData = Data("external-cache-target".utf8)
+  
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "untrusted-file test seeds positive evidence"
+      )
+      do {
+        try externalData.write(to: externalURL)
+        try FileManager.default.removeItem(at: fileURL)
+        try FileManager.default.createSymbolicLink(
+          at: fileURL,
+          withDestinationURL: externalURL
+        )
+      } catch {
+        Issue.record("symlink test prepares an external cache target")
+        return
+      }
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "a cache symlink is treated as a miss"
+      )
+      #expect(
+        (try? Data(contentsOf: externalURL)) == externalData,
+        "a cache symlink never reads the external target as trusted evidence"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "a cache symlink can be replaced without following it"
+      )
+      #expect(
+        (try? Data(contentsOf: externalURL)) == externalData,
+        "rebuilding a symlinked cache leaves the external target unchanged"
+      )
+    }
+  }
+
+  @Test("Rejects hard-linked cache files without trusting them")
+  func persistentCacheRejectsHardLinkedCacheFiles() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_600_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "hard-linked-cache-file-uid"
+      let directoryURL = fileURL.deletingLastPathComponent()
+      let externalURL = directoryURL.appendingPathComponent("hard-link-target.json")
+      let externalData = Data("hard-link-cache-target".utf8)
+  
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "hard-link test seeds positive evidence"
+      )
+      do {
+        try externalData.write(to: externalURL)
+        try FileManager.default.removeItem(at: fileURL)
+        try FileManager.default.linkItem(atPath: externalURL.path, toPath: fileURL.path)
+      } catch {
+        Issue.record("hard-link test prepares an external cache target")
+        return
+      }
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "a cache hard link is treated as a miss"
+      )
+      #expect(
+        (try? Data(contentsOf: externalURL)) == externalData,
+        "a cache hard link never trusts a multiply-linked file"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "a hard-linked cache can be replaced safely"
+      )
+      #expect(
+        (try? Data(contentsOf: externalURL)) == externalData,
+        "rebuilding a hard-linked cache leaves the external target unchanged"
+      )
+    }
+  }
+
+  @Test("Treats oversized cache files as safe misses")
+  func persistentCacheTreatsOversizedFilesAsSafeMisses() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_700_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "oversized-cache-file-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "oversized-file test seeds positive evidence"
+      )
+      do {
+        try Data(repeating: 0x78, count: 1_048_577).write(
+          to: fileURL,
+          options: .atomic
+        )
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o600)],
+          ofItemAtPath: fileURL.path
+        )
+      } catch {
+        Issue.record("oversized-file test prepares a cache over the byte limit")
+        return
+      }
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "an oversized cache file is a safe miss"
+      )
+    }
+  }
+
+  @Test("Treats overfull cache files as safe misses")
+  func persistentCacheTreatsOverfullFilesAsSafeMisses() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_731_800_000))
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "overfull-cache-file-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "overfull-file test seeds positive evidence"
+      )
+      var positiveEvidence: [String: Any] = [:]
+      for index in 0...256 {
+        let digits = String(index, radix: 16)
+        let key = String(repeating: "0", count: 64 - digits.count) + digits
+        positiveEvidence[key] = ["observedAt": clock.value.timeIntervalSince1970]
+      }
+      let document: [String: Any] = [
+        "schemaVersion": 1,
+        "salt": allowOffCacheTestSalt.base64EncodedString(),
+        "positiveEvidence": positiveEvidence,
+        "negativeEvidence": [:],
+      ]
+      do {
+        let data = try JSONSerialization.data(
+          withJSONObject: document,
+          options: [.sortedKeys]
+        )
+        try data.write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o600)],
+          ofItemAtPath: fileURL.path
+        )
+      } catch {
+        Issue.record("overfull-file test prepares more than the entry limit")
+        return
+      }
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "a cache over the entry limit is a safe miss"
+      )
+    }
+  }
+
+  @Test("Writes denial evidence after lock contention")
+  func persistentCacheWritesDenialAfterLockContention() {
+    withTemporaryAllowOffCache { fileURL in
+      let observedAt = Date(timeIntervalSince1970: 1_732_000_000)
+      let clock = AllowOffCacheTestClock(observedAt)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "contended-negative-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: observedAt
+        ) == .applied,
+        "lock-timeout test seeds positive evidence"
+      )
+      let negativeObservedAt = observedAt.addingTimeInterval(1)
+      withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+        #expect(
+          cache.applyObservation(
+            rawDeviceUID: rawUID,
+            allowsOff: false,
+            observedAt: negativeObservedAt
+          ) == .applied,
+          "negative lock timeout writes a deny marker"
+        )
+      }
+      clock.value = negativeObservedAt
+      #expect(
+        allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+        "a deny marker exposes denial evidence after lock contention"
+      )
+      clock.value = negativeObservedAt.addingTimeInterval(1)
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "newer positive evidence can supersede a deny marker"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+        "newer positive evidence remains usable after a denied write"
+      )
+    }
+  }
+
+  @Test("Rejects invalid raw device UIDs without filesystem effects")
+  func persistentCacheRejectsInvalidRawDeviceUIDsWithoutFilesystemEffects() {
+    withTemporaryAllowOffCache { fileURL in
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: "",
+          allowsOff: true,
+          observedAt: Date()
+        ) == .unavailable,
+        "empty raw device UID is rejected"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: String(repeating: "x", count: 4_097),
+          allowsOff: true,
+          observedAt: Date()
+        ) == .unavailable,
+        "oversized raw device UID is rejected"
+      )
+      #expect(
+        !FileManager.default.fileExists(atPath: fileURL.deletingLastPathComponent().path),
+        "invalid raw device UID has no filesystem side effect"
+      )
+    }
+  }
+
+  @Test("Rejects invalid generated salts")
+  func persistentCacheRejectsInvalidGeneratedSalt() {
+    withTemporaryAllowOffCache { fileURL in
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        saltGenerator: { Data(repeating: 0, count: 31) }
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: "uid",
+          allowsOff: true,
+          observedAt: Date()
+        ) == .unavailable,
+        "invalid generated salt makes cache storage unavailable"
+      )
+      #expect(
+        !FileManager.default.fileExists(atPath: fileURL.path),
+        "invalid generated salt never writes a cache document"
+      )
+    }
+  }
+
+  @Test("Fails softly when cache mutation cannot acquire its lock")
+  func persistentCacheFailsSoftOnLockContention() {
+    withTemporaryAllowOffCache { fileURL in
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      _ = cache.applyObservation(
+        rawDeviceUID: "existing",
+        allowsOff: true,
+        observedAt: Date()
+      )
+  
+      withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let result = cache.applyObservation(
+          rawDeviceUID: "contended",
+          allowsOff: true,
+          observedAt: Date()
+        )
+        let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
+        #expect(result == .unavailable, "contended cache mutation fails soft")
+        #expect(
+          elapsed < 1_000_000_000,
+          "contended cache mutation stops waiting within a bounded time"
+        )
+      }
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: "existing")) != nil,
+        "lock contention preserves existing cache evidence"
+      )
+      #expect(
+        cache.lookup(rawDeviceUID: "contended") == .miss,
+        "failed-soft lock contention does not mutate the cache"
+      )
+    }
+  }
+
+  @Test("Waits through brief lock contention without losing the observation time")
+  func persistentCacheWaitsThroughBriefLockContention() {
+    withTemporaryAllowOffCache { fileURL in
+      let observedAt = Date(timeIntervalSince1970: 1_734_000_000)
+      let afterContention = observedAt.addingTimeInterval(10)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: {
+          allowOffCacheFileLockIsContended(fileURL: fileURL)
+            ? observedAt
+            : afterContention
+        },
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      _ = cache.applyObservation(
+        rawDeviceUID: "seed",
+        allowsOff: true,
+        observedAt: observedAt
+      )
+  
+      var result: AllowOffCacheMutation = .unavailable
+      let waiter = Thread {
+        result = cache.applyObservation(
+          rawDeviceUID: "delayed",
+          allowsOff: true,
+          observedAt: observedAt
+        )
+      }
+      withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+        waiter.start()
+        _ = Darwin.usleep(50_000)
+      }
+      let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
+      while !waiter.isFinished,
+        DispatchTime.now().uptimeNanoseconds < deadline
+      {
+        _ = Darwin.usleep(1_000)
+      }
+      #expect(
+        result == .applied,
+        "positive observation waits for brief lock contention"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: "delayed"))?.evidence.observedAt
+          == observedAt,
+        "positive observation keeps the time captured before lock contention"
+      )
+    }
+  }
+
+  @Test("Orders observations by timestamp")
+  func persistentCacheOrdersObservationsByTimestamp() {
+    withTemporaryAllowOffCache { fileURL in
+      let current = Date(timeIntervalSince1970: 1_736_000_020)
+      let clock = AllowOffCacheTestClock(current)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "ordered-observation-uid"
+      let older = current.addingTimeInterval(-20)
+      let newer = current.addingTimeInterval(-10)
+  
+      clock.value = newer
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: newer
+        ) == .applied,
+        "newer positive observation is stored"
+      )
+      clock.value = current
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: older
+        ) == .unchanged,
+        "older positive observation cannot replace newer evidence"
+      )
+      clock.value = current
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+          == newer,
+        "newer evidence survives a delayed older positive observation"
+      )
+      clock.value = current
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: older
+        ) == .unchanged,
+        "older negative observation cannot remove newer evidence"
+      )
+      clock.value = current
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+          == newer,
+        "newer evidence survives a delayed older negative observation"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: current
+        ) == .applied,
+        "newer negative observation removes older evidence"
+      )
+  
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: current
+        ) == .unchanged,
+        "equal positive and negative observations fail closed"
+      )
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: older
+        ) == .unchanged,
+        "an older positive observation cannot replace a newer negative tombstone"
+      )
+    }
+  }
+
+  @Test("Handles a clock rollback without reviving positive evidence")
+  func persistentCacheHandlesClockRollback() {
+    withTemporaryAllowOffCache { fileURL in
+      let positiveObservedAt = Date(timeIntervalSince1970: 1_737_000_000)
+      let clock = AllowOffCacheTestClock(positiveObservedAt)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "clock-rollback-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: positiveObservedAt
+        ) == .applied,
+        "clock rollback test seeds positive evidence"
+      )
+      let rolledBack = positiveObservedAt.addingTimeInterval(-60)
+      clock.value = rolledBack
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: rolledBack
+        ) == .applied,
+        "a fresh negative during clock rollback is recorded at the future positive time"
+      )
+      clock.value = positiveObservedAt
+      #expect(
+        allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
+        "clock rollback preserves superseding denial evidence"
+      )
+    }
+  }
+
+  @Test("Preserves concurrent atomic mutations")
+  func persistentCachePreservesConcurrentAtomicMutations() {
+    withTemporaryAllowOffCache { fileURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_735_000_000))
+      let group = DispatchGroup()
+      for index in 0..<12 {
+        group.enter()
+        DispatchQueue.global().async {
+          let cache = PersistentListeningModeAllowOffCache(
+            fileURL: fileURL,
+            now: clock.read,
+            saltGenerator: { allowOffCacheTestSalt }
+          )
+          _ = cache.applyObservation(
+            rawDeviceUID: "concurrent-uid-\(index)",
+            allowsOff: true,
+            observedAt: clock.value
+          )
+          group.leave()
+        }
+      }
+      group.wait()
+  
+      let reopened = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        now: clock.read,
+        saltGenerator: { throw AllowOffCacheTestError.unavailable }
+      )
+      for index in 0..<12 {
+        #expect(
+          allowOffRecord(
+            from: reopened.lookup(rawDeviceUID: "concurrent-uid-\(index)")
+          ) != nil,
+          "locked atomic mutations preserve concurrent entry \(index)"
+        )
+      }
+    }
+  }
+
+  @Test("Stores and expires positive evidence in memory")
+  func inMemoryCacheStoresAndExpiresPositiveEvidence() {
+    do {
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_740_000_000))
+      guard
+        let cache = InMemoryListeningModeAllowOffCache(
+          salt: allowOffCacheTestSalt,
+          ttl: 60,
+          now: clock.read
+        )
+      else {
+        Issue.record("in-memory Allow Off cache accepts a valid salt")
+        return
+      }
+      #expect(cache.lookup(rawDeviceUID: "uid") == .miss, "in-memory cache starts empty")
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: "uid",
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "in-memory cache stores positive evidence"
+      )
+      guard let record = allowOffRecord(from: cache.lookup(rawDeviceUID: "uid")) else {
+        Issue.record("in-memory cache returns an opaque record")
+        return
+      }
+      clock.value = clock.value.addingTimeInterval(60)
+      #expect(cache.lookup(rawDeviceUID: "uid") == .miss, "in-memory cache enforces TTL")
+      #expect(
+        cache.remove(record: record) == .applied,
+        "in-memory cache supports exact record eviction after expiry"
+      )
+      #expect(
+        InMemoryListeningModeAllowOffCache(salt: Data(repeating: 0, count: 31)) == nil,
+        "in-memory cache rejects an invalid salt"
+      )
+    }
+  }
+
+  @Test("Preserves in-memory denial through omission and newer positive evidence")
+  func inMemoryCachePreservesDenialThroughOmissionAndNewerPositive() {
+    do {
+      let denialObservedAt = Date(timeIntervalSince1970: 1_740_100_000)
+      let clock = AllowOffCacheTestClock(denialObservedAt)
+      guard
+        let cache = InMemoryListeningModeAllowOffCache(
+          salt: allowOffCacheTestSalt,
+          ttl: 60,
+          now: clock.read
+        )
+      else {
+        Issue.record("in-memory denial ordering accepts a valid salt")
+        return
+      }
+      let rawUID = "denial-omission-positive-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: denialObservedAt
+        ) == .applied,
+        "in-memory cache stores the initial denial"
+      )
+      guard let initialDenial = allowOffDenialRecord(
+        from: cache.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("in-memory cache returns the initial denial")
+        return
+      }
+  
+      let omissionObservedAt = denialObservedAt.addingTimeInterval(10)
+      clock.value = omissionObservedAt
+      #expect(
+        cache.invalidatePositiveObservation(
+          rawDeviceUID: rawUID,
+          observedAt: omissionObservedAt
+        ) == .unchanged,
+        "in-memory omission preserves an unexpired denial tombstone"
+      )
+      guard let preservedDenial = allowOffDenialRecord(
+        from: cache.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("in-memory omission preserves denial evidence")
+        return
+      }
+      #expect(
+        preservedDenial.evidence.observedAt == initialDenial.evidence.observedAt
+          && preservedDenial.evidence.expiresAt == initialDenial.evidence.expiresAt,
+        "in-memory omission does not extend the denial TTL"
+      )
+  
+      let positiveObservedAt = denialObservedAt.addingTimeInterval(20)
+      clock.value = positiveObservedAt
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: positiveObservedAt
+        ) == .applied,
+        "in-memory newer positive evidence supersedes denial"
+      )
+      #expect(
+        allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+          == positiveObservedAt,
+        "in-memory newer positive evidence is returned after denial"
+      )
+    }
+  }
+}
