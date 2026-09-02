@@ -130,8 +130,9 @@ set.
 
 - Use a [Conventional Commit](https://www.conventionalcommits.org/) pull request
   title. The repository squash-merges pull requests, so that title becomes the
-  commit used to generate versions and release notes. `feat` and `fix` titles
-  appear in those notes. `ci`, `chore`, `test`, and `docs` titles do not.
+  commit used to generate versions and release notes. `feat`, `fix`, and
+  `perf` titles appear in those notes. Other types, including `ci`, `chore`,
+  `test`, `docs`, and `revert`, do not. A user-visible undo is a `fix:`.
 - Fill the pull request template. Do not wrap the description to 80 columns.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.

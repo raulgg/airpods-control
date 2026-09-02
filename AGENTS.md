@@ -30,8 +30,10 @@ here and avoid them.
 
 - Do not hand-edit `version.txt`, `.release-please-manifest.json`, or
   `CHANGELOG.md`. Let the release pull request do that.
-- Hide `ci` and `chore` in `changelog-sections`. After changing that
-  config, close the open draft release PR so a fresh one is generated.
+- Notes are `feat`, `fix`, and `perf` only. Hide `ci`, `chore`, `deps`,
+  `revert`, and the other non-user types in `changelog-sections`. After
+  changing that config, close the open draft release PR so a fresh one is
+  generated.
 - Cherry-pick a patch onto `release/X.Y`. Do not merge a maintenance
   branch into `main`.
 - Do not create a git tag with the same name as a maintenance branch.
