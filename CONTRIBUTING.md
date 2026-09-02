@@ -27,8 +27,9 @@ compatibility. Report these regressions with the same details as other bugs.
 
 You need:
 
-- macOS
-- Command Line Tools or Xcode
+- macOS 14 or newer to run Swift Testing. Production builds still target
+  macOS 12.
+- Command Line Tools or Xcode with Swift 6
 - `make`, `clang`, `swiftc`, `lipo`, and `codesign`
 
 ### Development setup
@@ -97,6 +98,9 @@ device or capability status.
 - `Sources/SignalMonitor` contains the C termination monitor linked into the
   executable and its Clang module header.
 - `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.
+  The Swift Testing pilot lives under
+  `Tests/AirPodsControlTests/SwiftTesting` so it stays separate from the
+  legacy command-line test runner.
 - `Tests/CLIContractTests` verifies the built executable's output and exit
   codes.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in

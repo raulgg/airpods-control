@@ -7,7 +7,6 @@ struct TestRunner {
       exit(status)
     }
 
-    runTestGroup("CLI parsing", runCLIParsingTests)
     runTestGroup("interactive device chooser", runInteractiveDeviceChooserTests)
     runTestGroup("listening modes", runListeningModeTests)
     runTestGroup("Allow Off cache", runListeningModeAllowOffCacheTests)

@@ -16,7 +16,9 @@ concurrency:
 jobs:
   build:
     name: Build, test, and verify install
-    runs-on: macos-14
+    # macos-14 defaults to Swift 5.10, which cannot run Swift Testing.
+    # Use the runner's default toolchain with a Swift 6 minimum.
+    runs-on: macos-15
     timeout-minutes: 15
 
     steps:
@@ -25,6 +27,15 @@ jobs:
 
       - name: Show toolchain
         run: |
+          xcodebuild -version
+          swift_version=$(swift --version)
+          printf '%s\n' "$swift_version"
+          swift_major=$(printf '%s\n' "$swift_version" |
+            sed -nE 's/.*Swift version ([0-9]+)\..*/\1/p')
+          if ! [ "${swift_major:-0}" -ge 6 ]; then
+            echo '::error::Swift 6 or newer is required to run Swift Testing.'
+            exit 1
+          fi
           swiftc --version
           clang --version
 
