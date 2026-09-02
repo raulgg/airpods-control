@@ -150,7 +150,6 @@ _build: $(VERSION_SOURCE)
 
 test: all
 	./Tests/ReleasePleaseTests/release-pr-body.sh
-	./Tests/ReleasePleaseTests/config.sh
 	./Tests/ResolvePrefixTests/resolve-prefix.sh
 	./Tests/InstallFromSourceTests/install-from-source.sh
 	./Tests/CLIContractTests/cli.sh

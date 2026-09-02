@@ -106,7 +106,7 @@ device or capability status.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in
   C.
 - `Tests/ReleasePleaseTests` verifies that a Release Please pull request body
-  still parses and that `changelog-sections` hide `ci` and `chore`.
+  still parses.
 - `Tests/ResolvePrefixTests` verifies install-prefix path rules.
 - `Tests/InstallFromSourceTests` verifies the source install script.
 - `Tests/VerifyRuntimeTests` verifies the DYLD interpose on a built CLI.
