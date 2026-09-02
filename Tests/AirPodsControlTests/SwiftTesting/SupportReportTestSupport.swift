@@ -60,3 +60,17 @@ extension CommandOutcome {
     return supportReport.githubIssueDraft
   }
 }
+
+extension CapabilityWriteTestOutcome {
+  var testRun: Run? {
+    if case let .ran(run) = self { return run }
+    return nil
+  }
+}
+
+extension RestorationOutcome {
+  var stateNeverChanged: Bool {
+    if case .stateNeverChanged = self { return true }
+    return false
+  }
+}
