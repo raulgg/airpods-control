@@ -10,19 +10,19 @@ struct PrivateAudioDiscoveryTests {
     let logger = DebugLogger(enabled: false)
     let modern = FakeContext(devices: [])
     let legacy = FakeContext(devices: [])
-  
+
     let legacyProvider = FakeLegacyContextProvider(context: legacy)
     #expect(
       PrivateAudioDiscovery.sharedContext(from: legacyProvider, logger: logger) === legacy,
       "legacy sharedSystemAudio selector is supported"
     )
-  
+
     let dualProvider = FakeDualContextProvider(modern: modern, legacy: legacy)
     #expect(
       PrivateAudioDiscovery.sharedContext(from: dualProvider, logger: logger) === modern,
       "modern context selector is preferred"
     )
-  
+
     let missingProvider = NSObject()
     #expect(
       PrivateAudioDiscovery.sharedContext(from: missingProvider, logger: logger) == nil,
@@ -36,7 +36,7 @@ struct PrivateAudioDiscoveryTests {
       PrivateAudioDiscovery.outputDevice(from: missingProvider, logger: logger) == nil,
       "missing outputDevice selector returns nil"
     )
-  
+
     let device = FakeRawDevice(name: "My AirPods Pro")
     let context = FakeContext(devices: [device], currentDevice: device)
     #expect(
@@ -48,18 +48,18 @@ struct PrivateAudioDiscoveryTests {
       "singular outputDevice is discovered independently"
     )
   }
-  
+
   @Test
   func contextEndpointsPreservePluralOrderAndMultiplicity() throws {
     let first = FakeRawDevice(name: "First AirPods")
     let second = FakeRawDevice(name: "Second AirPods")
     let context = FakeContext(devices: [first, second, first], currentDevice: second)
-  
+
     let endpoints = PrivateAudioDiscovery.contextEndpoints(
       from: context,
       logger: DebugLogger(enabled: false)
     )
-  
+
     #expect(endpoints.plural.count == 3, "plural endpoint multiplicity is preserved")
     #expect(
       endpoints.plural[0] === first
@@ -69,7 +69,7 @@ struct PrivateAudioDiscoveryTests {
     )
     #expect(endpoints.singular === second, "the singular current endpoint is retained separately")
   }
-  
+
   @Test
   func sameIdentifierSingularAuthorityRejectsWithdrawnMode() throws {
     let identifier = "current-wrapper-policy-endpoint"
@@ -91,7 +91,7 @@ struct PrivateAudioDiscoveryTests {
       endpoints: endpoints,
       logger: DebugLogger(enabled: false)
     ).selectDevice(named: nil)
-  
+
     #expect(
       selected?.availableListeningModes() == [.transparency],
       "the singular current endpoint governs advertised eligibility"
@@ -108,7 +108,7 @@ struct PrivateAudioDiscoveryTests {
       "a withdrawn mode reaches neither singular nor stale plural setter"
     )
   }
-  
+
   @Test
   func readOnlySingularNeverFallsBackToPluralSetter() throws {
     let identifier = "read-only-current-endpoint"
@@ -125,7 +125,7 @@ struct PrivateAudioDiscoveryTests {
       endpoints: endpoints,
       logger: DebugLogger(enabled: false)
     ).selectDevice(named: nil)
-  
+
     #expect(selected?.name == "Current AirPods", "the read-only singular wrapper stays authoritative")
     #expect(
       selected?.canSetListeningMode() == false,
@@ -137,7 +137,7 @@ struct PrivateAudioDiscoveryTests {
     #expect(outcome.plain == "unavailable", "a read-only singular endpoint reports unavailable")
     #expect(plural.listeningModeSetCount == 0, "the stale plural setter is never used as fallback")
   }
-  
+
   @Test
   func supportReportContextDiscoveryIsPluralOnlyAndPrivate() throws {
     let plural = FakeRawDevice(
@@ -150,7 +150,7 @@ struct PrivateAudioDiscoveryTests {
     )
     let context = FakeContext(devices: [plural], currentDevice: singular)
     var selected: PrivateAudioDevice?
-  
+
     _ = capturingStandardError {
       let rawDevices = PrivateAudioDiscovery.outputDevices(
         from: context,
@@ -162,7 +162,7 @@ struct PrivateAudioDiscoveryTests {
         includeDeviceNames: false
       ).selectDevice(named: nil)
     }
-  
+
     #expect(selected != nil, "support-report selects one compatible plural endpoint")
     #expect(context.outputDeviceReadCount == 0, "support-report never reads singular outputDevice")
     #expect(
@@ -174,7 +174,7 @@ struct PrivateAudioDiscoveryTests {
       "support-report reads no private endpoint identifiers"
     )
   }
-  
+
   @Test
   func supportReportPluralMultiplicityRequiresUniqueness() throws {
     let repeated = FakeRawDevice(
@@ -192,7 +192,7 @@ struct PrivateAudioDiscoveryTests {
       logger: DebugLogger(enabled: false),
       includeDeviceNames: false
     ).selectDevice(named: nil)
-  
+
     #expect(selected == nil, "support-report requires one unique compatible plural endpoint")
     #expect(context.outputDeviceReadCount == 0, "plural uniqueness does not enter singular discovery")
     #expect(
@@ -204,7 +204,7 @@ struct PrivateAudioDiscoveryTests {
       "the unused singular endpoint remains completely unread"
     )
   }
-  
+
   @Test
   func incompatibleUnidentifiedPluralDoesNotBlockValidSingular() throws {
     let singular = FakeRawDevice(
@@ -222,7 +222,7 @@ struct PrivateAudioDiscoveryTests {
       Issue.record("a filtered no-ID plural does not hide the valid singular endpoint")
       return
     }
-  
+
     let observation = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
     #expect(observation.observed == .adaptive, "the valid no-ID singular endpoint remains writable")
     #expect(singular.listeningModeSetCount == 1, "the write reaches the singular endpoint")
@@ -231,7 +231,7 @@ struct PrivateAudioDiscoveryTests {
       "a filtered plural requires no speculative singular identifier read"
     )
   }
-  
+
   @Test
   func compatibleUnidentifiedPluralIsSuppressedBySingularAuthority() throws {
     let firstPlural = FakeRawDevice(name: "First stale AirPods", deviceIdentifier: "")
@@ -246,7 +246,7 @@ struct PrivateAudioDiscoveryTests {
     )
     let resolved = controller.selectDevices(named: nil, policy: .allOrExact)
     let selected = resolved?.first
-  
+
     #expect(resolved?.count == 1, "unresolved plural aliases produce one current status record")
     #expect(selected?.name == "Current AirPods", "the singular endpoint wins unresolved alias risk")
     let observation = selected?.setListeningModeAndReadBack(.adaptive, wait: { _ in })
@@ -258,7 +258,7 @@ struct PrivateAudioDiscoveryTests {
       "unidentified plural wrappers never receive the write"
     )
   }
-  
+
   @Test
   func unidentifiedPluralIsNotUsedWhenSingularIsIncompatible() throws {
     let plural = FakeRawDevice(name: "Stale AirPods", deviceIdentifier: "")
@@ -269,11 +269,11 @@ struct PrivateAudioDiscoveryTests {
       ),
       logger: DebugLogger(enabled: false)
     ).selectDevice(named: nil)
-  
+
     #expect(selected == nil, "unresolved plural identity fails closed without a valid singular")
     #expect(plural.listeningModeSetCount == 0, "a stale unidentified plural receives no write")
   }
-  
+
   @Test
   func statusPreservesRoutingOrderAndUsesSingularCurrentWrapper() throws {
     let first = FakeRawDevice(
@@ -307,7 +307,7 @@ struct PrivateAudioDiscoveryTests {
       Issue.record("status resolves the combined routing endpoints")
       return
     }
-  
+
     #expect(
       devices.map(\.name) == ["First AirPods", "Current AirPods", "Last Beats"],
       "status keeps routing order while replacing the current plural alias"
@@ -330,7 +330,7 @@ struct PrivateAudioDiscoveryTests {
       "aggregate status never invokes either wrapper's setter"
     )
   }
-  
+
   @Test
   func singularOnlyEndpointRemainsDirectlyControllable() throws {
     let singular = FakeRawDevice(name: "Singular AirPods")
@@ -341,7 +341,7 @@ struct PrivateAudioDiscoveryTests {
       Issue.record("the singular current endpoint survives an empty plural list")
       return
     }
-  
+
     let modeWrite = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
     #expect(modeWrite.observed == .adaptive, "singular listening-mode control remains direct")
     let awarenessWrite = selected.setConversationAwarenessAndReadBack(true, wait: { _ in })
@@ -351,7 +351,7 @@ struct PrivateAudioDiscoveryTests {
       "both settings are written through the singular endpoint"
     )
   }
-  
+
   @Test
   func statusReadsCAOnlySingularEndpointWithoutWrites() throws {
     let singular = FakeCAOnlyCurrentRawDevice()
@@ -363,7 +363,7 @@ struct PrivateAudioDiscoveryTests {
       Issue.record("status discovers the CA-only singular current endpoint")
       return
     }
-  
+
     let outcome = StatusCommand.outcome(devices: devices)
     let record = (outcome.payload["devices"] as? [[String: Any]])?.first
     #expect(record?["conversationAwareness"] as? String == "off", "status reads singular CA")
@@ -377,7 +377,7 @@ struct PrivateAudioDiscoveryTests {
       "status never writes the CA-only singular endpoint"
     )
   }
-  
+
   @Test
   func singularEmptyModesRetainCurrentModeAndConversationAwarenessControl() throws {
     let singular = FakeRawDevice(name: "One-bud AirPods", modes: [])
@@ -385,7 +385,7 @@ struct PrivateAudioDiscoveryTests {
       endpoints: PrivateAudioContextEndpoints(plural: [], singular: singular),
       logger: DebugLogger(enabled: false)
     ).selectDevice(named: nil)
-  
+
     #expect(selected != nil, "a singular endpoint with a live control signal survives empty modes")
     #expect(selected?.availableListeningModes().isEmpty == true, "empty modes remain truthful")
     let modeGet = CommandExecution.execute(try parseInvocation(["lm", "get"])) {
@@ -400,7 +400,7 @@ struct PrivateAudioDiscoveryTests {
     }
     #expect(modeSet.plain == "unsupported", "an unadvertised listening mode remains unsupported")
     #expect(singular.listeningModeSetCount == 0, "empty modes cannot bypass command eligibility")
-  
+
     _ = CommandExecution.execute(try parseInvocation(["ca", "set", "on"])) {
       _, _ in selected
     }
@@ -409,7 +409,7 @@ struct PrivateAudioDiscoveryTests {
       "Conversation Awareness writes through the singular endpoint"
     )
   }
-  
+
   @Test
   func catalogedPluralOnlyEmptyModesIsRejected() throws {
     let catalogedPlural = FakeReadOnlyRawDevice(
@@ -421,10 +421,10 @@ struct PrivateAudioDiscoveryTests {
       rawDevices: [catalogedPlural],
       logger: DebugLogger(enabled: false)
     ).selectDevice(named: nil)
-  
+
     #expect(selected == nil, "product catalog membership never proves runtime control capability")
   }
-  
+
   @Test
   func catalogedEmptyPluralDoesNotBlockControllableEmptyModeSingular() throws {
     let plural = FakeReadOnlyRawDevice(
@@ -442,7 +442,7 @@ struct PrivateAudioDiscoveryTests {
       endpoints: PrivateAudioContextEndpoints(plural: [plural], singular: singular),
       logger: DebugLogger(enabled: false)
     ).selectDevice(named: nil)
-  
+
     #expect(selected?.object === singular, "the controllable singular endpoint is selected")
     let observation = selected?.setConversationAwarenessAndReadBack(true, wait: { _ in })
     #expect(observation?.observed == true, "the empty-mode singular keeps direct CA control")
@@ -451,6 +451,6 @@ struct PrivateAudioDiscoveryTests {
       "the cataloged non-controllable plural never shadows the singular setter"
     )
   }
-  
-  
+
+
 }

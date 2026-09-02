@@ -171,4 +171,3 @@ private func testDigestKey(salt: Data, rawDeviceUID: String) -> String? {
   hasher.update(data: Data(rawDeviceUID.utf8))
   return hasher.finalize().map { String(format: "%02x", $0) }.joined()
 }
-

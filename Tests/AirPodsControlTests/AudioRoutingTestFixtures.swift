@@ -319,4 +319,3 @@ func makeBluetoothController(
     activeProbe: activeProbe
   )
 }
-

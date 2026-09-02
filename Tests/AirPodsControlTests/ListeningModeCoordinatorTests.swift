@@ -130,7 +130,7 @@ struct ListeningModeCoordinatorTests {
       "a resolved AV read error is not replaced by the HAL discovery error"
     )
   }
-  
+
   @Test
   func listeningModeCoordinatorRouteAndPreflightSelection() throws {
     let selectedAV = FakeListeningModeTransport(
@@ -157,7 +157,7 @@ struct ListeningModeCoordinatorTests {
         && selectedHAL.canSetCount == 0,
       "a command-ready AV preflight never consults HAL"
     )
-  
+
     let unselectedAV = FakeListeningModeTransport(name: "Travel AirPods", kind: .av)
     let unselectedHAL = FakeListeningModeTransport(
       name: "Travel AirPods",
@@ -178,7 +178,7 @@ struct ListeningModeCoordinatorTests {
     #expect(unselectedAV.readCurrentCount == 0, "proven unselected route does not preflight AV")
     #expect(unselectedAV.setterTargets.isEmpty, "proven unselected route never writes through AV")
     #expect(unselectedHAL.setterTargets == [.adaptive], "proven unselected route writes through HAL")
-  
+
     let incompleteAV = FakeListeningModeTransport(
       name: "Fallback AirPods",
       kind: .av,
@@ -206,7 +206,7 @@ struct ListeningModeCoordinatorTests {
     #expect(incompleteAV.setterTargets.isEmpty, "failed AV preflight performs no setter")
     #expect(fallbackHAL.setterTargets == [.adaptive], "HAL handles the preflight fallback")
   }
-  
+
   @Test
   func listeningModeCoordinatorPreservesAVUnknownStateWrites() throws {
     let setAV = FakeListeningModeTransport(
@@ -220,7 +220,7 @@ struct ListeningModeCoordinatorTests {
     )
     #expect(setOutcome.plain == "ok", "AV set preserves its unknown-current behavior")
     #expect(setAV.setterTargets == [.adaptive], "AV set with unknown current writes once")
-  
+
     let cycleAV = FakeListeningModeTransport(
       name: "Unknown Cycle AirPods",
       kind: .av,
@@ -236,7 +236,7 @@ struct ListeningModeCoordinatorTests {
     )
     #expect(cycleAV.setterTargets == [.transparency], "unknown AV cycle writes its first target")
   }
-  
+
   @Test
   func listeningModeCoordinatorReadsOnlyCommandRequirements() throws {
     let getTransport = FakeListeningModeTransport(
@@ -252,7 +252,7 @@ struct ListeningModeCoordinatorTests {
     #expect(getTransport.readCurrentCount == 1, "get reads current exactly once")
     #expect(getTransport.readModesCount == 0, "get does not read mode inventory")
     #expect(getTransport.canSetCount == 0, "get does not inspect setter writability")
-  
+
     let listTransport = FakeListeningModeTransport(
       name: "List AirPods",
       kind: .hal,
@@ -268,7 +268,7 @@ struct ListeningModeCoordinatorTests {
     #expect(listTransport.readModesCount == 1, "list reads inventory exactly once")
     #expect(listTransport.canSetCount == 0, "list does not inspect setter writability")
   }
-  
+
   @Test
   func listeningModeCoordinatorNeverFallsBackAfterASetter() throws {
     let av = FakeListeningModeTransport(
@@ -291,7 +291,7 @@ struct ListeningModeCoordinatorTests {
     #expect(av.setterTargets == [.adaptive], "selected provider performs exactly one setter")
     #expect(hal.setterTargets.isEmpty, "a post-setter failure never falls through to HAL")
   }
-  
+
   @Test
   func listeningModeCoordinatorAmbiguityAndDecline() throws {
     let first = FakeListeningModeTransport(name: "Desk AirPods", kind: .hal)
@@ -300,7 +300,7 @@ struct ListeningModeCoordinatorTests {
       candidate(name: "Desk AirPods", hal: first, route: .notSelected),
       candidate(name: "Travel AirPods", hal: second, route: .notSelected),
     ]
-  
+
     let ambiguous = try coordinatorOutcome(["lm", "get", "--json"], candidates: candidates)
     #expect(ambiguous.plain == "ambiguous-device", "noninteractive ambiguity is specific")
     #expect(ambiguous.exitCode == 8, "ambiguous device exits eight")
@@ -309,21 +309,21 @@ struct ListeningModeCoordinatorTests {
       "ambiguous JSON has its specific error"
     )
     #expect(ambiguous.payload["listeningMode"] is NSNull, "ambiguous state is JSON null")
-  
+
     let chosen = try coordinatorOutcome(
       ["lm", "get"],
       candidates: candidates,
       choice: .selected(index: 1)
     )
     #expect(chosen.payload["device"] as? String == "Travel AirPods", "chooser index selects target")
-  
+
     let declined = try coordinatorOutcome(
       ["lm", "get"],
       candidates: candidates,
       choice: .unavailable
     )
     #expect(declined.plain == "ambiguous-device", "declining keeps ambiguity explicit")
-  
+
     let duplicateNameCandidates = [
       candidate(name: "Same AirPods", hal: first, route: .notSelected),
       candidate(name: "Same AirPods", hal: second, route: .notSelected),
@@ -335,7 +335,7 @@ struct ListeningModeCoordinatorTests {
     )
     #expect(duplicate.plain == "ambiguous-device", "duplicate exact names never prompt or select")
   }
-  
+
   @Test
   func listeningModeCoordinatorTreatsSelectedAndInactiveAsAmbiguous() throws {
     let selectedAV = FakeListeningModeTransport(name: "Selected AirPods", kind: .av)
@@ -344,16 +344,16 @@ struct ListeningModeCoordinatorTests {
       candidate(name: "Selected AirPods", av: selectedAV, route: .selected),
       candidate(name: "Inactive AirPods", hal: inactiveHAL, route: .notSelected),
     ]
-  
+
     let outcome = try coordinatorOutcome(
       ["lm", "set", "adaptive"],
       candidates: candidates
     )
-  
+
     #expect(outcome.plain == "ambiguous-device", "route selection does not hide another target")
     #expect(selectedAV.setterTargets.isEmpty, "ambiguous selected AV target is not written")
     #expect(inactiveHAL.setterTargets.isEmpty, "the inactive HAL target remains untouched")
-  
+
     let otherSelectedAV = FakeListeningModeTransport(name: "Other AirPods", kind: .av)
     let ambiguousOutcome = try coordinatorOutcome(
       ["lm", "set", "adaptive"],
@@ -361,13 +361,13 @@ struct ListeningModeCoordinatorTests {
         candidate(name: "Other AirPods", av: otherSelectedAV, route: .selected)
       ]
     )
-  
+
     #expect(ambiguousOutcome.plain == "ambiguous-device", "multiple selected AV targets fail closed")
     #expect(selectedAV.setterTargets.isEmpty, "ambiguous resolution does not write")
     #expect(otherSelectedAV.setterTargets.isEmpty, "an ambiguous selected AV target is not written")
     #expect(inactiveHAL.setterTargets.isEmpty, "ambiguous resolution does not write the HAL target")
   }
-  
+
   @Test
   func listeningModeCoordinatorKeepsHALIdentitySeparateFromAVNames() throws {
     let logger = DebugLogger(enabled: false)
@@ -415,7 +415,7 @@ struct ListeningModeCoordinatorTests {
     } else {
       Issue.record("a shared AV/HAL name identifies one selected logical target")
     }
-  
+
     let pluralRaw = FakeRawDevice(name: "Nearby AirPods")
     let pluralAV = PrivateAudioDevice.compatible(
       object: pluralRaw,
@@ -444,7 +444,7 @@ struct ListeningModeCoordinatorTests {
     } else {
       Issue.record("the unique unselected HAL name resolves without ambiguity")
     }
-  
+
     let independentAV = FakeListeningModeTransport(
       name: "Desk AirPods",
       kind: .av
@@ -462,7 +462,7 @@ struct ListeningModeCoordinatorTests {
     )
     #expect(independentAV.setterTargets.isEmpty, "ambiguous AV target is not written")
     #expect(unselectedHAL.setterTargets.isEmpty, "ambiguous HAL target is not written")
-  
+
     let otherRaw = FakeRawDevice(name: "Travel AirPods")
     let otherAV = PrivateAudioDevice.compatible(
       object: otherRaw,
@@ -490,7 +490,7 @@ struct ListeningModeCoordinatorTests {
     } else {
       Issue.record("a unique AV-only name remains reachable")
     }
-  
+
     var chooserCalled = false
     let unnamedMixed = mixedCoordinator.resolve(
       command: .get,
@@ -505,7 +505,7 @@ struct ListeningModeCoordinatorTests {
       Issue.record("unnamed mixed providers remain ambiguous")
     }
     #expect(chooserCalled, "independent AV rows participate in the chooser")
-  
+
     let avOnlyCoordinator = ListeningModeCoordinator(
       avDevices: [pluralAV, otherAV],
       halCandidates: [],
@@ -521,7 +521,7 @@ struct ListeningModeCoordinatorTests {
       Issue.record("HAL absence never selects the first AV candidate")
     }
   }
-  
+
   @Test
   func hALListeningModeTranslationAndOffLimitation() throws {
     let backend = FakeHALRoutingBackend()
@@ -534,7 +534,7 @@ struct ListeningModeCoordinatorTests {
       backend: backend,
       logger: DebugLogger(enabled: false)
     )
-  
+
     #expect(transport.currentListeningMode() == .off, "HAL translates raw current Off")
     #expect(
       transport.availableListeningModes()
@@ -545,13 +545,13 @@ struct ListeningModeCoordinatorTests {
     #expect(changed.setterAccepted, "HAL accepts a mask-proven non-Off target")
     #expect(changed.observed == .adaptive, "HAL reads back the requested normalized state")
     #expect(backend.writtenValues == [4], "HAL writes the exact Adaptive UInt32")
-  
+
     backend.rawModeRead = .value(1)
     let off = transport.setListeningModeAndReadBack(.off)
     #expect(!off.setterAccepted, "HAL production transport rejects Off pending discovery")
     #expect(off.observed == .off, "rejected HAL Off retains the observed current state")
     #expect(backend.writtenValues == [4], "HAL Off rejection performs no setter")
-  
+
     backend.rawModeRead = .value(99)
     #expect(transport.currentListeningMode() == nil, "unknown HAL current raw value fails closed")
     let writeCountBeforeUnknown = backend.writtenValues.count

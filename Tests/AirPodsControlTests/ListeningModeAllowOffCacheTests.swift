@@ -214,7 +214,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         saltGenerator: { allowOffCacheTestSalt }
       )
       let rawUID = "AppleHDAEngineOutput:AirPods:CaseSensitive-UID"
-  
+
       #expect(cache.lookup(rawDeviceUID: rawUID) == .miss, "missing cache is a miss")
       #expect(
         !FileManager.default.fileExists(atPath: fileURL.deletingLastPathComponent().path),
@@ -228,7 +228,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         ) == .applied,
         "positive Allow Off evidence is stored"
       )
-  
+
       guard let original = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
         Issue.record("stored Allow Off evidence is returned")
         return
@@ -242,7 +242,7 @@ struct PersistentListeningModeAllowOffCacheTests {
           == clock.value.addingTimeInterval(PersistentListeningModeAllowOffCache.defaultTTL),
         "cache reports the fixed seven-day expiry"
       )
-  
+
       clock.value = clock.value.addingTimeInterval(123)
       guard let later = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
         Issue.record("unexpired Allow Off evidence remains a hit")
@@ -281,7 +281,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         ) == .applied,
         "cache writes a privacy-preserving document"
       )
-  
+
       let directoryURL = fileURL.deletingLastPathComponent()
       let lockURL = directoryURL.appendingPathComponent("allow-off-v1.lock")
       #expect(
@@ -308,7 +308,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         excludedPaths.contains(lockURL.path),
         "allow-off cache marks its lock file as excluded from backup"
       )
-  
+
       guard let data = try? Data(contentsOf: fileURL),
         let text = String(data: data, encoding: .utf8),
         let object = allowOffCacheJSON(at: fileURL),
@@ -340,7 +340,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         !directoryNames.contains(where: { $0.hasSuffix(".tmp") }),
         "atomic cache replacement leaves no temporary file"
       )
-  
+
       let reopened = PersistentListeningModeAllowOffCache(
         fileURL: fileURL,
         now: clock.read,
@@ -367,7 +367,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         saltGenerator: { allowOffCacheTestSalt }
       )
       let rawUID = "conditional-eviction-uid"
-  
+
       _ = cache.applyObservation(
         rawDeviceUID: rawUID,
         allowsOff: true,
@@ -400,7 +400,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         "current opaque record evicts its exact evidence"
       )
       #expect(cache.lookup(rawDeviceUID: rawUID) == .miss, "record eviction removes evidence")
-  
+
       _ = cache.applyObservation(
         rawDeviceUID: "first",
         allowsOff: true,
@@ -450,7 +450,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         saltGenerator: { allowOffCacheTestSalt }
       )
       let rawUID = "denial-omission-positive-uid"
-  
+
       #expect(
         cache.applyObservation(
           rawDeviceUID: rawUID,
@@ -465,7 +465,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         Issue.record("persistent cache returns the initial denial")
         return
       }
-  
+
       let omissionObservedAt = denialObservedAt.addingTimeInterval(10)
       clock.value = omissionObservedAt
       #expect(
@@ -486,7 +486,7 @@ struct PersistentListeningModeAllowOffCacheTests {
           && preservedDenial.evidence.expiresAt == initialDenial.evidence.expiresAt,
         "an omission does not extend the denial TTL"
       )
-  
+
       let positiveObservedAt = denialObservedAt.addingTimeInterval(20)
       clock.value = positiveObservedAt
       #expect(
@@ -543,7 +543,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) != nil,
         "rebuilt cache returns its positive evidence"
       )
-  
+
       do {
         try FileManager.default.setAttributes(
           [.posixPermissions: NSNumber(value: 0o644)],
@@ -622,7 +622,7 @@ struct PersistentListeningModeAllowOffCacheTests {
       let directoryURL = fileURL.deletingLastPathComponent()
       let externalURL = directoryURL.appendingPathComponent("external.json")
       let externalData = Data("external-cache-target".utf8)
-  
+
       #expect(
         cache.applyObservation(
           rawDeviceUID: rawUID,
@@ -678,7 +678,7 @@ struct PersistentListeningModeAllowOffCacheTests {
       let directoryURL = fileURL.deletingLastPathComponent()
       let externalURL = directoryURL.appendingPathComponent("hard-link-target.json")
       let externalData = Data("hard-link-cache-target".utf8)
-  
+
       #expect(
         cache.applyObservation(
           rawDeviceUID: rawUID,
@@ -1078,7 +1078,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         allowsOff: true,
         observedAt: Date()
       )
-  
+
       withHeldAllowOffCacheFileLock(fileURL: fileURL) {
         let startedAt = DispatchTime.now().uptimeNanoseconds
         let result = cache.applyObservation(
@@ -1123,7 +1123,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         allowsOff: true,
         observedAt: observedAt
       )
-  
+
       var result: AllowOffCacheMutation = .unavailable
       let waiter = Thread {
         result = cache.applyObservation(
@@ -1167,7 +1167,7 @@ struct PersistentListeningModeAllowOffCacheTests {
       let rawUID = "ordered-observation-uid"
       let older = current.addingTimeInterval(-20)
       let newer = current.addingTimeInterval(-10)
-  
+
       clock.value = newer
       #expect(
         cache.applyObservation(
@@ -1215,7 +1215,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         ) == .applied,
         "newer negative observation removes older evidence"
       )
-  
+
       #expect(
         cache.applyObservation(
           rawDeviceUID: rawUID,
@@ -1294,7 +1294,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         }
       }
       group.wait()
-  
+
       let reopened = PersistentListeningModeAllowOffCache(
         fileURL: fileURL,
         now: clock.read,
@@ -1381,7 +1381,7 @@ struct PersistentListeningModeAllowOffCacheTests {
         Issue.record("in-memory cache returns the initial denial")
         return
       }
-  
+
       let omissionObservedAt = denialObservedAt.addingTimeInterval(10)
       clock.value = omissionObservedAt
       #expect(
@@ -1402,7 +1402,7 @@ struct PersistentListeningModeAllowOffCacheTests {
           && preservedDenial.evidence.expiresAt == initialDenial.evidence.expiresAt,
         "in-memory omission does not extend the denial TTL"
       )
-  
+
       let positiveObservedAt = denialObservedAt.addingTimeInterval(20)
       clock.value = positiveObservedAt
       #expect(

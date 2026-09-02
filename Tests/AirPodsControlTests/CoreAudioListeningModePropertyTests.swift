@@ -99,13 +99,13 @@ private final class FakeCoreAudioPropertyAccess: CoreAudioPropertyAccess {
 
 @Suite("Core Audio listening mode properties")
 struct CoreAudioListeningModePropertyTests {
-  
+
   @Test
   func coreAudioListeningModeRawReadsAreRuntimeGatedAndExactlyUInt32() throws {
     let deviceID = AudioDeviceID(91)
     let listeningModeSelector = AudioObjectPropertySelector(0x6C73_746D) // lstm
     let listeningModeSupportSelector = AudioObjectPropertySelector(0x6C73_6D73) // lsms
-  
+
     let missingAccess = FakeCoreAudioPropertyAccess()
     missingAccess.propertyPresent = false
     let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
@@ -121,7 +121,7 @@ struct CoreAudioListeningModePropertyTests {
       missingAccess.sizeReads.isEmpty && missingAccess.valueReads.isEmpty,
       "a missing property is never sized or read"
     )
-  
+
     let access = FakeCoreAudioPropertyAccess()
     let backend = CoreAudioRoutingBackend(propertyAccess: access)
     #expect(
@@ -139,7 +139,7 @@ struct CoreAudioListeningModePropertyTests {
         == 0xA5A5_5A5A,
       "lsms exposes the exact raw UInt32 value without mapping it"
     )
-  
+
     let listeningModeAddress = RecordedCoreAudioPropertyAddress(
       deviceID,
       AudioObjectPropertyAddress(
@@ -168,13 +168,13 @@ struct CoreAudioListeningModePropertyTests {
       "both raw properties are sized before their exact reads"
     )
   }
-  
+
   @Test
   func coreAudioListeningModeRawReadsPreserveSizeAndReadFailures() throws {
     let deviceID = AudioDeviceID(92)
     let sizeFailure: OSStatus = -7_001
     let readFailure: OSStatus = -7_002
-  
+
     let sizeFailureAccess = FakeCoreAudioPropertyAccess()
     sizeFailureAccess.dataSizeStatus = sizeFailure
     let sizeFailureBackend = CoreAudioRoutingBackend(propertyAccess: sizeFailureAccess)
@@ -187,7 +187,7 @@ struct CoreAudioListeningModePropertyTests {
       sizeFailureAccess.valueReads.isEmpty,
       "a failed size query prevents a value read"
     )
-  
+
     for malformedSize in [UInt32(0), UInt32(3), UInt32(8)] {
       let malformedAccess = FakeCoreAudioPropertyAccess()
       malformedAccess.reportedDataSize = malformedSize
@@ -202,7 +202,7 @@ struct CoreAudioListeningModePropertyTests {
         "a malformed lsms size is rejected before reading"
       )
     }
-  
+
     let readFailureAccess = FakeCoreAudioPropertyAccess()
     readFailureAccess.readStatus = readFailure
     let readFailureBackend = CoreAudioRoutingBackend(propertyAccess: readFailureAccess)
@@ -211,7 +211,7 @@ struct CoreAudioListeningModePropertyTests {
         == readFailure,
       "a lstm read OSStatus is preserved"
     )
-  
+
     let changedSizeAccess = FakeCoreAudioPropertyAccess()
     changedSizeAccess.returnedDataSize = 2
     let changedSizeBackend = CoreAudioRoutingBackend(propertyAccess: changedSizeAccess)
@@ -221,7 +221,7 @@ struct CoreAudioListeningModePropertyTests {
       "lstm rejects a read that changes the returned payload size"
     )
   }
-  
+
   @Test
   func coreAudioListeningModeSettableCheckIsTypedAndRuntimeGated() throws {
     let deviceID = AudioDeviceID(93)
@@ -233,7 +233,7 @@ struct CoreAudioListeningModePropertyTests {
         mElement: kAudioObjectPropertyElementMain
       )
     )
-  
+
     let missingAccess = FakeCoreAudioPropertyAccess()
     missingAccess.propertyPresent = false
     let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
@@ -245,7 +245,7 @@ struct CoreAudioListeningModePropertyTests {
       missingAccess.settableReads.isEmpty,
       "a missing lstm property is not queried for settable state"
     )
-  
+
     let failureAccess = FakeCoreAudioPropertyAccess()
     failureAccess.settableStatus = -7_003
     let failureBackend = CoreAudioRoutingBackend(propertyAccess: failureAccess)
@@ -254,7 +254,7 @@ struct CoreAudioListeningModePropertyTests {
         == -7_003,
       "the settable-query OSStatus is preserved"
     )
-  
+
     for expected in [false, true] {
       let access = FakeCoreAudioPropertyAccess()
       access.propertySettable = expected
@@ -270,7 +270,7 @@ struct CoreAudioListeningModePropertyTests {
       )
     }
   }
-  
+
   @Test
   func coreAudioListeningModeWritePreservesRawUInt32AndOSStatus() throws {
     let deviceID = AudioDeviceID(94)
@@ -278,7 +278,7 @@ struct CoreAudioListeningModePropertyTests {
     let access = FakeCoreAudioPropertyAccess()
     let backend = CoreAudioRoutingBackend(propertyAccess: access)
     let rawValues: [UInt32] = [0, 1, 4, UInt32.max]
-  
+
     for rawValue in rawValues {
       #expect(
         backend.writeBluetoothListeningMode(rawValue, for: deviceID) == .success,
@@ -302,18 +302,18 @@ struct CoreAudioListeningModePropertyTests {
       },
       "every lstm write uses the global/main address"
     )
-  
+
     access.writeStatus = -7_004
     #expect(
       backend.writeBluetoothListeningMode(3, for: deviceID) == .failure(-7_004),
       "the lstm write OSStatus is preserved"
     )
   }
-  
+
   @Test
   func coreAudioListeningModeWriteHonorsAvailabilityAndSettableState() throws {
     let deviceID = AudioDeviceID(95)
-  
+
     let missingAccess = FakeCoreAudioPropertyAccess()
     missingAccess.propertyPresent = false
     let missingBackend = CoreAudioRoutingBackend(propertyAccess: missingAccess)
@@ -322,7 +322,7 @@ struct CoreAudioListeningModePropertyTests {
       "a write reports unavailable when lstm is missing"
     )
     #expect(missingAccess.writes.isEmpty, "a missing property is never written")
-  
+
     let readOnlyAccess = FakeCoreAudioPropertyAccess()
     readOnlyAccess.propertySettable = false
     let readOnlyBackend = CoreAudioRoutingBackend(propertyAccess: readOnlyAccess)
@@ -331,7 +331,7 @@ struct CoreAudioListeningModePropertyTests {
       "a read-only lstm property reports not-settable"
     )
     #expect(readOnlyAccess.writes.isEmpty, "a read-only property is never written")
-  
+
     let settableFailureAccess = FakeCoreAudioPropertyAccess()
     settableFailureAccess.settableStatus = -7_005
     let settableFailureBackend = CoreAudioRoutingBackend(
@@ -346,7 +346,7 @@ struct CoreAudioListeningModePropertyTests {
       settableFailureAccess.writes.isEmpty,
       "a failed settable query never reaches the write"
     )
-  
+
     let sizeFailureAccess = FakeCoreAudioPropertyAccess()
     sizeFailureAccess.dataSizeStatus = -7_006
     let sizeFailureBackend = CoreAudioRoutingBackend(
@@ -361,7 +361,7 @@ struct CoreAudioListeningModePropertyTests {
       sizeFailureAccess.writes.isEmpty,
       "a failed write-size query never reaches the setter"
     )
-  
+
     let malformedSizeAccess = FakeCoreAudioPropertyAccess()
     malformedSizeAccess.reportedDataSize = 8
     let malformedSizeBackend = CoreAudioRoutingBackend(
@@ -393,4 +393,3 @@ private func routingIsUnavailable<Value>(_ read: AudioRoutingRead<Value>) -> Boo
   if case .unavailable = read { return true }
   return false
 }
-

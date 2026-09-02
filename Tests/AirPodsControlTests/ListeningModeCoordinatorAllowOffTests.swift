@@ -40,7 +40,7 @@ private func allowOffCacheFixture(
 
 @Suite("Listening mode Allow Off coordinator flows")
 struct ListeningModeCoordinatorAllowOffTests {
-  
+
   @Test
   func listeningModeAllowOffCacheConsumptionAndPrivacyMetadata() throws {
     var clock = Date(timeIntervalSince1970: 2_000_000_000)
@@ -52,7 +52,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       allowsOff: true,
       observedAt: clock
     )
-  
+
     let halCandidate = ListeningModeCandidate(
       displayName: "Cached AirPods",
       selectableNames: ["Cached AirPods"],
@@ -85,7 +85,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     )!
     #expect(!serialized.contains("uid-42"), "cache JSON never includes the Core Audio UID")
     #expect(!serialized.contains("a5a5"), "cache JSON never includes cache key material")
-  
+
     let debugCorrelation = ListeningModeAllowOffCorrelation(
       targetAudioDeviceID: 42,
       collisionAudioDeviceIDs: [42],
@@ -107,7 +107,7 @@ struct ListeningModeCoordinatorAllowOffTests {
         && debugOutput?.contains("a5a5") == false,
       "cache debug output never contains correlation material"
     )
-  
+
     let uidReadsAfterList = backend.deviceUIDReads.count
     let getOutcome = try coordinatorOutcome(["lm", "get"], candidates: [halCandidate])
     #expect(getOutcome.plain == "noise-cancellation", "HAL get retains current-mode behavior")
@@ -119,7 +119,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       getOutcome.payload["allowOffAvailability"] == nil,
       "HAL get has no cache provenance even when current state is Off-capable"
     )
-  
+
     clock.addTimeInterval(PersistentListeningModeAllowOffCache.defaultTTL)
     let expired = try coordinatorOutcome(["lm", "list"], candidates: [halCandidate])
     #expect(
@@ -127,11 +127,11 @@ struct ListeningModeCoordinatorAllowOffTests {
       "evidence expires after a non-sliding seven-day TTL"
     )
   }
-  
+
   @Test
   func listeningModeAllowOffProbeAndCycleWorkflow() throws {
     let clock = Date(timeIntervalSince1970: 2_000_000_125)
-  
+
     func fixture(
       transport: FakeListeningModeTransport
     ) -> (
@@ -150,7 +150,7 @@ struct ListeningModeCoordinatorAllowOffTests {
         )
       )
     }
-  
+
     let successfulTransport = FakeListeningModeTransport(
       name: "Successful Probe AirPods",
       kind: .hal,
@@ -168,7 +168,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("a successful correlated probe stores positive evidence")
     }
-  
+
     successfulTransport.current = .noiseCancellation
     let defaultCycle = try coordinatorOutcome(
       ["lm", "cycle"],
@@ -185,7 +185,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       successfulTransport.allowOffWrites == [true, false, true],
       "only explicit Off writes use the Allow Off path"
     )
-  
+
     let deniedTransport = FakeListeningModeTransport(
       name: "Denied Probe AirPods",
       kind: .hal,
@@ -205,7 +205,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     }
     _ = try coordinatorOutcome(["lm", "set", "off"], candidates: [denied.candidate])
     #expect(deniedTransport.setterTargets == [.off], "cached denial prevents a repeated probe")
-  
+
     let rejectedTransport = FakeListeningModeTransport(
       name: "Rejected Probe AirPods",
       kind: .hal,
@@ -221,7 +221,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     )
     #expect(rejectedOutcome.plain == "unavailable", "a rejected probe setter is unavailable")
     #expect(rejected.cache.lookup(rawDeviceUID: "uid-42") == .miss, "rejection stores no denial")
-  
+
     let unreadableTransport = FakeListeningModeTransport(
       name: "Unreadable Probe AirPods",
       kind: .hal,
@@ -238,7 +238,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     #expect(unreadableOutcome.plain == "no-op", "an unreadable accepted probe is no-op")
     #expect(unreadable.cache.lookup(rawDeviceUID: "uid-42") == .miss, "unreadable final state stores no denial")
   }
-  
+
   @Test
   func listeningModeWritePlanOwnsHALAllowOffPolicy() throws {
     let clock = Date(timeIntervalSince1970: 2_000_000_150)
@@ -261,7 +261,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       route: .notSelected,
       allowOffCorrelation: fixture.correlation
     )
-  
+
     let accepted = try coordinatorOutcome(
       ["lm", "set", "off"],
       candidates: [halCandidate]
@@ -271,7 +271,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       hal.allowOffWrites == [true],
       "HAL authorization reaches a non-concrete transport without an executor cast"
     )
-  
+
     hal.current = .noiseCancellation
     hal.appliesWrites = false
     hal.dropsWriteReadback = true
@@ -284,7 +284,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       unknownReadback.payload["listeningMode"] is NSNull,
       "authorized HAL Off never invents a Transparency fallback"
     )
-  
+
     let av = FakeListeningModeTransport(
       name: "Planned AirPods",
       kind: .av,
@@ -296,7 +296,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     )
     #expect(avOutcome.plain == "ok", "live AV Off remains writable")
     #expect(av.allowOffWrites == [false], "AV writes do not consume HAL authorization")
-  
+
     let ordinaryHAL = OrdinaryHALListeningModeTransport(
       wrapped: FakeListeningModeTransport(
         name: "Ordinary HAL AirPods",
@@ -315,7 +315,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       "a HAL write plan requires the explicit Allow Off capability"
     )
   }
-  
+
   @Test
   func listeningModeAllowOffMismatchEvictsAcceptedDefinitiveEvidence() throws {
     var clock = Date(timeIntervalSince1970: 2_000_000_200)
@@ -336,7 +336,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       route: .notSelected,
       allowOffCorrelation: fixture.correlation
     )
-  
+
     let mismatch = try coordinatorOutcome(
       ["lm", "set", "off", "--json"],
       candidates: [halCandidate]
@@ -354,7 +354,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("accepted definitive mismatch records denial evidence")
     }
-  
+
     clock.addTimeInterval(1)
     _ = fixture.cache.applyObservation(
       rawDeviceUID: "uid-42",
@@ -368,7 +368,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("setter rejection leaves positive evidence unchanged")
     }
-  
+
     let av = FakeListeningModeTransport(
       name: "Cached AirPods",
       kind: .av,
@@ -395,7 +395,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("an accepted definitive AV mismatch records denial evidence")
     }
-  
+
     backend.writeResult = .success
     backend.resetWrites()
     let listAfterMismatch = try coordinatorOutcome(
@@ -407,7 +407,7 @@ struct ListeningModeCoordinatorAllowOffTests {
         == false,
       "HAL list fails closed after an AV mismatch evicts positive evidence"
     )
-  
+
     let setAfterMismatch = try coordinatorOutcome(
       ["lm", "set", "off", "--json"],
       candidates: [halCandidate]
@@ -415,7 +415,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     #expect(setAfterMismatch.plain == "unsupported", "cached denial makes HAL Off unsupported")
     #expect(backend.writtenValues.isEmpty, "cached denial prevents another HAL probe")
   }
-  
+
   @Test
   func listeningModeAllowOffAVMismatchPreservesEvidenceWhenAmbiguous() throws {
     let clock = Date(timeIntervalSince1970: 2_000_000_250)
@@ -434,7 +434,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       route: .selected,
       allowOffCorrelation: fixture.correlation
     )
-  
+
     let rejected = try coordinatorOutcome(
       ["lm", "set", "off", "--json"],
       candidates: [avCandidate]
@@ -444,7 +444,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("a rejected AV setter preserves fresh positive evidence")
     }
-  
+
     av.acceptsWrites = true
     av.dropsWriteReadback = true
     let unknown = try coordinatorOutcome(
@@ -457,7 +457,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       Issue.record("an unknown AV readback preserves fresh positive evidence")
     }
   }
-  
+
   @Test
   func listeningModeAllowOffAVEvidenceLifecycle() throws {
     var clock = Date(timeIntervalSince1970: 2_000_000_300)
@@ -492,14 +492,14 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("successful AV availability with Off refreshes positive evidence")
     }
-  
+
     av.modes = [.transparency, .adaptive, .noiseCancellation]
     _ = try coordinatorOutcome(["lm", "list"], candidates: [joined])
     if case .miss = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     } else {
       Issue.record("successful AV availability without Off deletes evidence")
     }
-  
+
     clock.addTimeInterval(1)
     av.current = .off
     let readsBeforeGet = av.readModesCount
@@ -509,14 +509,14 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("a live AV get that returns Off refreshes positive evidence")
     }
-  
+
     av.availabilityObservation = .unavailable
     _ = try coordinatorOutcome(["lm", "list"], candidates: [joined])
     if case .allowed = fixture.cache.lookup(rawDeviceUID: "uid-42") {
     } else {
       Issue.record("AV selector/read failure leaves evidence unchanged")
     }
-  
+
     _ = fixture.cache.applyObservation(
       rawDeviceUID: "uid-42",
       allowsOff: false,
@@ -529,7 +529,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     } else {
       Issue.record("a non-Off operation preserves existing denial evidence")
     }
-  
+
     clock.addTimeInterval(1)
     av.availabilityObservation = .value([
       .transparency,
@@ -544,7 +544,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       }(),
       "an AV omission preserves an unexpired denial"
     )
-  
+
     backend.resetWrites()
     let deniedHAL = ListeningModeCandidate(
       displayName: "Cached AirPods",
@@ -567,7 +567,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       "cached denial after AV omission avoids another HAL setter call"
     )
   }
-  
+
   @Test
   func listeningModeAllowOffAmbiguousCorrelation() throws {
     let clock = Date(timeIntervalSince1970: 2_000_000_300)
@@ -619,7 +619,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       "an explicit probe does not require cache correlation"
     )
   }
-  
+
   @Test
   func listeningModeAllowOffLiveFallback() throws {
     let liveBackend = FakeHALRoutingBackend()
