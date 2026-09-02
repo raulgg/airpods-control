@@ -30,8 +30,8 @@ here and avoid them.
 
 - Do not hand-edit `version.txt`, `.release-please-manifest.json`, or
   `CHANGELOG.md`. Let the release pull request do that.
-- Notes are `feat`, `fix`, and `perf` only. Hide `ci`, `chore`, `deps`,
-  `revert`, and the other non-user types in `changelog-sections`. After
+- Notes are `feat`, `fix`, `perf`, and `revert`. Hide `ci`, `chore`,
+  `deps`, and the other non-user types in `changelog-sections`. After
   changing that config, close the open draft release PR so a fresh one is
   generated.
 - Cherry-pick a patch onto `release/X.Y`. Do not merge a maintenance

@@ -61,12 +61,12 @@ then run the Release Please workflow from `main` with workflow dispatch. Never
 move, delete, or recreate a published tag. Correct bad source with a new patch
 release.
 
-Release notes include `feat`, `fix`, and `perf` commits. `ci`, `chore`,
-`test`, `docs`, `deps`, and `revert` are hidden in `changelog-sections`. A
-user-visible undo is a `fix:` titled for the wearer, not a raw `revert:`.
-After changing that config, close the open draft Release Please pull
-request. Release Please does not always strip a hidden section from an
-existing draft.
+Release notes include `feat`, `fix`, `perf`, and `revert` commits. `ci`,
+`chore`, `test`, `docs`, and `deps` are hidden in `changelog-sections`.
+Title a GitHub revert pull request `revert:` with what the wearer loses;
+GitHub's default `Revert "..."` title does not parse. After changing
+that config, close the open draft Release Please pull request. Release
+Please does not always strip a hidden section from an existing draft.
 
 ## Patch releases from a maintenance line
 
