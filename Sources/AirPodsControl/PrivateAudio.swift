@@ -39,7 +39,6 @@ enum PrivateAudioDiscoverySource: String, Hashable {
 
 enum PrivateAudioAccessPolicy {
   case operational
-  case status
   case supportReport
 }
 

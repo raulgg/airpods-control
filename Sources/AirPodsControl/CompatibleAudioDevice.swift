@@ -16,6 +16,8 @@ enum DeviceStatusField<State> {
   case readError
 }
 
+extension DeviceStatusField: Equatable where State: Equatable {}
+
 // Audio-device selection has no unsupported state: every compatible device
 // can be compared with the selected route when its identity is available.
 // Unresolved means that comparison could not be made safely; readError means
@@ -40,6 +42,56 @@ enum DeviceSelection<Value> {
   case selected([Value])
   case noDevice
   case ambiguousDevice
+}
+
+enum DeviceDisplayName {
+  static func matches(_ lhs: String, _ rhs: String) -> Bool {
+    lhs.localizedCaseInsensitiveCompare(rhs) == .orderedSame
+  }
+}
+
+enum DeviceNameSelection {
+  static func select<T>(
+    _ items: [T],
+    named requestedName: String?,
+    name: (T) -> String?,
+    policy: DeviceSelectionPolicy,
+    logger: DebugLogger
+  ) -> DeviceSelection<T> {
+    if let requestedName {
+      let matches = items.filter { item in
+        guard let itemName = name(item) else { return false }
+        return DeviceDisplayName.matches(itemName, requestedName)
+      }
+      guard let selected = matches.first else {
+        logger.warning("device_selection", "no-exact-name-match")
+        return .noDevice
+      }
+      guard matches.count == 1 else {
+        logger.warning("device_selection", "ambiguous-device-name")
+        return .ambiguousDevice
+      }
+      logger.info("selected_device", name(selected))
+      return .selected([selected])
+    }
+
+    guard !items.isEmpty else {
+      logger.warning("device_selection", "no-compatible-device")
+      return .noDevice
+    }
+    switch policy {
+    case .singleOrExact:
+      guard items.count == 1, let selected = items.first else {
+        logger.warning("device_selection", "ambiguous-device")
+        return .ambiguousDevice
+      }
+      logger.info("selected_device", name(selected))
+      return .selected([selected])
+    case .allOrExact:
+      logger.info("selected_device_count", items.count)
+      return .selected(items)
+    }
+  }
 }
 
 enum CommandDeviceResolution {

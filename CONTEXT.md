@@ -75,16 +75,54 @@
   reports that it is not settable before accepting a side effect. It is not
   evidence that the target definitively excludes the operation.
 
+**Bluetooth setup**
+: The only command that may request Bluetooth permission. It also enables BLE
+  ear placement for this CLI. It does not change the radio or enroll an
+  accessory. `bluetooth disable` stops CLI scans. It does not change macOS
+  permission or delete associations. Ordinary `status` never requests
+  permission. If setup is missing or unusable, HAL still runs.
+
 **Status snapshot**
 : A read-only observation of selection, listening mode, Conversation Awareness,
-  and left/right ear placement for one compatible device. One invocation reads
+  and left/right ear placement for one record in the status inventory. BLE-only
+  records are snapshots without a compatible audio device. One invocation reads
   the available Core Audio inventory and shares the same input and output route
   observations across all records. A field contains a value,
   proven-unsupported result, unresolved result, or read error. Unresolved fields
   and read errors are displayed as `unknown`; read errors also name the affected
   field. Unsupported feature fields are omitted. Records follow the adapter's
   deduplicated inventory order, with output endpoints preferred, but that order
-  is not a stable interface.
+  is not a stable interface. HAL ear placement outranks BLE. BLE is used only
+  when the Core Audio endpoint is missing or HAL placement is unsupported. It
+  does not replace unknown, conflicting, or failed HAL reads.
+
+**Enrolled BLE accessory**
+: A device the CLI has bound to one public CoreBluetooth identifier, either
+  automatically or through `bluetooth enroll`. Enrollment is not macOS pairing
+  and is not proof of ownership. The saved Core Audio name is for display and
+  `--device` only. UID digests can recognize the same endpoint later. They
+  cannot prove that the first Core Audio-to-BLE match was correct. Manual
+  verification outranks automatic evidence. Neither may replace a different
+  identifier. If the association is lost or the identifier changes, placement
+  stays unknown until the accessory is unenrolled and enrolled again.
+  _Avoid_: Paired BLE device, authenticated accessory
+
+**BLE association evidence**
+: The local record that keeps an enrollment across invocations: association ID,
+  public CoreBluetooth identifier, salted Core Audio UID digests, product,
+  display name, learning progress, and provenance. Raw frames, RSSI, battery,
+  and status history stay out. Status still needs a matching frame from the
+  current scan.
+
+**BLE ear-placement observation**
+: Left and right placement for an enrolled accessory, taken from the current
+  AirPods scan. It is not cached state, and it does not prove the accessory is
+  a current audio endpoint. Enrollment alone does not create a status record.
+  Missing, silent, ambiguous, or conflicting BLE evidence stays unknown. It
+  never proves out-of-ear. Only the verified two-earbud AirPods product IDs
+  qualify. AirPods Max, Beats, clones, and unknown products do not. The scan
+  needs at least two frames, and every normalized pair must agree. A fresh
+  advertisement can still carry stale sensor bits.
 
 **Status device inventory**
 : The status-only inventory from public `kAudioHardwarePropertyDevices`. An
@@ -97,7 +135,9 @@
   directions. The output endpoint is preferred. A Core Audio name supplies the
   heading and `--device` target but is not used as identity. Because the
   inventory is independent of the selected defaults, input-only and unselected
-  devices remain visible.
+  devices remain visible. If no eligible endpoint exists, a matching observation
+  from the current BLE scan can add an enrolled accessory. That record does not
+  mean the accessory is selected for audio.
 
 **Selected audio device**
 : A device whose identity exactly matches the macOS default route for ordinary
@@ -151,10 +191,12 @@
   values are not listening modes until their adapter translates them.
 
 **Compatible audio device**
-: The device interface used by command execution. It provides typed status-field
-  observations, supported features, current canonical states, and observed write
-  results without exposing Objective-C selectors or private AVFoundation values.
-  It also provides the device name unless the adapter was asked not to read it.
+: The device interface used by command execution for HAL and AV hardware. It
+  provides typed status-field observations, supported features, current
+  canonical states, and observed write results without exposing Objective-C
+  selectors or private AVFoundation values. It also provides the device name
+  unless the adapter was asked not to read it. BLE ear placement enters status
+  as a snapshot overlay, not as a compatible audio device.
 
 **Private Audio adapter**
 : The production adapter used by individual resource commands and compatibility
@@ -182,7 +224,9 @@
   captures a typed left/right ear-placement pair during status inventory. The
   placement observation is one-pass and read-only; missing or disabled
   properties are unsupported, while unknown or conflicting evidence remains
-  unresolved. BLE advertisements are not used as an identity fallback.
+  unresolved. An authorized, enrolled BLE source may fill placement only when
+  HAL placement is missing or disabled. It cannot replace unresolved or failed
+  HAL evidence. BLE advertisements are not an identity fallback.
 
 **Support report document**
 : Compatibility data built from a pre-write device snapshot and optional

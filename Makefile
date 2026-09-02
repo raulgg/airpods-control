@@ -16,6 +16,7 @@ MANPAGE := docs/man/airpods-control.1
 BUILD_STAMP := $(BUILD_DIR)/.built
 VERSION_FILE := version.txt
 VERSION_SOURCE := $(BUILD_DIR)/Version.swift
+INFO_PLIST := Sources/AirPodsControl/Info.plist
 SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
 SWIFT_BUILD_SOURCES := $(SWIFT_SOURCES) $(VERSION_SOURCE)
 SWIFT_LIBRARY_SOURCES := $(filter-out Sources/AirPodsControl/main.swift,$(SWIFT_SOURCES))
@@ -49,7 +50,7 @@ all: $(BUILD_STAMP)
 $(BUILD_STAMP): $(SOURCE_DIRS) $(SWIFT_SOURCES) $(VERSION_SOURCE) $(AV_BYPASS_SOURCE) \
 	$(SIGNAL_MONITOR_SOURCE) $(SIGNAL_MONITOR_HEADER) \
 	$(SIGNAL_MONITOR_MODULE_MAP) $(BYPASS_PROBE_SOURCE) \
-	$(BYPASS_PROBE_HEADER) $(BYPASS_PROBE_MODULE_MAP) Makefile
+	$(BYPASS_PROBE_HEADER) $(BYPASS_PROBE_MODULE_MAP) $(INFO_PLIST) Makefile
 	@$(MAKE) --no-print-directory _build
 
 $(VERSION_SOURCE): $(VERSION_FILE) Makefile
@@ -88,7 +89,10 @@ _build: $(VERSION_SOURCE)
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 			-o "$$tmp/airpods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
 			"$$tmp/signal-monitor.$$arch.o" "$$tmp/bypass-probe.$$arch.o" \
-			-Xlinker -framework -Xlinker Security; \
+			-Xlinker -framework -Xlinker Security \
+			-Xlinker -framework -Xlinker CoreBluetooth \
+			-Xlinker -sectcreate -Xlinker __TEXT \
+			-Xlinker __info_plist -Xlinker "$(INFO_PLIST)"; \
 	}; \
 	succeeded=""; failed=""; \
 	for arch in $(ARCHS); do \

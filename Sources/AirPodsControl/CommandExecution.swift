@@ -23,6 +23,59 @@ struct CommandOutcome {
 }
 
 enum CommandExecution {
+  static func executeBluetooth(
+    _ invocation: CLIInvocation,
+    store: any BluetoothAssociationStoring,
+    scanner: any BluetoothScanning,
+    resolveStatusInventory: () -> (
+      devices: [IOBluetoothStatusDevice],
+      correlation: (IOBluetoothStatusDevice) -> BluetoothEndpointCorrelation?
+    ),
+    interactive: Bool,
+    readResponse: () -> String?,
+    writePrompt: (String) -> Void
+  ) -> CommandOutcome {
+    guard BluetoothCommandKind(invocation.command) != nil else {
+      preconditionFailure("executeBluetooth requires a bluetooth command")
+    }
+    let logger = DebugLogger(enabled: invocation.debugEnabled)
+    logger.debug("cli.command", invocation.command.debugName)
+    logger.debug("cli.json", invocation.jsonOutput)
+    logger.debug("cli.requested_device", invocation.requestedDeviceName)
+    return BluetoothCommand.outcome(
+      invocation: invocation,
+      store: store,
+      scanner: scanner,
+      resolveStatusInventory: resolveStatusInventory,
+      interactive: interactive,
+      readResponse: readResponse,
+      writePrompt: writePrompt
+    )
+  }
+
+  static func executeStatus(
+    _ invocation: CLIInvocation,
+    resolveSession: (_ logger: DebugLogger) -> StatusSessionResolution
+  ) -> CommandOutcome {
+    guard case .status = invocation.command else {
+      preconditionFailure("executeStatus requires status")
+    }
+    let logger = DebugLogger(enabled: invocation.debugEnabled)
+    logger.debug("cli.command", invocation.command.debugName)
+    logger.debug("cli.json", invocation.jsonOutput)
+    logger.debug("cli.requested_device", invocation.requestedDeviceName)
+    switch resolveSession(logger) {
+    case let .session(session):
+      return StatusCommand.outcome(
+        session: session,
+        named: invocation.requestedDeviceName,
+        logger: logger
+      )
+    case let .failed(reason):
+      return StatusCommand.resolutionFailureOutcome(reason)
+    }
+  }
+
   static func executeListeningMode(
     _ invocation: CLIInvocation,
     resolveSession: (
@@ -169,13 +222,11 @@ enum CommandExecution {
         data: ["version": VERSION]
       )
     }
-
-    let selectionPolicy: DeviceSelectionPolicy
     if case .status = invocation.command {
-      selectionPolicy = .allOrExact
-    } else {
-      selectionPolicy = .singleOrExact
+      preconditionFailure("status commands use executeStatus")
     }
+
+    let selectionPolicy: DeviceSelectionPolicy = .singleOrExact
 
     let resolution = resolveDevices(
       invocation.requestedDeviceName,
@@ -191,10 +242,6 @@ enum CommandExecution {
       return deviceResolutionFailureOutcome(for: invocation.command, reason: reason)
     }
 
-    if case .status = invocation.command {
-      return StatusCommand.outcome(devices: devices)
-    }
-
     let device = devices[0]
 
     switch invocation.command {
@@ -202,7 +249,7 @@ enum CommandExecution {
       preconditionFailure("version handled before device resolution")
 
     case .status:
-      preconditionFailure("status handled after device resolution")
+      preconditionFailure("status commands use executeStatus")
 
     case let .supportReport(writeTestsPreference):
       return supportReport.outcome(writeTests: writeTestsPreference, device: device)
@@ -279,6 +326,10 @@ enum CommandExecution {
         terminalReason: .noOp,
         state: observed
       )
+
+    case .bluetoothSetup, .bluetoothStatus, .bluetoothDisable,
+      .bluetoothEnroll, .bluetoothUnenroll:
+      preconditionFailure("bluetooth commands use executeBluetooth")
     }
   }
 

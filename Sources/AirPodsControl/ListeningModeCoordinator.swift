@@ -261,7 +261,9 @@ enum ListeningModeCommand {
     case .listeningModeCycle(let requested):
       self = .cycle(requested)
     case .version, .status, .supportReport,
-      .conversationAwarenessGet, .conversationAwarenessSet:
+      .conversationAwarenessGet, .conversationAwarenessSet,
+      .bluetoothSetup, .bluetoothStatus, .bluetoothDisable,
+      .bluetoothEnroll, .bluetoothUnenroll:
       return nil
     }
   }
