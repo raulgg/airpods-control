@@ -23,7 +23,6 @@ private enum AllowOffCacheTestError: Error {
 }
 
 private let allowOffCacheTestSalt = Data(0..<32)
-private let allowOffCacheLockHolderArgument = "--hold-allow-off-cache-lock"
 
 private func withTemporaryAllowOffCache(
   _ body: (URL) -> Void
@@ -100,22 +99,30 @@ private func withHeldAllowOffCacheFileLock(
 ) {
   let lockURL = fileURL.deletingLastPathComponent()
     .appendingPathComponent("allow-off-v1.lock")
-  let executableURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    .appendingPathComponent("build/swift-tests")
-  guard FileManager.default.isExecutableFile(atPath: executableURL.path) else {
-    Issue.record("lock contention test resolves the swift-tests executable")
+  let lockfURL = URL(fileURLWithPath: "/usr/bin/lockf")
+  guard FileManager.default.isExecutableFile(atPath: lockfURL.path) else {
+    Issue.record("lock contention test resolves the system lockf executable")
     return
   }
 
   let process = Process()
   let startPipe = Pipe()
-  process.executableURL = executableURL
-  process.arguments = [allowOffCacheLockHolderArgument, lockURL.path, seconds]
+  let readyPipe = Pipe()
+  process.executableURL = lockfURL
+  process.arguments = [
+    lockURL.path,
+    "/bin/sh",
+    "-c",
+    "printf '\\001'; IFS= read -r _ || true; sleep \"$1\"",
+    "allow-off-cache-lock-holder",
+    seconds,
+  ]
   process.standardInput = startPipe
+  process.standardOutput = readyPipe
   do {
     try process.run()
   } catch {
-    Issue.record("lock contention test starts a lock holder: \(error)")
+    Issue.record("lock contention test starts lockf: \(error)")
     return
   }
   defer {
@@ -124,39 +131,20 @@ private func withHeldAllowOffCacheFileLock(
     process.waitUntilExit()
   }
 
-  let descriptor = Darwin.open(lockURL.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
-  guard descriptor >= 0 else {
-    Issue.record("lock contention test opens the cache lock file")
-    return
-  }
-  defer { Darwin.close(descriptor) }
-
-  let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
-  while DispatchTime.now().uptimeNanoseconds < deadline {
-    if Darwin.lockf(descriptor, F_TLOCK, 0) == -1,
-      errno == EACCES || errno == EAGAIN
-    {
-      do {
-        try startPipe.fileHandleForWriting.write(contentsOf: Data([1]))
-        try startPipe.fileHandleForWriting.close()
-      } catch {
-        Issue.record("lock contention test signals the lock holder: \(error)")
-        return
-      }
-      body()
-      return
-    }
-    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
-    if !process.isRunning {
-      process.waitUntilExit()
+  do {
+    guard try readyPipe.fileHandleForReading.read(upToCount: 1) == Data([1]) else {
       Issue.record(
         "lock contention holder exited before acquiring the lock (status \(process.terminationStatus))"
       )
       return
     }
-    _ = Darwin.usleep(1_000)
+    try startPipe.fileHandleForWriting.write(contentsOf: Data([1]))
+    try startPipe.fileHandleForWriting.close()
+  } catch {
+    Issue.record("lock contention test signals lockf: \(error)")
+    return
   }
-  Issue.record("lock contention fixture acquires the cache lock")
+  body()
 }
 
 @Suite("Persistent Allow Off cache")

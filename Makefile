@@ -20,8 +20,6 @@ VERSION_FILE := version.txt
 VERSION_SOURCE := $(BUILD_DIR)/Version.swift
 SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
 SWIFT_BUILD_SOURCES := $(SWIFT_SOURCES) $(VERSION_SOURCE)
-SWIFT_LIBRARY_SOURCES := $(filter-out Sources/AirPodsControl/main.swift,$(SWIFT_SOURCES))
-SWIFT_TEST_SOURCES := $(sort $(wildcard Tests/AirPodsControlTests/*.swift))
 AV_BYPASS_SOURCE := Sources/AVBypass/bypass.c
 SIGNAL_MONITOR_SOURCE := Sources/SignalMonitor/signal_monitor.c
 SIGNAL_MONITOR_INCLUDE_DIR := Sources/SignalMonitor/include
@@ -33,7 +31,6 @@ BYPASS_PROBE_HEADER := $(BYPASS_PROBE_INCLUDE_DIR)/BypassProbe.h
 BYPASS_PROBE_MODULE_MAP := $(BYPASS_PROBE_INCLUDE_DIR)/module.modulemap
 SIGNAL_MONITOR_RACE_TEST_SOURCE := Tests/SignalMonitorTests/signal_monitor_race_test.c
 SOURCE_DIRS := Sources/AirPodsControl Sources/AVBypass Sources/BypassProbe Sources/SignalMonitor
-SWIFT_TEST_BINARY := $(BUILD_DIR)/swift-tests
 SWIFT_PACKAGE_SCRATCH := $(BUILD_DIR)/swiftpm
 SWIFT_PACKAGE_CACHE := $(BUILD_DIR)/swiftpm-cache
 SWIFT_PACKAGE_CONFIG := $(BUILD_DIR)/swiftpm-config
@@ -53,7 +50,6 @@ ifneq ($(shell test -d "$(SWIFT_TESTING_INTEROP)" && echo yes),)
 SWIFT_TESTING_FLAGS += -Xlinker -rpath -Xlinker "$(SWIFT_TESTING_INTEROP)"
 endif
 SWIFT_PACKAGE_EXTRA_FLAGS ?=
-SIGNAL_MONITOR_TEST_OBJECT := $(BUILD_DIR)/signal-monitor-tests.o
 SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
@@ -158,16 +154,6 @@ test: all
 		-o "$(SIGNAL_MONITOR_RACE_TEST_BINARY)" \
 		"$(SIGNAL_MONITOR_SOURCE)" "$(SIGNAL_MONITOR_RACE_TEST_SOURCE)"
 	"$(SIGNAL_MONITOR_RACE_TEST_BINARY)"
-	"$(CLANG)" -O0 -c \
-		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
-		-o "$(SIGNAL_MONITOR_TEST_OBJECT)" "$(SIGNAL_MONITOR_SOURCE)"
-	"$(SWIFTC)" -Onone -parse-as-library \
-		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
-		-module-cache-path "$(SWIFT_MODULE_CACHE)" \
-		-o "$(SWIFT_TEST_BINARY)" \
-		$(SWIFT_LIBRARY_SOURCES) $(VERSION_SOURCE) $(SWIFT_TEST_SOURCES) \
-		"$(SIGNAL_MONITOR_TEST_OBJECT)"
-	"$(SWIFT_TEST_BINARY)"
 	CLANG_MODULE_CACHE_PATH="$(SWIFT_PACKAGE_MODULE_CACHE)" \
 	SWIFTPM_MODULECACHE_OVERRIDE="$(SWIFT_PACKAGE_MODULE_CACHE)" \
 	"$(SWIFT)" test --scratch-path "$(SWIFT_PACKAGE_SCRATCH)" \
