@@ -832,6 +832,162 @@ struct PersistentListeningModeAllowOffCacheTests {
     }
   }
 
+  @Test("Gives fresh denial evidence its own expiry after positive evidence expires")
+  func persistentCacheDenialExpiresFromItsOwnTimestamp() {
+    withTemporaryAllowOffCache { fileURL in
+      let observedAt = Date(timeIntervalSince1970: 1_732_100_000)
+      let denialObservedAt = observedAt.addingTimeInterval(59)
+      let clock = AllowOffCacheTestClock(observedAt)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        ttl: 60,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "expired-positive-with-fresh-denial-uid"
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: observedAt
+        ) == .applied,
+        "fresh-denial test seeds positive evidence"
+      )
+
+      clock.value = denialObservedAt
+      withHeldAllowOffCacheFileLock(fileURL: fileURL) {
+        #expect(
+          cache.applyObservation(
+            rawDeviceUID: rawUID,
+            allowsOff: false,
+            observedAt: denialObservedAt
+          ) == .applied,
+          "fresh-denial test persists a marker during lock contention"
+        )
+      }
+
+      clock.value = denialObservedAt.addingTimeInterval(1)
+      guard let denial = allowOffDenialRecord(
+        from: cache.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("a fresh denial remains usable after positive evidence expires")
+        return
+      }
+      #expect(
+        denial.evidence.observedAt == denialObservedAt,
+        "denial evidence is anchored to the marker timestamp"
+      )
+      #expect(
+        denial.evidence.expiresAt == denialObservedAt.addingTimeInterval(60),
+        "denial evidence gets its own TTL"
+      )
+      clock.value = denialObservedAt.addingTimeInterval(60)
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "denial evidence expires from its own timestamp"
+      )
+    }
+  }
+
+  @Test("Does not resurrect an older denial after removing newer positive evidence")
+  func persistentCacheDoesNotResurrectOrphanedDenial() {
+    withTemporaryAllowOffCache { fileURL in
+      let denialObservedAt = Date(timeIntervalSince1970: 1_732_200_000)
+      let positiveObservedAt = denialObservedAt.addingTimeInterval(1)
+      let clock = AllowOffCacheTestClock(denialObservedAt)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        ttl: 60,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "orphan-denial-marker-uid"
+
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: denialObservedAt
+        ) == .applied,
+        "stale-marker test seeds denial evidence"
+      )
+      clock.value = positiveObservedAt
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: positiveObservedAt
+        ) == .applied,
+        "stale-marker test stores newer positive evidence"
+      )
+      guard let positive = allowOffRecord(from: cache.lookup(rawDeviceUID: rawUID)) else {
+        Issue.record("stale-marker test reads newer positive evidence")
+        return
+      }
+      #expect(
+        cache.remove(record: positive) == .applied,
+        "stale-marker test removes the newer positive record"
+      )
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "an orphaned older denial marker cannot resurrect removed positive evidence"
+      )
+    }
+  }
+
+  @Test("Orders denial markers and omission tombstones by observation time")
+  func persistentCacheOrdersDenialsAndTombstones() {
+    withTemporaryAllowOffCache { fileURL in
+      let denialObservedAt = Date(timeIntervalSince1970: 1_732_300_000)
+      let tombstoneObservedAt = denialObservedAt.addingTimeInterval(60)
+      let newerDenialObservedAt = tombstoneObservedAt.addingTimeInterval(1)
+      let clock = AllowOffCacheTestClock(denialObservedAt)
+      let cache = PersistentListeningModeAllowOffCache(
+        fileURL: fileURL,
+        ttl: 60,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "tombstone-denial-ordering-uid"
+
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: denialObservedAt
+        ) == .applied,
+        "tombstone-ordering test seeds denial evidence"
+      )
+      clock.value = tombstoneObservedAt
+      #expect(
+        cache.invalidatePositiveObservation(
+          rawDeviceUID: rawUID,
+          observedAt: tombstoneObservedAt
+        ) == .applied,
+        "an expired denial can be replaced by a newer omission tombstone"
+      )
+      #expect(
+        cache.lookup(rawDeviceUID: rawUID) == .miss,
+        "an older denial marker cannot override a newer omission tombstone"
+      )
+
+      clock.value = newerDenialObservedAt
+      #expect(
+        cache.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: false,
+          observedAt: newerDenialObservedAt
+        ) == .applied,
+        "a newer definitive denial replaces the omission tombstone"
+      )
+      #expect(
+        allowOffDenialRecord(from: cache.lookup(rawDeviceUID: rawUID))?.evidence.observedAt
+          == newerDenialObservedAt,
+        "the newer denial marker wins over the omission tombstone"
+      )
+    }
+  }
+
   @Test("Rejects invalid raw device UIDs without filesystem effects")
   func persistentCacheRejectsInvalidRawDeviceUIDsWithoutFilesystemEffects() {
     withTemporaryAllowOffCache { fileURL in
