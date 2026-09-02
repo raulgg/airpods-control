@@ -376,7 +376,7 @@ struct ListeningModeCoordinatorTests {
         return .unavailable
       }
     )
-    if case .ambiguousDevice = unnamedMixed {
+    if case .failed(.ambiguousDevice) = unnamedMixed {
     } else {
       Issue.record("unnamed mixed providers remain ambiguous")
     }
@@ -392,7 +392,7 @@ struct ListeningModeCoordinatorTests {
       named: nil,
       chooseAmbiguous: { _ in .unavailable }
     )
-    if case .ambiguousDevice = avOnly {
+    if case .failed(.ambiguousDevice) = avOnly {
     } else {
       Issue.record("HAL absence never selects the first AV candidate")
     }
