@@ -41,6 +41,7 @@ struct SupportReportDocument {
   struct WriteTestResult {
     enum Operation {
       case listeningMode(ListeningMode)
+      case listeningModeRestoration(ListeningMode)
       case listeningModes
       case capturedInitialListeningMode
       case remainingListeningModes
@@ -179,24 +180,24 @@ struct SupportReportDocument {
       case let .attempted(restoration):
         rendered.append(
           WriteTestResult(
-            operation: .listeningMode(restoration.mode),
+            operation: .listeningModeRestoration(restoration.mode),
             verdict: modeVerdict(restoration)
           )
         )
       case .stateNeverChanged:
-        let demonstratedFinalMode = run.tests.contains { test in
-          test.mode == run.finalMode
+        let demonstratedInitial = run.tests.contains { test in
+          test.mode == run.initialMode
             && test.write.verified
             && !test.targetAlreadyCurrent
         }
-        if !demonstratedFinalMode {
+        if !demonstratedInitial {
           // Deliberately unnamed: the report is pasted publicly and must not
           // disclose which mode the device was in when that mode was never
-          // demonstrated.
+          // demonstrated. Off last can return here after real transitions.
           rendered.append(
             WriteTestResult(
               operation: .capturedInitialListeningMode,
-              verdict: .skipped(reason: "state never changed from initial")
+              verdict: .skipped(reason: "already at initial mode; not demonstrated")
             )
           )
         }

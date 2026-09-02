@@ -148,7 +148,8 @@ enum CapabilityWriteTestOutcome<Run> {
 }
 
 enum RestorationOutcome<Attempt> {
-  // The readback never left the initial state, so no restoration write ran.
+  // No restoration write ran because the device already held the initial
+  // mode. Earlier probes may still have changed state and returned here.
   case stateNeverChanged
   case attempted(Attempt)
 }
@@ -171,6 +172,7 @@ struct SupportReportWriteTestResults {
     // That leaves the initial mode undemonstrated unless an earlier probe
     // already showed a real transition into it.
     let restoration: RestorationOutcome<ListeningModeTest>
+    let initialMode: ListeningMode
     let finalMode: ListeningMode?
     let restored: Bool
   }
@@ -414,6 +416,7 @@ enum SupportReportWriteTester {
         tests: tests,
         stoppedAfterSetterError: stoppedAfterSetterError,
         restoration: restoration,
+        initialMode: initialMode,
         finalMode: finalMode,
         restored: finalMode == initialMode
       )

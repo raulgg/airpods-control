@@ -141,7 +141,7 @@ func testSupportReportIssueReportDoesNotNameTheUntestedInitialMode() {
   check(
     issueReport.contains(
       "- `listening-mode set` (captured initial mode): "
-        + "skipped (state never changed from initial)"
+        + "skipped (already at initial mode; not demonstrated)"
     ),
     "the issue field keeps an unnamed row for the untested initial mode"
   )
