@@ -171,6 +171,7 @@ func bootstrapAndResolveListeningMode(
   let allowOffCache = PersistentListeningModeAllowOffCache.systemDefault()
 
   let halCandidates: [ListeningModeCandidate]
+  let halDiscovery: ListeningModeHALDiscovery
   switch IOBluetoothStatusController.create(
     logger: logger,
     activeOutputContext: outputContext,
@@ -178,12 +179,20 @@ func bootstrapAndResolveListeningMode(
     readStatusInEarPlacement: false,
     allowOffCache: allowOffCache
   ) {
-  case let .success(controller): halCandidates = controller.listeningModeCandidates()
-  case .unavailable, .readError: halCandidates = []
+  case let .success(controller):
+    halCandidates = controller.listeningModeCandidates()
+    halDiscovery = .available
+  case .unavailable:
+    halCandidates = []
+    halDiscovery = .unavailable
+  case .readError:
+    halCandidates = []
+    halDiscovery = .readError
   }
   let coordinator = ListeningModeCoordinator(
     avDevices: avDevices,
     halCandidates: halCandidates,
+    halDiscovery: halDiscovery,
     logger: logger
   )
 
