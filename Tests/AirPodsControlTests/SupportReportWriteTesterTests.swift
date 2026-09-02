@@ -182,7 +182,7 @@ func testWriteTesterVerifiesTransparencyWhenOffFallsBack() {
   startedInTransparency.listeningModeWriteOverride = {
     $0 == .off ? .transparency : $0
   }
-  let snapshot = SupportReportSnapshot.capture(device: startedInTransparency)
+  let snapshot = SupportReportSnapshot.capture(device: startedInTransparency)!
   let fromTransparency = SupportReportWriteTester.run(device: startedInTransparency)
   let fromTransparencyRun = fromTransparency.listeningModes.testRun
 
@@ -234,7 +234,7 @@ func testWriteTesterVerifiesTransparencyWhenOffFallsBack() {
   startedInNoiseCancellation.listeningModeWriteOverride = {
     $0 == .off ? .transparency : $0
   }
-  let ncSnapshot = SupportReportSnapshot.capture(device: startedInNoiseCancellation)
+  let ncSnapshot = SupportReportSnapshot.capture(device: startedInNoiseCancellation)!
   let fromNoiseCancellation = SupportReportWriteTester.run(
     device: startedInNoiseCancellation
   )
@@ -279,7 +279,7 @@ func testWriteTesterLabelsRestoreWhenInitialModeWasAlsoProbed() {
     listeningMode: .transparency,
     conversationAwarenessSupported: false
   )
-  let snapshot = SupportReportSnapshot.capture(device: device)
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
   let document = SupportReportDocument.make(snapshot: snapshot, writeTests: results)
   let issueReport = document.githubIssueDraft.report
@@ -315,7 +315,7 @@ func testWriteTesterDoesNotClaimStateNeverChangedAfterTransitions() {
     default: return target
     }
   }
-  let snapshot = SupportReportSnapshot.capture(device: device)
+  let snapshot = SupportReportSnapshot.capture(device: device)!
   let results = SupportReportWriteTester.run(device: device)
   let issueReport = SupportReportDocument.make(
     snapshot: snapshot,
