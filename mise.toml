@@ -1,6 +1,15 @@
 [tools]
 pre-commit = "4.6.2"
 rumdl = "0.2.52"
+swiftformat = "0.63.0"
+
+[tasks.format]
+description = "Format Swift whitespace"
+run = "make format"
+
+[tasks.format-check]
+description = "Check Swift whitespace"
+run = "make format-check"
 
 [tasks.markdown-check]
 description = "Check Markdown"

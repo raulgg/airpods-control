@@ -116,6 +116,31 @@ The names follow Swift target conventions. The Makefile is the source of
 truth for builds: it compiles architectures the toolchain supports, ad-hoc
 signs both artifacts, and installs them together.
 
+### Swift formatting
+
+`mise install` installs the SwiftFormat version pinned in `mise.toml`. Run:
+
+```sh
+mise run format-check
+mise run format
+```
+
+These call `make format-check` and `make format`. You can also run
+`mise exec -- make format-check` without activating mise in your shell.
+Formatting covers `Package.swift`, `Sources/AirPodsControl`, and
+`Tests/AirPodsControlTests`. Generated build and SwiftPM files are
+excluded.
+
+The initial rules normalize line endings, ensure a final newline, and remove
+trailing whitespace. Keep the existing two-space indentation. Broader formatting
+rules and formatter upgrades belong in separate pull requests with reviewed
+diffs. Keep whitespace cleanup separate from behavior changes, and preserve
+string contents and test assertions.
+
+Run `git diff --check` and `git diff --cached --check` before opening a pull
+request. Remove surplus blank lines at EOF when Git reports them. Formatting
+does not replace `make test` and is not required to build or install the CLI.
+
 ### Documentation
 
 Markdown files in the repository follow rumdl's standard 80-column wrapping.
