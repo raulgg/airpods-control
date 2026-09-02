@@ -42,10 +42,16 @@ SWIFT_PACKAGE_MODULE_CACHE := $(abspath $(SWIFT_PACKAGE_SCRATCH)/module-cache)
 SWIFT_DEVELOPER_DIR := $(patsubst %/usr/bin/swift,%,$(SWIFT_TOOLCHAIN_DRIVER))
 SWIFT_TESTING_FRAMEWORKS := $(SWIFT_DEVELOPER_DIR)/Library/Developer/Frameworks
 SWIFT_TESTING_INTEROP := $(SWIFT_DEVELOPER_DIR)/Library/Developer/usr/lib
-SWIFT_TESTING_FLAGS := \
+# CLT installations need these fallback paths. SwiftPM supplies Xcode's paths.
+SWIFT_TESTING_FLAGS :=
+ifneq ($(shell test -d "$(SWIFT_TESTING_FRAMEWORKS)" && echo yes),)
+SWIFT_TESTING_FLAGS += \
 	-Xswiftc -F -Xswiftc "$(SWIFT_TESTING_FRAMEWORKS)" \
-	-Xlinker -rpath -Xlinker "$(SWIFT_TESTING_FRAMEWORKS)" \
-	-Xlinker -rpath -Xlinker "$(SWIFT_TESTING_INTEROP)"
+	-Xlinker -rpath -Xlinker "$(SWIFT_TESTING_FRAMEWORKS)"
+endif
+ifneq ($(shell test -d "$(SWIFT_TESTING_INTEROP)" && echo yes),)
+SWIFT_TESTING_FLAGS += -Xlinker -rpath -Xlinker "$(SWIFT_TESTING_INTEROP)"
+endif
 SWIFT_PACKAGE_EXTRA_FLAGS ?=
 SIGNAL_MONITOR_TEST_OBJECT := $(BUILD_DIR)/signal-monitor-tests.o
 SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
