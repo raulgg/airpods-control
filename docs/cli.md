@@ -514,9 +514,10 @@ attempt if needed. An accepted write that cannot be verified is a `no-op` and
 does not stop the remaining tests. A `setter error` stops the remaining tests
 for that setting. Probe order is chosen so a disabled Off mode, which falls
 back to Transparency, is tested last and does not hide a Transparency
-transition. A write whose target already matches the state read immediately
-before it still cannot demonstrate a transition and is
-`inconclusive (already in this state; no transition demonstrated)`, not
+transition. A restoration write is labeled `(restore)` so it is distinct from
+an exploratory probe of the same mode. A write whose target already matches
+the state read immediately before it still cannot demonstrate a transition and
+is `inconclusive (already in this state; no transition demonstrated)`, not
 `verified`. That verdict is a safety net for unexpected already-current
 writes; it does not establish support.
 

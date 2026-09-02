@@ -97,7 +97,7 @@ enum SupportReportTerminalRenderer {
       lines.append(row("Status", "NOT RUN", tone: .muted, options: options))
     case let .ran(results):
       for result in results {
-        let verdict = terminalVerdict(result.verdict)
+        let verdict = terminalVerdict(result)
         lines.append(
           row(
             terminalOperation(result.operation),
@@ -205,11 +205,25 @@ enum SupportReportTerminalRenderer {
   ) -> String {
     switch operation {
     case let .listeningMode(mode): return mode.displayName
+    case let .listeningModeRestoration(mode): return mode.displayName
     case .listeningModes: return "Listening modes"
     case .capturedInitialListeningMode: return "Captured initial mode"
     case .remainingListeningModes: return "Remaining mode tests"
     case .conversationAwareness: return "Conversation Awareness"
     case .conversationAwarenessRestoration: return "CA restoration"
+    }
+  }
+
+  private static func terminalVerdict(
+    _ result: SupportReportDocument.WriteTestResult
+  ) -> (text: String, tone: Tone) {
+    let rendered = terminalVerdict(result.verdict)
+    guard case .listeningModeRestoration = result.operation else { return rendered }
+    switch result.verdict {
+    case .skipped:
+      return rendered
+    default:
+      return (rendered.text + " · restore", rendered.tone)
     }
   }
 
@@ -460,6 +474,8 @@ enum SupportReportGitHubRenderer {
     switch result.operation {
     case let .listeningMode(mode):
       operation = "`listening-mode set \(mode.rawValue)`"
+    case let .listeningModeRestoration(mode):
+      operation = "`listening-mode set \(mode.rawValue)` (restore)"
     case .listeningModes:
       operation = "`listening-mode set`"
     case .capturedInitialListeningMode:
