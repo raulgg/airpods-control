@@ -1,0 +1,5 @@
+{
+  "name": "airpods-control (Markdown + pre-commit tooling)",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh"
+}
