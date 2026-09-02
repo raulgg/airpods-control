@@ -47,6 +47,23 @@ If the workflow fails after the release pull request merges, rerun its failed
 job. Never move, delete, or recreate a published tag. Correct bad source with a
 new patch release.
 
+## 0.3.x patch releases
+
+Cut 0.3.x patches from `release/0.3`, not `main`. `main` already has later
+features, and `bump-patch-for-minor-pre-major` is false, so a `fix:` commit
+on `main` becomes 0.4.0.
+
+1. Allow `release/0.3` in the `release-automation` and `tap-dispatch`
+   GitHub environments, in addition to `main`.
+2. Land only the patch on `release/0.3`. This line enables pre-1.0 patch
+   bumps; include a `Release-As: 0.3.1` footer on the first patch so the
+   version is unambiguous.
+3. Do not edit `version.txt`, `.release-please-manifest.json`, or
+   `CHANGELOG.md` by hand. Review the draft Release Please pull request
+   against `release/0.3`, then squash-merge it. Do not rewrite its body.
+4. Do not merge `release/0.3` into `main`. Land the same fix on `main`
+   separately so 0.4.0 includes it.
+
 ## Update the Homebrew tap
 
 1. Verify that the release run completed its `tap-dispatch` job.

@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - release/0.3
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +17,7 @@ concurrency:
 jobs:
   release-please:
     name: Open or publish release
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/0.3'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-automation
@@ -29,7 +31,45 @@ jobs:
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          target-branch: main
+          target-branch: ${{ github.ref_name }}
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Require a published GitHub release for version.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(tr -d '[:space:]' <version.txt)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version.txt: $version" >&2
+            exit 1
+          fi
+
+          manifest_version=$(jq -r '.["."]' .release-please-manifest.json)
+          if [ "$manifest_version" != "$version" ]; then
+            echo "version.txt ($version) does not match manifest ($manifest_version)" >&2
+            exit 1
+          fi
+
+          tag="v$version"
+          release=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .prerelease <<<"$release")" = false
+
+          tag_sha=$(gh api \
+            "repos/$GITHUB_REPOSITORY/commits/refs/tags/$tag" --jq .sha)
+          comparison=$(gh api \
+            "repos/$GITHUB_REPOSITORY/compare/$tag_sha...$GITHUB_SHA" --jq .status)
+          case "$comparison" in
+            ahead | identical) ;;
+            *)
+              echo "Release tag $tag is not on this branch history" >&2
+              exit 1
+              ;;
+          esac
 
   tap-dispatch:
     name: Validate release and notify Homebrew tap
@@ -61,7 +101,7 @@ jobs:
           case "$comparison" in
             ahead | identical) ;;
             *)
-              echo "Release tag $RELEASE_TAG is not on this protected main history" >&2
+              echo "Release tag $RELEASE_TAG is not on this branch history" >&2
               exit 1
               ;;
           esac
