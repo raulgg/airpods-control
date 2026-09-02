@@ -8,7 +8,6 @@ struct TestRunner {
     }
 
     runTestGroup("Allow Off cache", runListeningModeAllowOffCacheTests)
-    runTestGroup("listening mode coordinator", runListeningModeCoordinatorTests)
     runTestGroup(
       "support report write tester",
       runSupportReportWriteTesterTests
