@@ -176,7 +176,7 @@ func testSupportReportRunsOnlyTheConsentedWritePlan() {
 
   check(
     device.listeningModeSetCount == 2,
-    "execution writes only the mode target and restoration disclosed before consent"
+    "execution writes only the modes disclosed before consent"
   )
   check(
     device.conversationAwarenessSetCount == 0,

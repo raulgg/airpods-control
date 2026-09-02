@@ -118,10 +118,12 @@
 
 **Support report document**
 : Compatibility data built from a pre-write device snapshot and optional
-  write-test results. It contains one result row per attempted write and omits
-  unresolved values instead of turning them into prose. The terminal and GitHub
-  renderers format the document and choose how to describe absent values; they
-  do not inspect raw device or write-test behavior.
+  write-test results. Listening-mode write tests probe advertised modes in
+  reverse canonical order so an Off fallback to Transparency cannot make the
+  Transparency write already-current. It contains one result row per attempted
+  write and omits unresolved values instead of turning them into prose. The
+  terminal and GitHub renderers format the document and choose how to describe
+  absent values; they do not inspect raw device or write-test behavior.
 
 **Device write observation**
 : What a compatible audio device reports after a write attempt: whether the
