@@ -18,6 +18,8 @@ jobs:
     name: Build, test, and verify install
     runs-on: macos-14
     timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
 
     steps:
       - name: Checkout
@@ -25,6 +27,8 @@ jobs:
 
       - name: Show toolchain
         run: |
+          xcodebuild -version
+          swift --version | grep -E 'Apple Swift version 6\.'
           swiftc --version
           clang --version
 
