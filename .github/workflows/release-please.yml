@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - release/**
   workflow_dispatch:
 
 permissions:
@@ -16,7 +17,7 @@ concurrency:
 jobs:
   release-please:
     name: Open or publish release
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release-automation
@@ -30,7 +31,7 @@ jobs:
         uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          target-branch: main
+          target-branch: ${{ github.ref_name }}
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,7 +66,7 @@ jobs:
           case "$comparison" in
             ahead | identical) ;;
             *)
-              echo "Release tag $tag is not on this protected main history" >&2
+              echo "Release tag $tag is not on this branch history" >&2
               exit 1
               ;;
           esac
@@ -100,7 +101,7 @@ jobs:
           case "$comparison" in
             ahead | identical) ;;
             *)
-              echo "Release tag $RELEASE_TAG is not on this protected main history" >&2
+              echo "Release tag $RELEASE_TAG is not on this branch history" >&2
               exit 1
               ;;
           esac

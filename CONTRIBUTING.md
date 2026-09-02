@@ -106,7 +106,7 @@ device or capability status.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in
   C.
 - `Tests/ReleasePleaseTests` verifies that a Release Please pull request body
-  still parses.
+  still parses and that `changelog-sections` hide `ci` and `chore`.
 - `Tests/ResolvePrefixTests` verifies install-prefix path rules.
 - `Tests/InstallFromSourceTests` verifies the source install script.
 - `Tests/VerifyRuntimeTests` verifies the DYLD interpose on a built CLI.
@@ -130,7 +130,8 @@ set.
 
 - Use a [Conventional Commit](https://www.conventionalcommits.org/) pull request
   title. The repository squash-merges pull requests, so that title becomes the
-  commit used to generate versions and release notes.
+  commit used to generate versions and release notes. `feat` and `fix` titles
+  appear in those notes. `ci`, `chore`, `test`, and `docs` titles do not.
 - Fill the pull request template. Do not wrap the description to 80 columns.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.
