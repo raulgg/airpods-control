@@ -1,6 +1,8 @@
 // Consented write tests for support-report. Each test uses the same bounded
-// write-and-readback machinery as the operational commands, ordered so the
-// last listening-mode write restores the initial mode.
+// write-and-readback machinery as the operational commands. Listening modes
+// are probed in reverse canonical order so an Off fallback to Transparency
+// cannot precede the Transparency write. Restoration still runs last when
+// the device is not already in the captured initial mode.
 
 import Darwin
 import Foundation
@@ -41,7 +43,13 @@ struct SupportReportWriteTestPlan {
 
   var listeningModeTargets: [ListeningMode] {
     guard modeTestsSkippedReason == nil, let initialListeningMode else { return [] }
-    return listeningModes.filter { $0 != initialListeningMode }
+    // The already-current first probe is the captured initial mode; restoration
+    // demonstrates it later. Keep it when it sits later in the sequence so an
+    // Off fallback cannot skip a real Transparency transition.
+    if listeningModes.first == initialListeningMode {
+      return Array(listeningModes.dropFirst())
+    }
+    return listeningModes
   }
 
   var willTestListeningModes: Bool {
@@ -67,7 +75,11 @@ struct SupportReportWriteTestPlan {
 
   static func make(device: any CompatibleAudioDevice) -> SupportReportWriteTestPlan {
     let advertised = Set(device.availableListeningModes())
-    let orderedModes = ListeningMode.allCases.filter { advertised.contains($0) }
+    // Off may fall back to Transparency. Probe stronger modes first so that
+    // fallback cannot make the Transparency write already-current.
+    let orderedModes = Array(ListeningMode.allCases.reversed()).filter {
+      advertised.contains($0)
+    }
     let initialMode = device.currentListeningMode()
 
     let modeSkipReason: String?
@@ -146,8 +158,8 @@ struct SupportReportWriteTestResults {
     let mode: ListeningMode
     let write: WriteAttempt<ListeningMode>
     // The state read immediately before this write already equaled the
-    // target (for example after an Off write fell back to Transparency), so
-    // a matching readback demonstrates no transition.
+    // target (for example after an earlier write landed on this mode), so a
+    // matching readback demonstrates no transition.
     let targetAlreadyCurrent: Bool
     let inferredOffFallback: Bool
   }
@@ -155,8 +167,9 @@ struct SupportReportWriteTestResults {
   struct ListeningModeTestRun {
     let tests: [ListeningModeTest]
     let stoppedAfterSetterError: Bool
-    // The restoration write doubles as the initial mode's own test, so a
-    // state that never changed also leaves the initial mode undemonstrated.
+    // Restoration is skipped when the device already holds the initial mode.
+    // That leaves the initial mode undemonstrated unless an earlier probe
+    // already showed a real transition into it.
     let restoration: RestorationOutcome<ListeningModeTest>
     let finalMode: ListeningMode?
     let restored: Bool
@@ -478,9 +491,9 @@ enum SupportReportWriteTester {
     device: any CompatibleAudioDevice,
     transparencySupported: Bool
   ) -> SupportReportWriteTestResults.ListeningModeTest {
-    // An earlier write can leave the device in a later target (for example
-    // Off falling back to Transparency). The write is still attempted, but
-    // its readback can then match without demonstrating a transition.
+    // An earlier write can leave the device in a later target. The write is
+    // still attempted, but its readback can then match without demonstrating
+    // a transition.
     let modeBeforeWrite = device.currentListeningMode()
     let observation = device.setListeningModeAndReadBack(target)
     device.settle(for: listeningModeHold)

@@ -184,14 +184,22 @@ struct SupportReportDocument {
           )
         )
       case .stateNeverChanged:
-        // Deliberately unnamed: the report is pasted publicly and must not
-        // disclose which mode the device was in.
-        rendered.append(
-          WriteTestResult(
-            operation: .capturedInitialListeningMode,
-            verdict: .skipped(reason: "state never changed from initial")
+        let demonstratedFinalMode = run.tests.contains { test in
+          test.mode == run.finalMode
+            && test.write.verified
+            && !test.targetAlreadyCurrent
+        }
+        if !demonstratedFinalMode {
+          // Deliberately unnamed: the report is pasted publicly and must not
+          // disclose which mode the device was in when that mode was never
+          // demonstrated.
+          rendered.append(
+            WriteTestResult(
+              operation: .capturedInitialListeningMode,
+              verdict: .skipped(reason: "state never changed from initial")
+            )
           )
-        )
+        }
       }
     }
 

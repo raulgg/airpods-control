@@ -3,6 +3,34 @@ import Foundation
 
 private func supportWriteTestSignalHandler(_: Int32) {}
 
+func testWriteTestPlanProbesStrongestModesFirst() {
+  let startedInTransparency = FakeCompatibleAudioDevice(
+    listeningMode: .transparency,
+    conversationAwarenessSupported: false
+  )
+  let transparencyPlan = SupportReportWriteTestPlan.make(
+    device: startedInTransparency
+  )
+  check(
+    transparencyPlan.listeningModeTargets
+      == [.noiseCancellation, .adaptive, .transparency, .off],
+    "Transparency stays in the probe list when it is not first"
+  )
+
+  let startedInNoiseCancellation = FakeCompatibleAudioDevice(
+    listeningMode: .noiseCancellation,
+    conversationAwarenessSupported: false
+  )
+  let noiseCancellationPlan = SupportReportWriteTestPlan.make(
+    device: startedInNoiseCancellation
+  )
+  check(
+    noiseCancellationPlan.listeningModeTargets
+      == [.adaptive, .transparency, .off],
+    "the already-current first probe is deferred to restoration"
+  )
+}
+
 func testWriteTesterVerifiesAndRestores() {
   let device = FakeCompatibleAudioDevice(
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
@@ -16,8 +44,8 @@ func testWriteTesterVerifiesAndRestores() {
 
   check(
     modeRun?.tests.map(\.mode)
-      == [.off, .transparency, .adaptive],
-    "noninitial modes are tested in canonical order"
+      == [.adaptive, .transparency, .off],
+    "noninitial modes are tested strongest-first, with Off last"
   )
   check(
     modeRun?.tests.allSatisfy(\.write.verified) == true,
@@ -69,6 +97,12 @@ func testWriteTesterContinuesAfterNoOp() {
   let modeRun = results.listeningModes.testRun
 
   check(modeRun?.tests.count == 2, "a no-op does not skip later mode tests")
+  let transparencyTest = modeRun?.tests.first { $0.mode == .transparency }
+  check(
+    transparencyTest?.write.verified == true
+      && transparencyTest?.targetAlreadyCurrent == false,
+    "Transparency is probed before Off, so the fallback does not hide it"
+  )
   let offTest = modeRun?.tests.first { $0.mode == .off }
   check(offTest?.write.verified == false, "an unapplied off write is not verified")
   check(
@@ -111,10 +145,10 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
   )
-  // The Off write falls back to Transparency, so the next canonical target
-  // is already the current state when its own write begins.
+  // Adaptive is probed immediately before Transparency. Landing Adaptive on
+  // Transparency still cannot demonstrate the Transparency write.
   device.listeningModeWriteOverride = {
-    $0 == .off ? .transparency : $0
+    $0 == .adaptive ? .transparency : $0
   }
   let results = SupportReportWriteTester.run(device: device)
   let modeRun = results.listeningModes.testRun
@@ -129,12 +163,97 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
     "the matching readback of an already-current target is still recorded"
   )
   check(
-    modeRun?.tests.first { $0.mode == .adaptive }?.targetAlreadyCurrent == false,
+    modeRun?.tests.first { $0.mode == .off }?.targetAlreadyCurrent == false,
     "a genuine transition is not flagged as already current"
   )
   check(
     modeRun?.restoration.attempted?.targetAlreadyCurrent == false,
     "restoration only runs from a different state, so it is never flagged"
+  )
+}
+
+func testWriteTesterVerifiesTransparencyWhenOffFallsBack() {
+  let startedInTransparency = FakeCompatibleAudioDevice(
+    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+    listeningMode: .transparency,
+    conversationAwarenessSupported: false
+  )
+  startedInTransparency.listeningModeWriteOverride = {
+    $0 == .off ? .transparency : $0
+  }
+  let snapshot = SupportReportSnapshot.capture(device: startedInTransparency)
+  let fromTransparency = SupportReportWriteTester.run(device: startedInTransparency)
+  let fromTransparencyRun = fromTransparency.listeningModes.testRun
+
+  check(
+    fromTransparencyRun?.tests.map(\.mode)
+      == [.noiseCancellation, .adaptive, .transparency, .off],
+    "the initial mode stays in the probe list when it is not first"
+  )
+  let transparencyFromStart = fromTransparencyRun?.tests.first {
+    $0.mode == .transparency
+  }
+  check(
+    transparencyFromStart?.targetAlreadyCurrent == false
+      && transparencyFromStart?.write.verified == true,
+    "Transparency is probed from Adaptive before Off can bounce back to it"
+  )
+  check(
+    fromTransparencyRun?.tests.first { $0.mode == .off }?.write.verified == false,
+    "the disabled Off write remains a no-op"
+  )
+  check(
+    fromTransparencyRun?.restoration.stateNeverChanged == true
+      && fromTransparencyRun?.restored == true,
+    "Off fallback returns to the captured initial mode without a restore write"
+  )
+
+  let document = SupportReportDocument.make(
+    snapshot: snapshot,
+    writeTests: fromTransparency
+  )
+  check(
+    document.summary.inconclusive == 0 && document.summary.verified == 3,
+    "Off fallback from Transparency does not yield an inconclusive verdict"
+  )
+  check(
+    !document.terminalOutput.contains("INCONCLUSIVE"),
+    "the terminal report does not present Transparency as inconclusive"
+  )
+  check(
+    !document.githubIssueDraft.report.contains("captured initial mode"),
+    "a demonstrated initial mode is not an unnamed skipped restoration row"
+  )
+
+  let startedInNoiseCancellation = FakeCompatibleAudioDevice(
+    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+    listeningMode: .noiseCancellation,
+    conversationAwarenessSupported: false
+  )
+  startedInNoiseCancellation.listeningModeWriteOverride = {
+    $0 == .off ? .transparency : $0
+  }
+  let fromNoiseCancellation = SupportReportWriteTester.run(
+    device: startedInNoiseCancellation
+  )
+  let fromNoiseCancellationRun = fromNoiseCancellation.listeningModes.testRun
+  let transparencyAfterOff = fromNoiseCancellationRun?.tests.first {
+    $0.mode == .transparency
+  }
+  check(
+    fromNoiseCancellationRun?.tests.map(\.mode)
+      == [.adaptive, .transparency, .off],
+    "the already-current first probe is deferred to restoration"
+  )
+  check(
+    transparencyAfterOff?.targetAlreadyCurrent == false
+      && transparencyAfterOff?.write.verified == true,
+    "Transparency is still a real transition when Off is last"
+  )
+  check(
+    fromNoiseCancellationRun?.restoration.attempted?.mode == .noiseCancellation
+      && fromNoiseCancellationRun?.restoration.attempted?.write.verified == true,
+    "restoration still demonstrates the captured initial mode"
   )
 }
 
@@ -153,18 +272,17 @@ func testWriteTesterVerifiesSettledTransitionsBeforeReturning() {
   let modeRun = results.listeningModes.testRun
 
   check(
-    modeRun?.tests.first?.mode == .adaptive
-      && modeRun?.tests.first?.write.verified == true,
-    "a mode is verified from its post-hold state"
+    modeRun?.tests.map(\.mode) == [.adaptive, .transparency]
+      && modeRun?.tests.allSatisfy(\.write.verified) == true,
+    "each mode is verified from its post-hold state"
   )
   check(
-    modeRun?.restoration.attempted?.mode == .transparency
-      && modeRun?.restoration.attempted?.write.verified == true,
-    "the initial mode is verified only after its restoration hold"
+    modeRun?.restoration.stateNeverChanged == true,
+    "the initial mode is already restored by its exploratory probe"
   )
   check(
     device.settleIntervals.count == 2,
-    "the tester waits for both the exploratory transition and final restoration"
+    "the tester waits for both advertised-mode holds"
   )
   check(
     modeRun?.finalMode == .transparency,
@@ -178,13 +296,13 @@ func testWriteTesterStopsOnSetterErrorAndRestores() {
     listeningMode: .noiseCancellation,
     conversationAwarenessSupported: false
   )
-  device.listeningModeSetterAccepted = { $0 != .adaptive }
+  device.listeningModeSetterAccepted = { $0 != .transparency }
 
   let results = SupportReportWriteTester.run(device: device)
   let modeRun = results.listeningModes.testRun
 
   check(
-    modeRun?.tests.map(\.mode) == [.transparency, .adaptive],
+    modeRun?.tests.map(\.mode) == [.adaptive, .transparency],
     "a setter error skips remaining exploratory writes"
   )
   check(
@@ -347,7 +465,7 @@ func testRunInterruptiblyRestoresAfterARealSignalDuringModeHold() {
   )
   check(notices.count == 1, "the real-signal path announces the interruption exactly once")
   check(
-    results.listeningModes.testRun?.tests.map(\.mode) == [.off],
+    results.listeningModes.testRun?.tests.map(\.mode) == [.adaptive],
     "a real signal stops later exploratory mode writes"
   )
   check(
@@ -524,9 +642,11 @@ func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
 }
 
 func runSupportReportWriteTesterTests() {
+  testWriteTestPlanProbesStrongestModesFirst()
   testWriteTesterVerifiesAndRestores()
   testWriteTesterContinuesAfterNoOp()
   testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent()
+  testWriteTesterVerifiesTransparencyWhenOffFallsBack()
   testWriteTesterVerifiesSettledTransitionsBeforeReturning()
   testWriteTesterStopsOnSetterErrorAndRestores()
   testWriteTesterReportsConversationAwarenessRestorationSetterError()

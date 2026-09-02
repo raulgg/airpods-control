@@ -433,7 +433,7 @@ $ airpods-control support-report
 Write tests
 ────────────────────────────────────────────
 Plan
-  Listening modes          off, transparency, adaptive (about 2s each)
+  Listening modes          adaptive, transparency, off (about 2s each)
   Restore mode             noise-cancellation
   Conversation Awareness   toggle and restore
 
@@ -520,10 +520,13 @@ does not change after it is disclosed. If a setting changes while consent is
 pending, that setting is skipped rather than replaced with a different write.
 
 The listening-mode plan contains the advertised modes recognized by this CLI. It
-attempts each noninitial mode and, if the state changed, restores the captured
-initial mode last. All listening-mode writes are skipped if the setter is
-missing, the initial mode is unreadable or not advertised, or there is no
-alternate recognized advertised mode to test.
+probes them in reverse canonical order (`noise-cancellation`, `adaptive`,
+`transparency`, then `off`) so an Off write that falls back to Transparency
+cannot make the Transparency probe already-current. The captured initial mode
+is included in that sequence when it is not already first. If the state
+changed, the captured initial mode is restored last. All listening-mode writes
+are skipped if the setter is missing, the initial mode is unreadable or not
+advertised, or there is no alternate recognized advertised mode to test.
 
 Conversation Awareness is toggled away from the captured initial state and back.
 It is skipped if its setter or initial state is unavailable. Both features use
@@ -536,10 +539,13 @@ them during a call. Consent only if you accept this.
 After normal completion or a setter error, the command makes one restoration
 attempt if needed. An accepted write that cannot be verified is a `no-op` and
 does not stop the remaining tests. A `setter error` stops the remaining tests
-for that setting. A write whose target already matches the state read
-immediately before it cannot demonstrate a transition and is
+for that setting. Probe order is chosen so a disabled Off mode, which falls
+back to Transparency, is tested last and does not hide a Transparency
+transition. A write whose target already matches the state read immediately
+before it still cannot demonstrate a transition and is
 `inconclusive (already in this state; no transition demonstrated)`, not
-`verified`.
+`verified`. That verdict is a safety net for unexpected already-current
+writes; it does not establish support.
 
 The terminal always states the restoration outcome: `RESTORED`, `NOT NEEDED`, or
 `NOT RESTORED`. A failed restoration names the final state, gives a manual-fix
@@ -559,14 +565,13 @@ Compatibility report
 ...
 
 Write tests
-  Off                      NO-OP
-  Transparency             INCONCLUSIVE · already in this state; no transition
-                           demonstrated
-  Adaptive                 VERIFIED
   Noise cancellation       VERIFIED
+  Adaptive                 VERIFIED
+  Transparency             VERIFIED
+  Off                      NO-OP
   Conversation Awareness   VERIFIED
   CA restoration           VERIFIED
-  Summary                  4 verified · 1 inconclusive · 1 no-op
+  Summary                  5 verified · 1 no-op
   Restoration              RESTORED
 
 Review complete. Nothing has been submitted to GitHub.

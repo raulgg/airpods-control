@@ -13,12 +13,13 @@ func testSupportReportProgressTracksCompleteAndSkippedWorkflows() {
   check(
     events == [
       .preparing,
-      .operationStarted(.listeningMode(.off), step: 1, total: 6),
-      .operationStarted(.listeningMode(.adaptive), step: 2, total: 6),
-      .operationStarted(.listeningMode(.noiseCancellation), step: 3, total: 6),
-      .operationStarted(.listeningModeRestoration, step: 4, total: 6),
-      .operationStarted(.conversationAwareness, step: 5, total: 6),
-      .operationStarted(.conversationAwarenessRestoration, step: 6, total: 6),
+      .operationStarted(.listeningMode(.noiseCancellation), step: 1, total: 7),
+      .operationStarted(.listeningMode(.adaptive), step: 2, total: 7),
+      .operationStarted(.listeningMode(.transparency), step: 3, total: 7),
+      .operationStarted(.listeningMode(.off), step: 4, total: 7),
+      .operationStarted(.listeningModeRestoration, step: 5, total: 7),
+      .operationStarted(.conversationAwareness, step: 6, total: 7),
+      .operationStarted(.conversationAwarenessRestoration, step: 7, total: 7),
       .finished,
     ],
     "a complete run reports every planned operation and restoration"
@@ -27,7 +28,7 @@ func testSupportReportProgressTracksCompleteAndSkippedWorkflows() {
   let rejectingDevice = FakeCompatibleAudioDevice(
     conversationAwarenessSupported: false
   )
-  rejectingDevice.listeningModeSetterAccepted = { mode in mode != .off }
+  rejectingDevice.listeningModeSetterAccepted = { mode in mode != .noiseCancellation }
   let rejectingPlan = SupportReportWriteTestPlan.make(device: rejectingDevice)
   events = []
   _ = SupportReportWriteTester.run(
@@ -38,10 +39,11 @@ func testSupportReportProgressTracksCompleteAndSkippedWorkflows() {
   check(
     events == [
       .preparing,
-      .operationStarted(.listeningMode(.off), step: 1, total: 4),
-      .operationSkipped(.listeningMode(.adaptive), step: 2, total: 4),
-      .operationSkipped(.listeningMode(.noiseCancellation), step: 3, total: 4),
-      .operationSkipped(.listeningModeRestoration, step: 4, total: 4),
+      .operationStarted(.listeningMode(.noiseCancellation), step: 1, total: 5),
+      .operationSkipped(.listeningMode(.adaptive), step: 2, total: 5),
+      .operationSkipped(.listeningMode(.transparency), step: 3, total: 5),
+      .operationSkipped(.listeningMode(.off), step: 4, total: 5),
+      .operationSkipped(.listeningModeRestoration, step: 5, total: 5),
       .finished,
     ],
     "skipped operations advance through the original fixed denominator"
@@ -114,7 +116,7 @@ func testSupportReportProgressClearsForInterruptAndRestoration() {
 
   let noticeIndex = writes.firstIndex(of: SupportReportWriteTester.interruptionNotice)
   let restorationIndex = writes.firstIndex(where: {
-    $0.contains("[4/6] Restoring listening mode…")
+    $0.contains("[5/7] Restoring listening mode…")
   })
   check(results.interruptedBySignal == SIGINT, "the progress fixture is interrupted")
   check(
