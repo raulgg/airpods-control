@@ -3,6 +3,12 @@
 Follow [CONTRIBUTING.md](CONTRIBUTING.md). Register common pitfalls
 here and avoid them.
 
+## Support-report write tests
+
+- Probe listening modes in reverse canonical order (noise cancellation,
+  Adaptive, Transparency, Off). Off may fall back to Transparency; probing
+  Off first makes the Transparency write already-current and inconclusive.
+
 ## Quality checks
 
 - Do not skip `make test`.

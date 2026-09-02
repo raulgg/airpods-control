@@ -179,10 +179,12 @@ verdicts.
 Mark a write capability as **Verified** only from an individual `verified`
 verdict or from a manual test on real hardware that records the device and macOS
 version. An `inconclusive`, `no-op`, or `setter error` verdict does not
-establish support. In particular,
-`inconclusive (already in this state; no transition demonstrated)` means the
-device already reported the target before the write, so the matching readback
-does not prove that the setter worked.
+establish support. Write tests probe listening modes from noise cancellation
+toward Off so a disabled Off mode that falls back to Transparency cannot make
+the Transparency probe already-current. An
+`inconclusive (already in this state; no transition demonstrated)` verdict
+means the device already reported the target before the write, so the matching
+readback does not prove that the setter worked.
 
 If the report says the model is not recognized by this CLI version, the model
 identifier line still carries the decoded Bluetooth product ID whenever the
