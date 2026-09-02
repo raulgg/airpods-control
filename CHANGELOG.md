@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/raulgg/airpods-control/compare/v0.3.0...v0.3.1) (2026-09-02)
+
+
+### Bug Fixes
+
+* label support-report listening-mode restore rows ([ad204c6](https://github.com/raulgg/airpods-control/commit/ad204c6df6bcf0e68092640e83828fe5c7521ed4))
+* probe support-report modes strongest-first ([54f4ab4](https://github.com/raulgg/airpods-control/commit/54f4ab4616661aa609e2183ad2176cead3582c66))
+
 ## [0.3.0](https://github.com/raulgg/airpods-control/compare/v0.2.1...v0.3.0) (2026-08-27)
 
 
