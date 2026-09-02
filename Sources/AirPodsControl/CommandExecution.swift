@@ -165,8 +165,8 @@ enum CommandExecution {
 
     if case .version = invocation.command {
       return CommandOutcome(
-        plain: VERSION,
-        data: ["version": VERSION]
+        plain: BuildVersion.current,
+        data: ["version": BuildVersion.current]
       )
     }
 
