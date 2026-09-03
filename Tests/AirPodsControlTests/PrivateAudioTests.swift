@@ -25,12 +25,12 @@ struct PrivateAudioTests {
       device.currentListeningMode() == .noiseCancellation,
       "private adapter translates the current mode"
     )
-  
+
     let unknown = scriptedPrivateAudioDevice(
       reads: ["AVOutputDeviceBluetoothListeningModeFuture"]
     )
     #expect(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
-  
+
     let emptyRaw = FakeRawDevice(name: "Empty Inventory AirPods", modes: [])
     let empty = PrivateAudioController(
       endpoints: PrivateAudioContextEndpoints(plural: [], singular: emptyRaw),
@@ -42,7 +42,7 @@ struct PrivateAudioTests {
       Issue.record("an answered empty AV inventory is typed evidence")
     }
   }
-  
+
   @Test
   func privateStatusReadClassification() throws {
     let known = privateAudioDevice(FakeRawDevice(name: "Known Status AirPods"))
@@ -50,7 +50,7 @@ struct PrivateAudioTests {
     } else {
       Issue.record("status maps a known private listening mode")
     }
-  
+
     let future = scriptedPrivateAudioDevice(
       reads: ["AVOutputDeviceBluetoothListeningModeFuture"]
     )
@@ -58,13 +58,13 @@ struct PrivateAudioTests {
     } else {
       Issue.record("an answered but unknown mode is unresolved")
     }
-  
+
     let failed = scriptedPrivateAudioDevice(reads: [nil])
     if case .readError = failed.readListeningModeStatus() {
     } else {
       Issue.record("a missing required mode response is a status read error")
     }
-  
+
     let unsupportedCA = privateAudioDevice(
       FakeRawDevice(name: "Unsupported CA AirPods", conversationAwarenessSupported: false)
     )
@@ -72,20 +72,20 @@ struct PrivateAudioTests {
     } else {
       Issue.record("explicit false proves Conversation Awareness unsupported")
     }
-  
+
     let unresolvedCA = privateAudioDevice(FakeReadOnlyRawDevice(name: "Unresolved CA AirPods"))
     if case .unresolved = unresolvedCA.readConversationAwarenessStatus() {
     } else {
       Issue.record("a missing Conversation Awareness support probe is unresolved")
     }
-  
+
     let failedCA = privateAudioDevice(FakeMissingConversationAwarenessStateRawDevice())
     if case .readError = failedCA.readConversationAwarenessStatus() {
     } else {
       Issue.record("advertised CA with no state getter is a read error")
     }
   }
-  
+
   @Test
   func supportReportDiscoveryDoesNotReadDeviceNames() throws {
     let rawDevice = FakeSupportReportRawDevice()
@@ -134,7 +134,7 @@ struct PrivateAudioTests {
       !device.canSetConversationAwareness(),
       "support-report fixture exposes no Conversation Awareness setter"
     )
-  
+
     let otherRawDevice = FakeSupportReportRawDevice()
     let ambiguousController = PrivateAudioController(
       rawDevices: [rawDevice, otherRawDevice],
@@ -149,7 +149,7 @@ struct PrivateAudioTests {
       rawDevice.nameReadCount == 0 && otherRawDevice.nameReadCount == 0,
       "rejecting multiple report devices still reads no customizable names"
     )
-  
+
     let namelessController = PrivateAudioController(
       rawDevices: [FakeNamelessRawDevice()],
       logger: DebugLogger(enabled: false),
@@ -160,7 +160,7 @@ struct PrivateAudioTests {
       "support-report rejects devices that other commands cannot target"
     )
   }
-  
+
   // support-report is the one command that resolves its device with
   // includeDeviceNames: false, which is what makes --debug safe for it. Pin that
   // across the whole reachable log surface — discovery, selection, the snapshot
@@ -176,7 +176,7 @@ struct PrivateAudioTests {
       conversationAwarenessError: NSError(domain: ownerName, code: 74)
     )
     var report: SupportReportDocument?
-  
+
     let captured = capturingStandardError {
       guard let device = PrivateAudioController(
         rawDevices: [rawDevice],
@@ -189,7 +189,7 @@ struct PrivateAudioTests {
       _ = device.setListeningModeAndReadBack(.noiseCancellation, wait: { _ in })
       _ = device.setConversationAwarenessAndReadBack(true, wait: { _ in })
     }
-  
+
     guard let captured else {
       Issue.record("the debug stream on standard error can be captured")
       return
@@ -218,7 +218,7 @@ struct PrivateAudioTests {
       "no support-report debug line carries the customizable device name"
     )
   }
-  
+
   @Test
   func listeningModeReadbackWaitsForDelayedTarget() throws {
     let off = rawListeningModeValues[.off]!
@@ -229,15 +229,15 @@ struct PrivateAudioTests {
         off,
       ]
     )
-  
+
     let observation = device.setListeningModeAndReadBack(.off, wait: { _ in })
-  
+
     #expect(
       observation.observed == .off,
       "listening-mode readback waits for a delayed target"
     )
   }
-  
+
   @Test
   func listeningModeReadbackReturnsImmediatelyForObservedTarget() throws {
     let adaptive = rawListeningModeValues[.adaptive]!
@@ -246,9 +246,9 @@ struct PrivateAudioTests {
       setterAccepted: false
     )
     var waitCount = 0
-  
+
     let observation = device.setListeningModeAndReadBack(.adaptive) { _ in waitCount += 1 }
-  
+
     #expect(
       observation.observed == .adaptive,
       "observed target is authoritative when the setter rejects"
@@ -256,7 +256,7 @@ struct PrivateAudioTests {
     #expect(!observation.setterAccepted, "readback preserves setter rejection")
     #expect(waitCount == 0, "observed target returns without waiting")
   }
-  
+
   @Test
   func listeningModeReadbackReturnsFinalFallback() throws {
     let noiseCancellation = rawListeningModeValues[.noiseCancellation]!
@@ -267,9 +267,9 @@ struct PrivateAudioTests {
         + [transparency]
     )
     var waitCount = 0
-  
+
     let observation = device.setListeningModeAndReadBack(.off) { _ in waitCount += 1 }
-  
+
     #expect(
       observation.observed == .transparency,
       "Off returns the settled fallback mode"
@@ -277,23 +277,23 @@ struct PrivateAudioTests {
     #expect(observation.setterAccepted, "readback preserves setter acceptance")
     #expect(waitCount > 0, "Off readback waits for the fallback to settle")
   }
-  
+
   @Test
   func listeningModeReadbackReturnsUnknownOrMissingFinalState() throws {
     let noiseCancellation = rawListeningModeValues[.noiseCancellation]!
     let unknown = "AVOutputDeviceBluetoothListeningModeFuture"
-  
+
     let unknownObserved = scriptedPrivateAudioDevice(reads: [noiseCancellation, unknown])
       .setListeningModeAndReadBack(.off, wait: { _ in })
       .observed
     #expect(unknownObserved == nil, "unknown final readback becomes null state")
-  
+
     let missingObserved = scriptedPrivateAudioDevice(reads: [noiseCancellation, nil])
       .setListeningModeAndReadBack(.off, wait: { _ in })
       .observed
     #expect(missingObserved == nil, "missing final readback becomes null state")
   }
-  
+
   @Test(.serialized, arguments: [
     FakeRawDevice.ListeningModeUpdateDelivery.mainRunLoop,
     .mainDispatchQueue,
@@ -321,13 +321,13 @@ struct PrivateAudioTests {
 
     try #require(isMainThread, "async readback runs on the main thread")
     #expect(observation.setterAccepted, "the asynchronous setter accepts the write")
-  
+
     #expect(
       observation.observed == .transparency,
       "readback processes asynchronous device updates"
     )
   }
-  
+
   @Test
   func conversationAwarenessReadbackPolicy() throws {
     let unchangedRawDevice = FakeRawDevice(
@@ -337,36 +337,36 @@ struct PrivateAudioTests {
     )
     let unchangedDevice = privateAudioDevice(unchangedRawDevice)
     var waitCount = 0
-  
+
     let unchanged = unchangedDevice.setConversationAwarenessAndReadBack(true) { _ in
       waitCount += 1
     }
-  
+
     #expect(unchanged.setterAccepted, "Conversation Awareness preserves setter acceptance")
     #expect(unchanged.observed == false, "Conversation Awareness returns final observed state")
     #expect(waitCount > 0, "Conversation Awareness waits for an unapplied write")
-  
+
     let changedRawDevice = FakeRawDevice(
       name: "Changed Awareness AirPods",
       conversationAwarenessEnabled: false
     )
     let changedDevice = privateAudioDevice(changedRawDevice)
     let changed = changedDevice.setConversationAwarenessAndReadBack(true, wait: { _ in })
-  
+
     #expect(changed.observed == true, "Conversation Awareness returns an applied write")
     #expect(
       changedRawDevice.conversationAwarenessSetCount == 1,
       "Conversation Awareness invokes the private setter once"
     )
   }
-  
+
   @Test
   func deviceSelectionAndCapabilities() throws {
     let logger = DebugLogger(enabled: false)
     let first = FakeRawDevice(name: "My AirPods Pro")
     let second = FakeRawDevice(name: "Studio AirPods")
     let controller = PrivateAudioController(rawDevices: [first, second], logger: logger)
-  
+
     #expect(
       controller.selectDevice(named: nil) == nil,
       "default single-target selection rejects multiple devices"
@@ -400,7 +400,7 @@ struct PrivateAudioTests {
       controller.selectDevice(named: "Missing AirPods") == nil,
       "device matching never falls back"
     )
-  
+
     let duplicate = FakeRawDevice(name: "MY AIRPODS PRO")
     let ambiguous = PrivateAudioController(rawDevices: [first, duplicate], logger: logger)
     #expect(
@@ -437,7 +437,7 @@ struct PrivateAudioTests {
         && duplicate.conversationAwarenessSetCount == 0,
       "ambiguous selection cannot write Conversation Awareness"
     )
-  
+
     let incomplete = FakeIncompleteRawDevice()
     let filtered = PrivateAudioController(rawDevices: [incomplete, second], logger: logger)
     #expect(
@@ -454,7 +454,7 @@ struct PrivateAudioTests {
         == ["Studio AirPods", "Studio Beats", "My AirPods Pro"],
       "all-device selection keeps compatible Beats and stable filtered order"
     )
-  
+
     let readOnly = FakeReadOnlyRawDevice(name: "Read-only AirPods")
     let readOnlyController = PrivateAudioController(rawDevices: [readOnly], logger: logger)
     let selectedReadOnly = readOnlyController.selectDevice(named: nil)
@@ -464,7 +464,7 @@ struct PrivateAudioTests {
       selectedReadOnly?.supportsConversationAwareness() == nil,
       "missing Conversation Awareness selector is detected"
     )
-  
+
     let selected = controller.selectDevice(named: "Studio AirPods")!
     let reportMetadata = selected.supportReportMetadata()
     #expect(reportMetadata.family == .airPods, "report identifies AirPods from model metadata")
@@ -490,7 +490,7 @@ struct PrivateAudioTests {
     _ = selected.setConversationAwarenessAndReadBack(true, wait: { _ in })
     #expect(selected.conversationAwarenessState() == true, "CA setter and state are invoked safely")
   }
-  
+
   @Test
   func supportReportMetadataForUnrecognizedModes() throws {
     let future = FakeRawDevice(
@@ -517,7 +517,7 @@ struct PrivateAudioTests {
       device.currentListeningMode() == nil,
       "an unmapped current mode is not translated"
     )
-  
+
     let allUnknown = FakeRawDevice(
       name: "Unknown-mode AirPods",
       modes: ["AVOutputDeviceBluetoothListeningModeFuture"],
@@ -542,6 +542,6 @@ struct PrivateAudioTests {
       "an unmapped current mode is distinguished in the report"
     )
   }
-  
-  
+
+
 }

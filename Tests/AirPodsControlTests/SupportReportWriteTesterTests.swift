@@ -50,7 +50,7 @@ struct SupportReportWriteTesterTests {
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
     let awarenessRun = results.conversationAwareness.testRun
-  
+
     #expect(
       modeRun?.tests.map(\.mode)
         == [.adaptive, .transparency, .off],
@@ -105,7 +105,7 @@ struct SupportReportWriteTesterTests {
     }
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
-  
+
     #expect(modeRun?.tests.count == 2, "a no-op does not skip later mode tests")
     let transparencyTest = modeRun?.tests.first { $0.mode == .transparency }
     #expect(
@@ -164,7 +164,7 @@ struct SupportReportWriteTesterTests {
     }
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
-  
+
     let transparencyTest = modeRun?.tests.first { $0.mode == .transparency }
     #expect(
       transparencyTest?.targetAlreadyCurrent == true,
@@ -367,10 +367,10 @@ struct SupportReportWriteTesterTests {
     device.settleEffect = {
       device.listeningMode = device.lastListeningModeTarget
     }
-  
+
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
-  
+
     #expect(
       modeRun?.tests.map(\.mode) == [.adaptive, .transparency]
         && modeRun?.tests.allSatisfy(\.write.verified) == true,
@@ -398,10 +398,10 @@ struct SupportReportWriteTesterTests {
       conversationAwarenessSupported: false
     )
     device.listeningModeSetterAccepted = { $0 != .transparency }
-  
+
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
-  
+
     #expect(
       modeRun?.tests.map(\.mode) == [.adaptive, .transparency],
       "a setter error skips remaining exploratory writes"
@@ -436,9 +436,9 @@ struct SupportReportWriteTesterTests {
       conversationAwarenessEnabled: false
     )
     device.conversationAwarenessSetterAccepted = { target in target }
-  
+
     let results = SupportReportWriteTester.run(device: device)
-  
+
     #expect(
       results.conversationAwareness.testRun?.restored == false,
       "a rejected Conversation Awareness restoration is not treated as restored"
@@ -480,7 +480,7 @@ struct SupportReportWriteTesterTests {
       unreadableResults.fullyRestored,
       "skipped capabilities never fail restoration"
     )
-  
+
     let unexposed = FakeCompatibleAudioDevice(
       conversationAwarenessSupported: false
     )
@@ -495,7 +495,7 @@ struct SupportReportWriteTesterTests {
       "unsupported Conversation Awareness skips its test"
     )
     #expect(unexposed.listeningModeSetCount == 0, "no write reaches a missing setter")
-  
+
     let unadvertised = FakeCompatibleAudioDevice(
       listeningModes: [.adaptive, .noiseCancellation],
       listeningMode: .transparency,
@@ -524,7 +524,7 @@ struct SupportReportWriteTesterTests {
     device.listeningModeWriteOverride = { _ in .transparency }
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
-  
+
     #expect(
       modeRun?.restored == false,
       "a restore write that lands elsewhere reports a failed restoration"
@@ -559,14 +559,14 @@ struct SupportReportWriteTesterTests {
         )
       }
     }
-  
+
     var notices: [String] = []
     let results = SupportReportWriteTester.runInterruptibly(
       plan: SupportReportWriteTestPlan.make(device: device),
       device: device,
       writeError: { notices.append($0) }
     )
-  
+
     #expect(
       results.interruptedBySignal == SIGINT,
       "the production monitor propagates a real signal into the runner"
@@ -600,7 +600,7 @@ struct SupportReportWriteTesterTests {
     sigemptyset(&customAction.sa_mask)
     sigaddset(&customAction.sa_mask, SIGUSR1)
     customAction.sa_flags = SA_NODEFER
-  
+
     var originalAction = sigaction()
     #expect(
       sigaction(SIGTERM, &customAction, &originalAction) == 0,
@@ -610,13 +610,13 @@ struct SupportReportWriteTesterTests {
       var action = originalAction
       _ = sigaction(SIGTERM, &action, nil)
     }
-  
+
     guard let monitor = SupportReportTerminationMonitor() else {
       Issue.record("the production signal monitor installs over a custom action")
       return
     }
     _ = monitor.disarm()
-  
+
     var restoredAction = sigaction()
     #expect(
       sigaction(SIGTERM, nil, &restoredAction) == 0,
@@ -646,14 +646,14 @@ struct SupportReportWriteTesterTests {
       }
       return true
     }
-  
+
     let results = SupportReportWriteTester.run(
       plan: SupportReportWriteTestPlan.make(device: device),
       device: device,
       interruptionSignal: { caughtSignal },
       writeError: { _ in }
     )
-  
+
     #expect(
       results.interruptedBySignal == SIGTERM,
       "an interruption during the Conversation Awareness toggle is retained"
@@ -684,14 +684,14 @@ struct SupportReportWriteTesterTests {
     device.conversationAwarenessStateEffect = {
       caughtSignal = SIGINT
     }
-  
+
     let results = SupportReportWriteTester.run(
       plan: plan,
       device: device,
       interruptionSignal: { caughtSignal },
       writeError: { _ in }
     )
-  
+
     #expect(
       device.conversationAwarenessSetCount == 0,
       "an interruption observed at the CA boundary prevents a new toggle"
@@ -730,14 +730,14 @@ struct SupportReportWriteTesterTests {
       }
       return true
     }
-  
+
     let results = SupportReportWriteTester.run(
       plan: SupportReportWriteTestPlan.make(device: device),
       device: device,
       interruptionSignal: { caughtSignal },
       writeError: { notices.append($0) }
     )
-  
+
     #expect(
       results.interruptedBySignal == SIGINT,
       "the announced interruption is also retained in the results"

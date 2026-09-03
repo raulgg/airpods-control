@@ -7,7 +7,7 @@ import Testing
 
 @Suite("HAL listening mode candidates")
 struct HALListeningModeCandidateTests {
-  
+
   @Test
   func listeningModeControlCandidatesReuseMappedOutputInventory() throws {
     let bluetoothDevice = EqualBluetoothObject(identity: 501)
@@ -28,7 +28,7 @@ struct HALListeningModeCandidateTests {
       ],
       backend: backend
     )
-  
+
     let candidates = controller.listeningModeCandidates()
     #expect(candidates.count == 1, "mapped output inventory supplies one control candidate")
     #expect(candidates.first?.displayName == "Control AirPods", "control keeps Core Audio name")
@@ -40,7 +40,7 @@ struct HALListeningModeCandidateTests {
         == [.transparency, .adaptive, .noiseCancellation],
       "control reads the HAL non-Off capability mask"
     )
-  
+
     let inputOnlyDevice = EqualBluetoothObject(identity: 502)
     let (inputOnlyController, _) = makeBluetoothController(
       inventory: [
@@ -60,7 +60,7 @@ struct HALListeningModeCandidateTests {
       "input-only endpoints never become listening-mode write targets"
     )
   }
-  
+
   @Test
   func listeningModeControlTargetsTheEndpointThatExposesLstm() throws {
     let namedWrapper = EqualBluetoothObject(identity: 505)
@@ -84,7 +84,7 @@ struct HALListeningModeCandidateTests {
       ],
       readStatusListeningMode: false
     )
-  
+
     let candidates = controller.listeningModeCandidates()
     let transport = candidates.first?.halTransport as? HALListeningModeTransport
     #expect(candidates.count == 1, "one Bluetooth group produces one HAL control target")
@@ -96,7 +96,7 @@ struct HALListeningModeCandidateTests {
       transport?.audioDeviceID == 75,
       "the HAL write target uses the sibling output that exposes lstm"
     )
-  
+
     let (unsupportedController, _) = makeBluetoothController(
       inventory: [
         FakeInventoryEndpoint(
@@ -121,7 +121,7 @@ struct HALListeningModeCandidateTests {
       "a Bluetooth group without lstm is not a HAL control target"
     )
   }
-  
+
   @Test
   func listeningModeControlInventoryDefersHALStateReads() throws {
     let bluetoothDevice = EqualBluetoothObject(identity: 504)
@@ -149,7 +149,7 @@ struct HALListeningModeCandidateTests {
     _ = transport?.currentListeningMode()
     #expect(backend.listeningModeReads == [73], "chosen HAL transport performs its own state read")
   }
-  
+
   @Test
   func listeningModeControlCandidateJoinsOnlyExactActiveEndpoint() throws {
     let bluetoothDevice = EqualBluetoothObject(identity: 503)
@@ -173,14 +173,14 @@ struct HALListeningModeCandidateTests {
       backend: backend,
       activeProbe: activeProbe
     )
-  
+
     let candidate = controller.listeningModeCandidates().first
     #expect(candidate?.route == .selected, "stable mapped route proves the control selected")
     #expect(
       (candidate?.avTransport as? PrivateAudioDevice)?.object === rawAVDevice,
       "exact Core Audio endpoint binding supplies the AV transport"
     )
-  
+
     let wrongBackend = FakeAudioRoutingBackend()
     wrongBackend.outputDefaults = [.value(72), .value(72)]
     wrongBackend.inputDefaults = [.value(nil), .value(nil)]
@@ -202,7 +202,7 @@ struct HALListeningModeCandidateTests {
     )
     let unmatched = wrongController.listeningModeCandidates().first
     #expect(unmatched?.avTransport == nil, "a different Core Audio endpoint never name-joins AV")
-  
+
     let compositeBackend = FakeAudioRoutingBackend()
     compositeBackend.outputDefaults = [.value(900), .value(900)]
     compositeBackend.inputDefaults = [.value(nil), .value(nil)]
@@ -225,7 +225,7 @@ struct HALListeningModeCandidateTests {
       "a composite output is unknown rather than positively unselected for control"
     )
   }
-  
+
   @Test
   func listeningModeControlRejectsSingularAVFallbackAfterProbeMismatch() throws {
     let bluetoothDevice = EqualBluetoothObject(identity: 506)
@@ -235,7 +235,7 @@ struct HALListeningModeCandidateTests {
     backend.listeningModeSupport[78] = .value(0b111)
     backend.listeningModeSettable[78] = .value(true)
     backend.listeningModeWriteResult = .success
-  
+
     let unrelatedRawAVDevice = FakeRawDevice(name: "Unrelated AirPods")
     let mismatchedProbe = FakeActiveAudioEndpointProbe(
       .value(
@@ -281,13 +281,13 @@ struct HALListeningModeCandidateTests {
         )
       }
     )
-  
+
     #expect(
       unrelatedRawAVDevice.listeningModeSetCount == 0,
       "a mismatched enrichment probe never writes through the singular AV endpoint"
     )
   }
-  
+
   @Test
   func listeningModeAllowOffCorrelationIsLazyAndExact() throws {
     let clock = Date(timeIntervalSince1970: 2_000_001_000)
@@ -318,11 +318,11 @@ struct HALListeningModeCandidateTests {
       readStatusListeningMode: false,
       allowOffCache: cache
     )
-  
+
     #expect(backend.deviceUIDReads.isEmpty, "control discovery never reads a cache identifier")
     let candidates = controller.listeningModeCandidates()
     #expect(backend.deviceUIDReads.isEmpty, "candidate construction keeps UID correlation lazy")
-  
+
     let coordinator = ListeningModeCoordinator(
       candidates: candidates,
       logger: DebugLogger(enabled: false)
@@ -344,7 +344,7 @@ struct HALListeningModeCandidateTests {
         == true,
       "the exact endpoint UID correlates its cached positive evidence"
     )
-  
+
     backend.resetDeviceUIDReads()
     let getInvocation = try parseInvocation(["lm", "get"])
     _ = CommandExecution.executeListeningMode(
@@ -360,5 +360,3 @@ struct HALListeningModeCandidateTests {
     #expect(backend.deviceUIDReads.isEmpty, "HAL current-mode get never reads the UID cache key")
   }
 }
-
-

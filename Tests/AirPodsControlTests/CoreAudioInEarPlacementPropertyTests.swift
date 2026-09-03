@@ -112,20 +112,20 @@ private final class FakeInEarPlacementPropertyAccess: CoreAudioPropertyAccess {
 
 @Suite("Core Audio in-ear placement properties")
 struct CoreAudioInEarPlacementPropertyTests {
-  
+
   @Test
   func coreAudioInEarPlacementMapsStablePrimaryJourneys() throws {
     let deviceID = AudioDeviceID(121)
     let access = FakeInEarPlacementPropertyAccess()
     access.placementValues = (1, 3)
     let backend = CoreAudioRoutingBackend(propertyAccess: access)
-  
+
     #expect(
       placementValue(backend.readBluetoothInEarPlacement(for: deviceID))
         == BluetoothEarPlacement(left: .inEar, right: .inCase),
       "a stable left primary maps both placement states to physical ears"
     )
-  
+
     access.primaryValues = [2]
     access.placementValues = (2, 1)
     #expect(
@@ -133,7 +133,7 @@ struct CoreAudioInEarPlacementPropertyTests {
         == BluetoothEarPlacement(left: .inEar, right: .outOfEar),
       "a stable right primary reverses the primary and secondary mapping"
     )
-  
+
     access.primaryValues = [1, 2]
     access.placementValues = (1, 1)
     #expect(
@@ -141,46 +141,46 @@ struct CoreAudioInEarPlacementPropertyTests {
       "a primary-side change during the read is not misattributed"
     )
   }
-  
+
   @Test
   func coreAudioInEarPlacementFailsClosedAcrossUnavailableAndMalformedEvidence() throws {
     let deviceID = AudioDeviceID(122)
     let access = FakeInEarPlacementPropertyAccess()
     let backend = CoreAudioRoutingBackend(propertyAccess: access)
-  
+
     access.detectionValue = 0
     #expect(
       placementUnavailable(backend.readBluetoothInEarPlacement(for: deviceID)),
       "disabled in-ear detection makes placement unavailable"
     )
-  
+
     access.detectionValue = 2
     #expect(
       placementUnknown(backend.readBluetoothInEarPlacement(for: deviceID)),
       "unrecognized detection evidence remains unknown"
     )
-  
+
     access.detectionValue = 1
     access.placementValues = (1, 99)
     #expect(
       placementUnknown(backend.readBluetoothInEarPlacement(for: deviceID)),
       "unrecognized placement evidence remains unknown"
     )
-  
+
     access.placementValues = (1, 2)
     access.placementPresent = false
     #expect(
       placementUnavailable(backend.readBluetoothInEarPlacement(for: deviceID)),
       "a missing placement property remains unavailable"
     )
-  
+
     access.placementPresent = true
     access.placementReadStatus = -7_102
     #expect(
       placementFailure(backend.readBluetoothInEarPlacement(for: deviceID)) == -7_102,
       "a placement read preserves its Core Audio failure"
     )
-  
+
     access.placementReadStatus = noErr
     access.placementReportedSize = UInt32(MemoryLayout<UInt32>.size)
     #expect(
@@ -188,7 +188,7 @@ struct CoreAudioInEarPlacementPropertyTests {
         == kAudioHardwareBadPropertySizeError,
       "a malformed placement payload is rejected before mapping"
     )
-  
+
     access.placementReportedSize = UInt32(2 * MemoryLayout<UInt32>.size)
     access.placementReturnedSize = UInt32(MemoryLayout<UInt32>.size)
     #expect(
@@ -225,4 +225,3 @@ private func placementFailure(_ read: BluetoothEarPlacementRead) -> OSStatus? {
   if case let .failure(status) = read { return status }
   return nil
 }
-

@@ -7,7 +7,7 @@ import Testing
 
 @Suite("Audio routing")
 struct AudioRoutingTests {
-  
+
   @Test
   func coreAudioControllerCreationPreservesInventoryReadOutcome() throws {
     let unavailableBackend = FakeAudioRoutingBackend()
@@ -24,7 +24,7 @@ struct AudioRoutingTests {
       unavailableBackend.audioDeviceReadCount == 1,
       "unavailable inventory is read exactly once"
     )
-  
+
     let failureStatus: OSStatus = -7_001
     let failureBackend = FakeAudioRoutingBackend()
     let (failureResult, _) = makeBluetoothControllerResult(
@@ -41,7 +41,7 @@ struct AudioRoutingTests {
       failureBackend.audioDeviceReadCount == 1,
       "failed inventory is read exactly once"
     )
-  
+
     let emptyBackend = FakeAudioRoutingBackend()
     let (emptyResult, _) = makeBluetoothControllerResult(
       inventory: [],
@@ -61,7 +61,7 @@ struct AudioRoutingTests {
       "successful inventory is read exactly once"
     )
   }
-  
+
   @Test
   func coreAudioInventoryDeduplicatesEndpointsAndAcceptsSparseMapping() throws {
     let canonical = EqualBluetoothObject(identity: 1)
@@ -86,7 +86,7 @@ struct AudioRoutingTests {
       ],
       backend: backend
     )
-  
+
     let devices = controller.selectDevices(named: nil, policy: .allOrExact)
     #expect(devices?.count == 1,
           "input and output endpoints mapping to one canonical object form one record")
@@ -106,7 +106,7 @@ struct AudioRoutingTests {
       "status exact-name selection uses the Core Audio name case insensitively"
     )
   }
-  
+
   @Test
   func coreAudioStatusPlacementJourneyUsesGroupedEvidenceOnlyForStatus() throws {
     let stablePlacement = BluetoothEarPlacement(left: .inEar, right: .inCase)
@@ -147,7 +147,7 @@ struct AudioRoutingTests {
       inventory: inventory,
       backend: backend
     )
-  
+
     let devices = controller.selectDevices(named: nil, policy: .allOrExact)!
     #expect(
       devices.compactMap(\.name) == [
@@ -185,7 +185,7 @@ struct AudioRoutingTests {
         && Set(backend.inEarPlacementReads).count == inventory.count,
       "status captures placement once from every eligible endpoint"
     )
-  
+
     let controlBackend = FakeAudioRoutingBackend()
     let (controlController, _) = makeBluetoothController(
       inventory: placementGroup(
@@ -208,7 +208,7 @@ struct AudioRoutingTests {
       "non-status discovery neither captures nor exposes placement"
     )
   }
-  
+
   @Test
   func coreAudioInventoryRequiresEveryPositiveEndpointGate() throws {
     let valid = NSObject()
@@ -270,7 +270,7 @@ struct AudioRoutingTests {
     #expect(devices?.last?.readListeningModeStatus().isReadError == true,
           "a failed advertised HAL current-mode read is retained as a read error")
   }
-  
+
   @Test
   func groupedEndpointIdentityConflictsFailClosed() throws {
     let canonical = EqualBluetoothObject(identity: 21)
@@ -287,7 +287,7 @@ struct AudioRoutingTests {
       appleConflictController.selectDevices(named: nil, policy: .allOrExact) == nil,
       "conflicting positive and negative HAL Apple-audio evidence rejects the exact group"
     )
-  
+
     let neutralWrapper = EqualBluetoothObject(identity: 31)
     let positiveWrapper = EqualBluetoothObject(identity: 31)
     let failingWrapper = EqualBluetoothObject(identity: 31)
@@ -308,7 +308,7 @@ struct AudioRoutingTests {
     let neutral = neutralController.selectDevices(named: nil, policy: .allOrExact)?[0]
     #expect(neutral?.readListeningModeStatus().value == .transparency,
           "positive evidence survives unavailable/read-error siblings and a zero sentinel")
-  
+
     let futureMode = NSObject()
     let (futureController, _) = makeBluetoothController(
       inventory: [
@@ -321,7 +321,7 @@ struct AudioRoutingTests {
     let future = futureController.selectDevices(named: nil, policy: .allOrExact)![0]
     #expect(future.readListeningModeStatus().isUnresolved,
           "a nonzero future HAL mode suppresses the lower-priority mapped fallback")
-  
+
     let mixedFuture = NSObject()
     let (mixedFutureController, _) = makeBluetoothController(inventory: [
       FakeInventoryEndpoint(audioDeviceID: 36, bluetoothDevice: mixedFuture,
@@ -338,7 +338,7 @@ struct AudioRoutingTests {
     )![0]
     #expect(mixedFutureDevice.readListeningModeStatus().isUnresolved,
           "a future HAL mode mixed with a recognized value remains unresolved")
-  
+
     let modeConflict = EqualBluetoothObject(identity: 41)
     let (modeConflictController, _) = makeBluetoothController(
       inventory: [
@@ -359,7 +359,7 @@ struct AudioRoutingTests {
     #expect(conflicted.readListeningModeStatus().isUnresolved,
           "different recognized HAL modes stay unresolved instead of falling back")
   }
-  
+
   @Test
   func coreAudioInventoryPreservesFirstGroupOccurrenceOrder() throws {
     let first = NSObject()
@@ -376,7 +376,7 @@ struct AudioRoutingTests {
       "record order follows first public inventory occurrence, not opaque object IDs"
     )
   }
-  
+
   @Test
   func coreAudioInventoryReportsInactiveAndInputOnlySelectionExactly() throws {
     let canonical = NSObject()
@@ -388,7 +388,7 @@ struct AudioRoutingTests {
       name: .value("Input AirPods"),
       appleAudioDevice: .value(true)
     )
-  
+
     let inactiveBackend = FakeAudioRoutingBackend()
     inactiveBackend.outputDefaults = [.value(50), .value(50)]
     inactiveBackend.inputDefaults = [.value(60), .value(60)]
@@ -403,7 +403,7 @@ struct AudioRoutingTests {
           "an inventoried but inactive device reports output no")
     #expect(inactive.readAudioInputSelectionStatus() == .notSelected,
           "an inventoried but inactive device reports input no")
-  
+
     let inputBackend = FakeAudioRoutingBackend()
     inputBackend.outputDefaults = [.value(50), .value(50)]
     inputBackend.inputDefaults = [.value(101), .value(101)]
@@ -418,7 +418,7 @@ struct AudioRoutingTests {
     #expect(inputOnly.readAudioInputSelectionStatus() == .selected,
           "an input-only selected device reports input yes")
   }
-  
+
   @Test
   func bluetoothRoutingSnapshotIsLazyStableAndShared() throws {
     let first = NSObject()
@@ -451,7 +451,7 @@ struct AudioRoutingTests {
     #expect(runtime.mappingReads.filter { $0 == 10 || $0 == 20 } == [10, 20],
           "each direction mapping is captured once and shared by every candidate")
   }
-  
+
   @Test
   func bluetoothRoutingFailuresAndChurnStayDirectionLocal() throws {
     let device = NSObject()
@@ -467,7 +467,7 @@ struct AudioRoutingTests {
           "a required output default read failure is a read error")
     #expect(selected.readAudioInputSelectionStatus() == .selected,
           "an output failure does not contaminate the input direction")
-  
+
     let churnBackend = FakeAudioRoutingBackend()
     churnBackend.outputDefaults = [.value(30), .value(31)]
     let other = NSObject()
@@ -484,7 +484,7 @@ struct AudioRoutingTests {
     #expect(churnRuntime.mappingReads.filter { $0 == 30 }.count == 1,
           "route churn still maps at most once")
   }
-  
+
   @Test
   func bluetoothRoutingTransportPolicyFailsClosed() throws {
     struct Scenario {
@@ -521,7 +521,7 @@ struct AudioRoutingTests {
                transport: .value(kAudioDeviceTransportTypeBluetooth),
                expected: .selected, mappingCalls: 1),
     ]
-  
+
     for scenario in scenarios {
       let device = NSObject()
       let backend = FakeAudioRoutingBackend()
@@ -539,7 +539,7 @@ struct AudioRoutingTests {
             "\(scenario.label) invokes the private mapper only when safe")
     }
   }
-  
+
   @Test
   func bluetoothRequiredRouteAndClassReadStates() throws {
     struct Scenario {
@@ -565,7 +565,7 @@ struct AudioRoutingTests {
       Scenario(label: "aggregate class unavailable", defaults: [.value(80), .value(80)],
                aggregate: .unavailable, expected: .unresolved, mappingCalls: 0),
     ]
-  
+
     for scenario in scenarios {
       let candidate = NSObject()
       let backend = FakeAudioRoutingBackend()
@@ -582,7 +582,7 @@ struct AudioRoutingTests {
             "\(scenario.label) does not over-read the private mapper")
     }
   }
-  
+
   @Test
   func bluetoothCanonicalEqualityAcceptsDistinctSystemWrappers() throws {
     let candidate = EqualBluetoothObject(identity: 7)
@@ -597,7 +597,7 @@ struct AudioRoutingTests {
     #expect(device.readAudioOutputSelectionStatus() == .selected,
           "canonical IOBluetooth equality joins distinct system wrappers")
   }
-  
+
   @Test
   func bluetoothMapperMissingAndDifferentDeviceAreDistinguished() throws {
     let candidate = NSObject()
@@ -620,7 +620,7 @@ struct AudioRoutingTests {
             "\(label) has the correct selection observation")
     }
   }
-  
+
   @Test
   func activeAVFeatureEnrichmentRequiresExactStableOutputJoin() throws {
     let candidate = NSObject()
@@ -646,7 +646,7 @@ struct AudioRoutingTests {
     #expect(device.readConversationAwarenessStatus().value == true,
           "an exact active join preserves the AV Conversation Awareness read")
     #expect(probe.captureCount == 1, "active endpoint enrichment is cached")
-  
+
     let wrongProbe = FakeActiveAudioEndpointProbe(
       .value(ActiveAudioEndpointBinding(audioDeviceID: 71, endpoint: endpoint))
     )
