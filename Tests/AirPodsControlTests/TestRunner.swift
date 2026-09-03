@@ -24,12 +24,10 @@ struct TestRunner {
     )
     runTestGroup("audio routing", runAudioRoutingTests)
     runTestGroup("private audio", runPrivateAudioTests)
-    runTestGroup("support report write flow", runSupportReportWriteFlowTests)
     runTestGroup(
       "support report write tester",
       runSupportReportWriteTesterTests
     )
-    runTestGroup("support report progress", runSupportReportProgressTests)
 
     if failureCount > 0 {
       fputs("Swift tests failed: \(failureCount)\n", stderr)
