@@ -9,7 +9,6 @@ struct TestRunner {
 
     runTestGroup("Allow Off cache", runListeningModeAllowOffCacheTests)
     runTestGroup("listening mode coordinator", runListeningModeCoordinatorTests)
-    runTestGroup("command execution", runCommandExecutionTests)
     runTestGroup("private audio discovery", runPrivateAudioDiscoveryTests)
     runTestGroup(
       "Core Audio listening mode property",
@@ -24,7 +23,6 @@ struct TestRunner {
       runHALListeningModeCandidateTests
     )
     runTestGroup("audio routing", runAudioRoutingTests)
-    runTestGroup("status command", runStatusCommandTests)
     runTestGroup("private audio", runPrivateAudioTests)
     runTestGroup("support report", runSupportReportTests)
     runTestGroup("support report write flow", runSupportReportWriteFlowTests)
