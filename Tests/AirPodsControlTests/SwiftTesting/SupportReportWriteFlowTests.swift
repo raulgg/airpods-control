@@ -61,6 +61,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Honors write-test flags and restores both fake settings")
   func supportReportWriteTestsCommandFlow() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.off, .transparency, .noiseCancellation],
       listeningMode: .noiseCancellation,
@@ -161,6 +164,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Writes only capabilities disclosed before consent")
   func supportReportRunsOnlyTheConsentedWritePlan() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.transparency, .adaptive],
       listeningMode: .transparency,
@@ -194,6 +200,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Skips capabilities removed while consent is pending")
   func supportReportSkipsCapabilitiesRemovedDuringConsent() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.transparency, .adaptive],
       listeningMode: .transparency,
@@ -225,6 +234,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Preserves a listening mode changed while consent is pending")
   func supportReportSkipsAPlanWhoseInitialModeChangedDuringConsent() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.transparency, .adaptive],
       listeningMode: .transparency,
@@ -254,6 +266,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Preserves Conversation Awareness changed while consent is pending")
   func supportReportSkipsAPlanWhoseAwarenessChangedDuringConsent() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [],
       conversationAwarenessSupported: true,
@@ -283,6 +298,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Retains the preflight snapshot through fake writes")
   func supportReportPreservesThePreflightSnapshotDuringWrites() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.transparency, .adaptive],
       listeningMode: .transparency,
@@ -312,6 +330,9 @@ struct SupportReportWriteFlowTests {
 
   @Test("Reports a failed restoration as state-uncertain")
   func supportReportWriteTestsRestoreFailure() throws {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.transparency, .noiseCancellation],
       listeningMode: .noiseCancellation,

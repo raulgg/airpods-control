@@ -94,7 +94,6 @@ private func allowOffCacheFileLockIsContended(fileURL: URL) -> Bool {
 
 private func withHeldAllowOffCacheFileLock(
   fileURL: URL,
-  holdFor seconds: String = "2",
   _ body: () -> Void
 ) {
   let lockURL = fileURL.deletingLastPathComponent()
@@ -106,42 +105,81 @@ private func withHeldAllowOffCacheFileLock(
   }
 
   let process = Process()
-  let startPipe = Pipe()
+  let releasePipe = Pipe()
   let readyPipe = Pipe()
+  let exited = DispatchSemaphore(value: 0)
+  defer {
+    try? releasePipe.fileHandleForReading.close()
+    try? releasePipe.fileHandleForWriting.close()
+    try? readyPipe.fileHandleForReading.close()
+    try? readyPipe.fileHandleForWriting.close()
+  }
   process.executableURL = lockfURL
-  process.arguments = [
-    lockURL.path,
-    "/bin/sh",
-    "-c",
-    "printf '\\001'; IFS= read -r _ || true; sleep \"$1\"",
-    "allow-off-cache-lock-holder",
-    seconds,
-  ]
-  process.standardInput = startPipe
+  process.arguments = ["-k", "-t", "1", lockURL.path, "/bin/cat"]
+  process.standardInput = releasePipe
   process.standardOutput = readyPipe
+  process.terminationHandler = { _ in exited.signal() }
   do {
+    // Queue the byte before launch so an early lockf failure cannot cause SIGPIPE.
+    try releasePipe.fileHandleForWriting.write(contentsOf: Data([1]))
     try process.run()
   } catch {
     Issue.record("lock contention test starts lockf: \(error)")
     return
   }
   defer {
-    try? startPipe.fileHandleForWriting.close()
-    if process.isRunning { process.terminate() }
-    process.waitUntilExit()
+    // EOF lets cat exit and lockf reap it before releasing the preserved lock file.
+    try? releasePipe.fileHandleForWriting.close()
+    if exited.wait(timeout: .now() + 2) == .timedOut {
+      Issue.record("lock contention holder did not exit within two seconds of EOF")
+      let pid = process.processIdentifier
+      // On failure, stop the isolated Process group, including cat.
+      if process.isRunning, Darwin.getpgid(pid) == pid {
+        _ = Darwin.kill(-pid, SIGKILL)
+      }
+      if exited.wait(timeout: .now() + 2) == .timedOut {
+        Issue.record("lock contention holder could not be reaped")
+      }
+    }
+    if !process.isRunning {
+      process.waitUntilExit()
+      #expect(
+        process.terminationReason == .exit && process.terminationStatus == 0,
+        "lock contention holder exits normally after release"
+      )
+    }
   }
 
-  do {
-    guard try readyPipe.fileHandleForReading.read(upToCount: 1) == Data([1]) else {
-      Issue.record(
-        "lock contention holder exited before acquiring the lock (status \(process.terminationStatus))"
-      )
+  // Only cat can echo the byte, and lockf starts it only after acquiring the lock.
+  try? releasePipe.fileHandleForReading.close()
+  try? readyPipe.fileHandleForWriting.close()
+  var readiness = pollfd(
+    fd: readyPipe.fileHandleForReading.fileDescriptor,
+    events: Int16(POLLIN),
+    revents: 0
+  )
+  let deadline = DispatchTime.now().uptimeNanoseconds + 2_000_000_000
+  var pollResult: Int32
+  repeat {
+    let now = DispatchTime.now().uptimeNanoseconds
+    guard now < deadline else {
+      Issue.record("lock contention holder did not become ready within two seconds")
       return
     }
-    try startPipe.fileHandleForWriting.write(contentsOf: Data([1]))
-    try startPipe.fileHandleForWriting.close()
+    let remainingMilliseconds = Int32((deadline - now + 999_999) / 1_000_000)
+    pollResult = Darwin.poll(&readiness, 1, remainingMilliseconds)
+  } while pollResult < 0 && errno == EINTR
+  guard pollResult > 0, readiness.revents & Int16(POLLIN) != 0 else {
+    Issue.record("lock contention holder failed or timed out before becoming ready")
+    return
+  }
+  do {
+    guard try readyPipe.fileHandleForReading.read(upToCount: 1) == Data([1]) else {
+      Issue.record("lock contention holder did not echo its readiness byte")
+      return
+    }
   } catch {
-    Issue.record("lock contention test signals lockf: \(error)")
+    Issue.record("lock contention test reads readiness: \(error)")
     return
   }
   body()

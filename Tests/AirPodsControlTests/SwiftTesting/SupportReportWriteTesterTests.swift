@@ -7,7 +7,8 @@ import Testing
 
 private func supportWriteTestSignalHandler(_: Int32) {}
 
-@Suite("Support report write tester")
+// These tests share process-wide signal handlers and the C monitor singleton.
+@Suite("Support report write tester", .serialized)
 struct SupportReportWriteTesterTests {
   @Test("Probes strongest listening modes first and Off last")
   func writeTestPlanProbesStrongestModesFirst() {
@@ -541,6 +542,9 @@ struct SupportReportWriteTesterTests {
 
   @Test("Restores after a real signal during a mode hold")
   func writeTesterRestoresAfterRealSignal() {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     let device = FakeCompatibleAudioDevice(
       listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
       listeningMode: .noiseCancellation,
@@ -588,6 +592,9 @@ struct SupportReportWriteTesterTests {
 
   @Test("Restores the complete prior signal action")
   func terminationMonitorRestoresCompleteSignalAction() {
+    supportReportSignalMonitorLock.lock()
+    defer { supportReportSignalMonitorLock.unlock() }
+
     var customAction = sigaction()
     customAction.__sigaction_u.__sa_handler = supportWriteTestSignalHandler
     sigemptyset(&customAction.sa_mask)
