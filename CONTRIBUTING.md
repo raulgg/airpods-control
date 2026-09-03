@@ -98,10 +98,8 @@ device or capability status.
 - `Sources/SignalMonitor` contains the C termination monitor linked into the
   executable and its Clang module header.
 - `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.
-  All Swift tests use Swift Testing and temporarily live under
-  `Tests/AirPodsControlTests/SwiftTesting`. The legacy command-line test
-  runner has been removed; moving the tests to the parent folder is a
-  separate cleanup.
+  All Swift tests and their helpers live directly in this folder and use
+  Swift Testing.
 - `Tests/CLIContractTests` verifies the built executable's output and exit
   codes.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in

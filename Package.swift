@@ -24,7 +24,7 @@ let package = Package(
     .testTarget(
       name: "AirPodsControlTests",
       dependencies: ["AirPodsControlCore"],
-      path: "Tests/AirPodsControlTests/SwiftTesting"
+      path: "Tests/AirPodsControlTests"
     ),
   ],
   swiftLanguageModes: [.v5]
