@@ -1,0 +1,5 @@
+--rules linebreaks,linebreakAtEndOfFile,trailingSpace
+--linebreaks lf
+--swift-version 6.0
+--language-mode 5
+--exclude build,.build,.swiftpm

@@ -5,6 +5,7 @@ DEPLOYMENT_TARGET ?= 12.0
 ARCHS ?= arm64 x86_64
 
 SWIFTC ?= swiftc
+SWIFTFORMAT ?= swiftformat
 SWIFT_TOOLCHAIN_DRIVER := $(shell xcrun --find swift)
 SWIFT ?= $(SWIFT_TOOLCHAIN_DRIVER)
 CLANG ?= clang
@@ -20,6 +21,7 @@ VERSION_FILE := version.txt
 VERSION_SOURCE := $(BUILD_DIR)/Version.swift
 SWIFT_SOURCES := $(sort $(wildcard Sources/AirPodsControl/*.swift))
 SWIFT_BUILD_SOURCES := $(SWIFT_SOURCES) $(VERSION_SOURCE)
+SWIFT_FORMAT_PATHS := Package.swift Sources/AirPodsControl Tests/AirPodsControlTests
 AV_BYPASS_SOURCE := Sources/AVBypass/bypass.c
 SIGNAL_MONITOR_SOURCE := Sources/SignalMonitor/signal_monitor.c
 SIGNAL_MONITOR_INCLUDE_DIR := Sources/SignalMonitor/include
@@ -57,6 +59,7 @@ BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
 
 .PHONY: all _build test verify-catalog verify-runtime install uninstall clean
+.PHONY: format format-check _check-swiftformat
 
 all: $(BUILD_STAMP)
 	@if [ ! -f "$(BINARY)" ] || [ ! -f "$(DYLIB)" ]; then \
@@ -143,6 +146,18 @@ _build: $(VERSION_SOURCE)
 	mv "$$tmp/avbypass.dylib" "$(DYLIB)"; \
 	touch "$(BUILD_STAMP)"; \
 	echo "built: $(BINARY) ($$("$(LIPO)" -archs "$(BINARY)")) + avbypass.dylib"
+
+_check-swiftformat:
+	@command -v "$(SWIFTFORMAT)" >/dev/null 2>&1 || { \
+		echo "error: SwiftFormat is missing; run mise install, then mise run format-check" >&2; \
+		exit 1; \
+	}
+
+format: _check-swiftformat
+	"$(SWIFTFORMAT)" $(SWIFT_FORMAT_PATHS) --config .swiftformat --cache ignore
+
+format-check: _check-swiftformat
+	"$(SWIFTFORMAT)" $(SWIFT_FORMAT_PATHS) --config .swiftformat --cache ignore --lint
 
 test: all
 	./Tests/ReleasePleaseTests/release-pr-body.sh
