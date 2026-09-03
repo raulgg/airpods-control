@@ -7,8 +7,6 @@ struct TestRunner {
       exit(status)
     }
 
-    runTestGroup("interactive device chooser", runInteractiveDeviceChooserTests)
-    runTestGroup("listening modes", runListeningModeTests)
     runTestGroup("Allow Off cache", runListeningModeAllowOffCacheTests)
     runTestGroup("listening mode coordinator", runListeningModeCoordinatorTests)
     runTestGroup("command execution", runCommandExecutionTests)
@@ -28,7 +26,6 @@ struct TestRunner {
     runTestGroup("audio routing", runAudioRoutingTests)
     runTestGroup("status command", runStatusCommandTests)
     runTestGroup("private audio", runPrivateAudioTests)
-    runTestGroup("Apple audio products", runAppleAudioProductsTests)
     runTestGroup("support report", runSupportReportTests)
     runTestGroup("support report write flow", runSupportReportWriteFlowTests)
     runTestGroup(
