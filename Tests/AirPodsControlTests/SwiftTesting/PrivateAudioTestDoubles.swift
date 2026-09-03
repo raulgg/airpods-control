@@ -60,12 +60,18 @@ let rawListeningModeValues: [ListeningMode: String] = [
 }
 
 @objc final class FakeRawDevice: NSObject {
+  enum ListeningModeUpdateDelivery: Sendable {
+    case immediate
+    case mainRunLoop
+    case mainDispatchQueue
+  }
+
   let outputName: String
   let modes: [String]
   var mode: String
   let conversationAwarenessSupported: Bool
   var conversationAwarenessEnabled: Bool
-  let appliesListeningModeAsynchronously: Bool
+  let listeningModeUpdateDelivery: ListeningModeUpdateDelivery
   let appliesConversationAwarenessWrite: Bool
   let modelIdentifier: String
   let listeningModeError: NSError?
@@ -82,7 +88,7 @@ let rawListeningModeValues: [ListeningMode: String] = [
     mode: String = rawListeningModeValues[.transparency]!,
     conversationAwarenessSupported: Bool = true,
     conversationAwarenessEnabled: Bool = false,
-    appliesListeningModeAsynchronously: Bool = false,
+    listeningModeUpdateDelivery: ListeningModeUpdateDelivery = .immediate,
     appliesConversationAwarenessWrite: Bool = true,
     modelIdentifier: String = "AirPodsTest1,1",
     deviceIdentifier: String = UUID().uuidString,
@@ -94,7 +100,7 @@ let rawListeningModeValues: [ListeningMode: String] = [
     self.mode = mode
     self.conversationAwarenessSupported = conversationAwarenessSupported
     self.conversationAwarenessEnabled = conversationAwarenessEnabled
-    self.appliesListeningModeAsynchronously = appliesListeningModeAsynchronously
+    self.listeningModeUpdateDelivery = listeningModeUpdateDelivery
     self.appliesConversationAwarenessWrite = appliesConversationAwarenessWrite
     self.modelIdentifier = modelIdentifier
     self.deviceIdentifier = deviceIdentifier
@@ -131,10 +137,13 @@ let rawListeningModeValues: [ListeningMode: String] = [
       error?.pointee = listeningModeError
       return false
     }
-    if appliesListeningModeAsynchronously {
-      DispatchQueue.main.async { self.mode = newMode }
-    } else {
+    switch listeningModeUpdateDelivery {
+    case .immediate:
       mode = newMode
+    case .mainRunLoop:
+      RunLoop.main.perform { self.mode = newMode }
+    case .mainDispatchQueue:
+      DispatchQueue.main.async { self.mode = newMode }
     }
     return true
   }

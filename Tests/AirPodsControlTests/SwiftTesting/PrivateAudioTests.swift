@@ -294,16 +294,33 @@ struct PrivateAudioTests {
     #expect(missingObserved == nil, "missing final readback becomes null state")
   }
   
-  @Test
-  func listeningModeReadbackProcessesAsyncDeviceUpdates() throws {
-    let rawDevice = FakeRawDevice(
-      name: "Async AirPods",
-      mode: rawListeningModeValues[.noiseCancellation]!,
-      appliesListeningModeAsynchronously: true
-    )
-    let device = privateAudioDevice(rawDevice)
-  
-    let observation = device.setListeningModeAndReadBack(.transparency)
+  @Test(.serialized, arguments: [
+    FakeRawDevice.ListeningModeUpdateDelivery.mainRunLoop,
+    .mainDispatchQueue,
+  ])
+  func listeningModeReadbackProcessesAsyncDeviceUpdates(
+    delivery: FakeRawDevice.ListeningModeUpdateDelivery
+  ) async throws {
+    // Like the CLI, run on the main thread outside a main-dispatch task,
+    // which cannot drain its own queue. Serial cases prevent nested readbacks.
+    let (isMainThread, observation): (Bool, DeviceWriteObservation<ListeningMode>) =
+      await withCheckedContinuation { continuation in
+        RunLoop.main.perform {
+          let rawDevice = FakeRawDevice(
+            name: "Async AirPods",
+            mode: rawListeningModeValues[.noiseCancellation]!,
+            listeningModeUpdateDelivery: delivery
+          )
+          let device = privateAudioDevice(rawDevice)
+          continuation.resume(returning: (
+            Thread.isMainThread,
+            device.setListeningModeAndReadBack(.transparency)
+          ))
+        }
+      }
+
+    try #require(isMainThread, "async readback runs on the main thread")
+    #expect(observation.setterAccepted, "the asynchronous setter accepts the write")
   
     #expect(
       observation.observed == .transparency,
