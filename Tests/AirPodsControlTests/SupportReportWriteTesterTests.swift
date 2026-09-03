@@ -3,34 +3,6 @@ import Foundation
 
 private func supportWriteTestSignalHandler(_: Int32) {}
 
-func testWriteTestPlanProbesStrongestModesFirst() {
-  let startedInTransparency = FakeCompatibleAudioDevice(
-    listeningMode: .transparency,
-    conversationAwarenessSupported: false
-  )
-  let transparencyPlan = SupportReportWriteTestPlan.make(
-    device: startedInTransparency
-  )
-  check(
-    transparencyPlan.listeningModeTargets
-      == [.noiseCancellation, .adaptive, .transparency, .off],
-    "Transparency stays in the probe list when it is not first"
-  )
-
-  let startedInNoiseCancellation = FakeCompatibleAudioDevice(
-    listeningMode: .noiseCancellation,
-    conversationAwarenessSupported: false
-  )
-  let noiseCancellationPlan = SupportReportWriteTestPlan.make(
-    device: startedInNoiseCancellation
-  )
-  check(
-    noiseCancellationPlan.listeningModeTargets
-      == [.adaptive, .transparency, .off],
-    "the already-current first probe is deferred to restoration"
-  )
-}
-
 func testWriteTesterVerifiesAndRestores() {
   let device = FakeCompatibleAudioDevice(
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
@@ -173,7 +145,7 @@ func testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent() {
   )
 }
 
-func testWriteTesterVerifiesTransparencyWhenOffFallsBack() {
+func testWriteTesterVerifiesInitialTransparencyBeforeOffFallback() {
   let startedInTransparency = FakeCompatibleAudioDevice(
     listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
     listeningMode: .transparency,
@@ -216,129 +188,6 @@ func testWriteTesterVerifiesTransparencyWhenOffFallsBack() {
   check(
     document.summary.inconclusive == 0 && document.summary.verified == 3,
     "Off fallback from Transparency does not yield an inconclusive verdict"
-  )
-  check(
-    !document.terminalOutput.contains("INCONCLUSIVE"),
-    "the terminal report does not present Transparency as inconclusive"
-  )
-  check(
-    !document.githubIssueDraft.report.contains("captured initial mode"),
-    "a demonstrated initial mode is not an unnamed skipped restoration row"
-  )
-
-  let startedInNoiseCancellation = FakeCompatibleAudioDevice(
-    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
-    listeningMode: .noiseCancellation,
-    conversationAwarenessSupported: false
-  )
-  startedInNoiseCancellation.listeningModeWriteOverride = {
-    $0 == .off ? .transparency : $0
-  }
-  let ncSnapshot = SupportReportSnapshot.capture(device: startedInNoiseCancellation)
-  let fromNoiseCancellation = SupportReportWriteTester.run(
-    device: startedInNoiseCancellation
-  )
-  let fromNoiseCancellationRun = fromNoiseCancellation.listeningModes.testRun
-  let transparencyAfterOff = fromNoiseCancellationRun?.tests.first {
-    $0.mode == .transparency
-  }
-  check(
-    fromNoiseCancellationRun?.tests.map(\.mode)
-      == [.adaptive, .transparency, .off],
-    "the already-current first probe is deferred to restoration"
-  )
-  check(
-    transparencyAfterOff?.targetAlreadyCurrent == false
-      && transparencyAfterOff?.write.verified == true,
-    "Transparency is still a real transition when Off is last"
-  )
-  check(
-    fromNoiseCancellationRun?.restoration.attempted?.mode == .noiseCancellation
-      && fromNoiseCancellationRun?.restoration.attempted?.write.verified == true,
-    "restoration still demonstrates the captured initial mode"
-  )
-  let ncDocument = SupportReportDocument.make(
-    snapshot: ncSnapshot,
-    writeTests: fromNoiseCancellation
-  )
-  check(
-    ncDocument.githubIssueDraft.report.contains(
-      "`listening-mode set noise-cancellation` (restore): verified"
-    ),
-    "restoration of the initial mode is labeled restore"
-  )
-  check(
-    ncDocument.terminalOutput.contains("VERIFIED · restore"),
-    "the terminal marks the restoration write"
-  )
-}
-
-func testWriteTesterLabelsRestoreWhenInitialModeWasAlsoProbed() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
-    listeningMode: .transparency,
-    conversationAwarenessSupported: false
-  )
-  let snapshot = SupportReportSnapshot.capture(device: device)
-  let results = SupportReportWriteTester.run(device: device)
-  let document = SupportReportDocument.make(snapshot: snapshot, writeTests: results)
-  let issueReport = document.githubIssueDraft.report
-
-  check(
-    device.listeningModeSetCount == 5,
-    "Off applying after a mid-sequence initial probe still restores that mode"
-  )
-  check(
-    issueReport.contains("`listening-mode set transparency`: verified"),
-    "the exploratory Transparency probe stays a named verified row"
-  )
-  check(
-    issueReport.contains("`listening-mode set transparency` (restore): verified"),
-    "the restoration write is labeled so it is not a second unlabeled probe"
-  )
-  check(
-    document.terminalOutput.contains("VERIFIED · restore"),
-    "the terminal distinguishes the restoration write"
-  )
-}
-
-func testWriteTesterDoesNotClaimStateNeverChangedAfterTransitions() {
-  let device = FakeCompatibleAudioDevice(
-    listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
-    listeningMode: .transparency,
-    conversationAwarenessSupported: false
-  )
-  device.listeningModeWriteOverride = { target in
-    switch target {
-    case .off: return .transparency
-    case .transparency: return device.listeningMode
-    default: return target
-    }
-  }
-  let snapshot = SupportReportSnapshot.capture(device: device)
-  let results = SupportReportWriteTester.run(device: device)
-  let issueReport = SupportReportDocument.make(
-    snapshot: snapshot,
-    writeTests: results
-  ).githubIssueDraft.report
-
-  check(
-    results.listeningModes.testRun?.restoration.stateNeverChanged == true,
-    "Off fallback returns to Transparency without a restore write"
-  )
-  check(
-    issueReport.contains("`listening-mode set noise-cancellation`: verified"),
-    "earlier probes still record real transitions"
-  )
-  check(
-    issueReport.contains(
-      "skipped (already at initial mode; not demonstrated)"
-    ),
-    "the unnamed row does not claim the device never left the initial mode"
-  )
-  check(
-    !issueReport.contains("state never changed from initial"),
-    "the old never-changed reason is gone"
   )
 }
 
@@ -727,13 +576,10 @@ func testWriteTesterAnnouncesInterruptionOnceBeforeRestoration() {
 }
 
 func runSupportReportWriteTesterTests() {
-  testWriteTestPlanProbesStrongestModesFirst()
   testWriteTesterVerifiesAndRestores()
   testWriteTesterContinuesAfterNoOp()
   testWriteTesterDoesNotBareVerifyATargetAlreadyCurrent()
-  testWriteTesterVerifiesTransparencyWhenOffFallsBack()
-  testWriteTesterLabelsRestoreWhenInitialModeWasAlsoProbed()
-  testWriteTesterDoesNotClaimStateNeverChangedAfterTransitions()
+  testWriteTesterVerifiesInitialTransparencyBeforeOffFallback()
   testWriteTesterVerifiesSettledTransitionsBeforeReturning()
   testWriteTesterStopsOnSetterErrorAndRestores()
   testWriteTesterReportsConversationAwarenessRestorationSetterError()

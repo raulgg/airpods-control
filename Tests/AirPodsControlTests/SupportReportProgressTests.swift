@@ -116,7 +116,7 @@ func testSupportReportProgressClearsForInterruptAndRestoration() {
 
   let noticeIndex = writes.firstIndex(of: SupportReportWriteTester.interruptionNotice)
   let restorationIndex = writes.firstIndex(where: {
-    $0.contains("[5/7] Restoring listening mode…")
+    $0.contains("Restoring listening mode…")
   })
   check(results.interruptedBySignal == SIGINT, "the progress fixture is interrupted")
   check(

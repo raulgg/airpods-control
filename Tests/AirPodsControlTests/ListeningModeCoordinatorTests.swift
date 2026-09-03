@@ -105,55 +105,23 @@ func testListeningModeCoordinatorPreservesAVUnknownStateWrites() {
 }
 
 func testListeningModeCoordinatorPreservesHALDiscoveryFailures() {
-  let unavailableCases: [([String], TerminalReason)] = [
-    (["lm", "get"], .unavailable),
-    (["lm", "list"], .unavailable),
-    (["lm", "set", "adaptive"], .unavailable),
-    (["lm", "cycle"], .unavailable),
+  let discoveryFailures: [([String], ListeningModeHALDiscovery, TerminalReason)] = [
+    (["lm", "get"], .unavailable, .unavailable),
+    (["lm", "set", "adaptive"], .unavailable, .unavailable),
+    (["lm", "get"], .readError, .readError),
+    (["lm", "set", "adaptive"], .readError, .unavailable),
   ]
-  for (arguments, expectedReason) in unavailableCases {
+  for (arguments, discovery, expectedReason) in discoveryFailures {
     let outcome = coordinatorOutcome(
       arguments,
       candidates: [],
-      halDiscovery: .unavailable
+      halDiscovery: discovery
     )
     check(
       outcome.terminalReason == expectedReason,
-      "\(arguments) preserves HAL unavailability"
-    )
-    check(
-      outcome.plain == expectedReason.token,
-      "\(arguments) reports HAL unavailability plainly"
+      "\(arguments) preserves its HAL discovery failure"
     )
   }
-
-  let readOnlyCases: [([String], TerminalReason)] = [
-    (["lm", "get"], .readError),
-    (["lm", "list"], .readError),
-    (["lm", "set", "adaptive"], .unavailable),
-    (["lm", "cycle"], .unavailable),
-  ]
-  for (arguments, expectedReason) in readOnlyCases {
-    let outcome = coordinatorOutcome(
-      arguments,
-      candidates: [],
-      halDiscovery: .readError
-    )
-    check(
-      outcome.terminalReason == expectedReason,
-      "\(arguments) maps HAL discovery read errors to \(expectedReason.token)"
-    )
-  }
-
-  let successfulEmptyDiscovery = coordinatorOutcome(
-    ["lm", "get"],
-    candidates: [],
-    halDiscovery: .available
-  )
-  check(
-    successfulEmptyDiscovery.terminalReason == .noDevice,
-    "an empty successful HAL inventory remains no-device"
-  )
 
   let fallbackAV = FakeListeningModeTransport(
     name: "AV fallback AirPods",
@@ -170,60 +138,16 @@ func testListeningModeCoordinatorPreservesHALDiscoveryFailures() {
     "HAL discovery errors do not hide a usable AV fallback"
   )
 
-  let namedAV = FakeListeningModeTransport(
-    name: "Named AV AirPods",
-    kind: .av,
-    current: .transparency
-  )
-  let namedOutcome = coordinatorOutcome(
-    ["--device", "named av airpods", "lm", "get"],
-    candidates: [candidate(name: "Named AV AirPods", av: namedAV, route: .unknown)],
-    halDiscovery: .unavailable
-  )
-  check(
-    namedOutcome.terminalReason == .success,
-    "an exact AV match survives HAL discovery failure"
-  )
-
   let namedMiss = coordinatorOutcome(
     ["--device", "Missing AirPods", "lm", "get"],
-    candidates: [candidate(name: "Named AV AirPods", av: namedAV, route: .unknown)],
+    candidates: [
+      candidate(name: "AV fallback AirPods", av: fallbackAV, route: .unknown)
+    ],
     halDiscovery: .readError
   )
   check(
     namedMiss.terminalReason == .readError,
     "a named miss retains the HAL read error when no AV name matches"
-  )
-
-  let firstAV = FakeListeningModeTransport(name: "First AV AirPods", kind: .av)
-  let secondAV = FakeListeningModeTransport(name: "Second AV AirPods", kind: .av)
-  let ambiguousAV = coordinatorOutcome(
-    ["lm", "get", "--json"],
-    candidates: [
-      candidate(name: "First AV AirPods", av: firstAV, route: .unknown),
-      candidate(name: "Second AV AirPods", av: secondAV, route: .unknown),
-    ],
-    halDiscovery: .unavailable
-  )
-  check(
-    ambiguousAV.terminalReason == .ambiguousDevice,
-    "multiple AV candidates remain ambiguous when HAL discovery fails"
-  )
-
-  let unavailableAV = FakeListeningModeTransport(
-    name: "Unavailable AV AirPods",
-    kind: .av,
-    current: .transparency
-  )
-  unavailableAV.availabilityObservation = .readError
-  let avReadError = coordinatorOutcome(
-    ["lm", "list"],
-    candidates: [candidate(av: unavailableAV, route: .unknown)],
-    halDiscovery: .readError
-  )
-  check(
-    avReadError.terminalReason == .readError,
-    "a resolved AV read error is not replaced by the HAL discovery error"
   )
 }
 

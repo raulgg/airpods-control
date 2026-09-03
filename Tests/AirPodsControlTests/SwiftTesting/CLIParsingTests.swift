@@ -4,396 +4,132 @@ import Testing
 
 @Suite("CLI parsing")
 struct CLIParsingTests {
-  @Test(
-    "Canonicalizes listening-mode aliases",
-    arguments: [
-      AliasCase("anc", expected: "noise-cancellation"),
-      AliasCase("nc", expected: "noise-cancellation"),
-      AliasCase("trans", expected: "transparency"),
-      AliasCase("automatic", expected: "adaptive"),
-      AliasCase("auto", expected: "adaptive"),
+  @Test("Parses representative command workflows")
+  func parsesCommandWorkflows() throws {
+    let aliases: [(String, ListeningMode)] = [
+      ("anc", .noiseCancellation),
+      ("nc", .noiseCancellation),
+      ("trans", .transparency),
+      ("automatic", .adaptive),
+      ("auto", .adaptive),
     ]
-  )
-  func canonicalizesListeningModeAlias(_ example: AliasCase) throws {
-    let invocation = try parseInvocation(["lm", "set", example.token])
-    let mode = try #require(listeningModeSet(from: invocation.command))
+    for (alias, expected) in aliases {
+      let invocation = try parseInvocation(["lm", "set", alias])
+      let mode = try #require(listeningModeSet(from: invocation.command))
+      #expect(mode == expected)
+    }
 
-    #expect(mode.rawValue == example.expected)
-  }
-
-  @Test("Accepts global options anywhere")
-  func acceptsGlobalOptionsAnywhere() throws {
-    let invocation = try parseInvocation([
+    let get = try parseInvocation([
       "--debug", "lm", "--device", "RAUL’S AIRPODS PRO", "get", "--json",
     ])
+    #expect(get.debugEnabled)
+    #expect(get.jsonOutput)
+    #expect(get.requestedDeviceName == "RAUL’S AIRPODS PRO")
 
-    #expect(invocation.debugEnabled)
-    #expect(invocation.jsonOutput)
-    #expect(invocation.requestedDeviceName == "RAUL’S AIRPODS PRO")
-  }
-
-  @Test(
-    "Rejects invalid global and set arguments",
-    arguments: [
-      InvalidInvocation("off has no alias", ["lm", "set", "normal"]),
-      InvalidInvocation(
-        "duplicate device",
-        ["--device", "A", "--device", "B", "lm", "get"]
-      ),
-      InvalidInvocation("missing device name", ["lm", "get", "--device"]),
-      InvalidInvocation(
-        "option-like device name",
-        ["lm", "get", "--device", "--modes"]
-      ),
-      InvalidInvocation(
-        "duplicate debug",
-        ["--debug", "--debug", "lm", "get"]
-      ),
-      InvalidInvocation(
-        "device is invalid for version",
-        ["--device", "AirPods", "version"]
-      ),
+    let supportReportCases: [([String], ExpectedWritePreference)] = [
+      (["support-report"], .ask),
+      (["support-report", "--with-write-tests"], .always),
+      (["--no-write-tests", "support-report"], .never),
     ]
-  )
-  func rejectsInvalidGlobalAndSetArguments(
-    _ example: InvalidInvocation
-  ) {
-    #expect(throws: CLIParseError.self) {
-      _ = try parseInvocation(example.arguments)
+    for (arguments, expected) in supportReportCases {
+      let invocation = try parseInvocation(arguments)
+      let preference = try #require(writePreference(from: invocation.command))
+      #expect(preference == expected)
     }
-  }
 
-  @Test(
-    "Parses support-report write-test preferences",
-    arguments: [
-      WritePreferenceCase("asks by default", ["support-report"], .ask),
-      WritePreferenceCase(
-        "consents without asking",
-        ["support-report", "--with-write-tests"],
-        .always
-      ),
-      WritePreferenceCase(
-        "declines anywhere in the invocation",
-        ["--no-write-tests", "support-report"],
-        .never
-      ),
-    ]
-  )
-  func parsesSupportReportPreference(
-    _ example: WritePreferenceCase
-  ) throws {
-    let invocation = try parseInvocation(example.arguments)
-    let preference = try #require(writePreference(from: invocation.command))
+    let supportReport = try parseInvocation(["support-report", "--debug"])
+    #expect(supportReport.debugEnabled)
+    #expect(!supportReport.jsonOutput)
+    #expect(writePreference(from: supportReport.command) == .ask)
 
-    #expect(preference == example.expected)
-  }
-
-  @Test("Accepts debug for support-report without changing consent or output")
-  func acceptsSupportReportDebug() throws {
-    let invocation = try parseInvocation(["support-report", "--debug"])
-    let preference = try #require(writePreference(from: invocation.command))
-
-    #expect(invocation.debugEnabled)
-    #expect(!invocation.jsonOutput)
-    #expect(preference == .ask)
-  }
-
-  @Test(
-    "Rejects invalid support-report arguments",
-    arguments: [
-      InvalidInvocation(
-        "mutually exclusive write-test flags",
-        ["support-report", "--with-write-tests", "--no-write-tests"]
-      ),
-      InvalidInvocation(
-        "duplicate consent flags",
-        ["support-report", "--with-write-tests", "--with-write-tests"]
-      ),
-      InvalidInvocation(
-        "consent flag on another command",
-        ["lm", "get", "--with-write-tests"]
-      ),
-      InvalidInvocation(
-        "decline flag on version",
-        ["--no-write-tests", "version"]
-      ),
-      InvalidInvocation(
-        "positional argument",
-        ["support-report", "extra"]
-      ),
-      InvalidInvocation("JSON output", ["support-report", "--json"]),
-      InvalidInvocation(
-        "raw-name device selection",
-        ["--device", "AirPods", "support-report"]
-      ),
-    ]
-  )
-  func rejectsInvalidSupportReportArguments(
-    _ example: InvalidInvocation
-  ) {
-    #expect(throws: CLIParseError.self) {
-      _ = try parseInvocation(example.arguments)
-    }
-  }
-
-  @Test("Parses status with operational global options")
-  func parsesStatusWithGlobalOptions() throws {
-    let invocation = try parseInvocation([
+    let status = try parseInvocation([
       "--debug", "status", "--device", "Studio Beats", "--json",
     ])
+    #expect(isStatusCommand(status.command))
+    #expect(status.debugEnabled)
+    #expect(status.jsonOutput)
+    #expect(status.requestedDeviceName == "Studio Beats")
 
-    #expect(isStatusCommand(invocation.command))
-    #expect(invocation.debugEnabled)
-    #expect(invocation.jsonOutput)
-    #expect(invocation.requestedDeviceName == "Studio Beats")
-  }
+    let defaultCycle = try parseInvocation(["lm", "cycle"])
+    #expect(cycleModes(from: defaultCycle.command) == [])
 
-  @Test(
-    "Rejects invalid status arguments",
-    arguments: [
-      InvalidInvocation("alias", ["st"]),
-      InvalidInvocation("positional argument", ["status", "extra"]),
-      InvalidInvocation(
-        "cycle modes",
-        ["status", "--modes", "transparency,adaptive"]
-      ),
-      InvalidInvocation(
-        "write-test consent",
-        ["status", "--with-write-tests"]
-      ),
-      InvalidInvocation(
-        "write-test decline",
-        ["status", "--no-write-tests"]
-      ),
-    ]
-  )
-  func rejectsInvalidStatusArguments(_ example: InvalidInvocation) {
-    #expect(throws: CLIParseError.self) {
-      _ = try parseInvocation(example.arguments)
-    }
-  }
-
-  @Test("Uses the default listening-mode cycle when modes are omitted")
-  func parsesDefaultCycle() throws {
-    let invocation = try parseInvocation(["lm", "cycle"])
-    let selection = try #require(cycleSelection(from: invocation.command))
-
-    #expect(selection == .defaultModes)
-  }
-
-  @Test(
-    "Canonicalizes explicit cycle modes",
-    arguments: [
-      CycleCase(
-        "aliases",
-        "anc,trans",
-        ["transparency", "noise-cancellation"]
-      ),
-      CycleCase(
-        "off sorts first",
+    let explicitCycles: [(String, [ListeningMode])] = [
+      ("anc,trans", [.transparency, .noiseCancellation]),
+      (
         "noise-cancellation,off,transparency",
-        ["off", "transparency", "noise-cancellation"]
+        [.off, .transparency, .noiseCancellation]
       ),
     ]
-  )
-  func canonicalizesExplicitCycleModes(_ example: CycleCase) throws {
-    let invocation = try parseInvocation([
-      "lm", "cycle", "--modes", example.argument,
-    ])
-    let selection = try #require(cycleSelection(from: invocation.command))
-
-    #expect(selection == .explicit(example.expected))
-  }
-
-  @Test(
-    "Rejects invalid cycle arguments",
-    arguments: [
-      InvalidInvocation("positional argument", ["lm", "cycle", "extra"]),
-      InvalidInvocation("missing modes value", ["lm", "cycle", "--modes"]),
-      InvalidInvocation(
-        "one mode",
-        ["lm", "cycle", "--modes", "transparency"]
-      ),
-      InvalidInvocation(
-        "aliases deduplicate",
-        ["lm", "cycle", "--modes", "trans,transparency"]
-      ),
-      InvalidInvocation(
-        "unknown mode",
-        ["lm", "cycle", "--modes", "transparency,normal"]
-      ),
-      InvalidInvocation(
-        "empty mode",
-        ["lm", "cycle", "--modes", ",transparency,adaptive"]
-      ),
-      InvalidInvocation(
-        "duplicate modes flag",
-        ["lm", "cycle", "--modes", "a,b", "--modes", "a,b"]
-      ),
-      InvalidInvocation(
-        "modes on get",
-        ["lm", "get", "--modes", "transparency,adaptive"]
-      ),
-      InvalidInvocation(
-        "modes on version",
-        ["--modes", "transparency,adaptive", "version"]
-      ),
-    ]
-  )
-  func rejectsInvalidCycleArguments(_ example: InvalidInvocation) {
-    #expect(throws: CLIParseError.self) {
-      _ = try parseInvocation(example.arguments)
+    for (argument, expected) in explicitCycles {
+      let invocation = try parseInvocation([
+        "lm", "cycle", "--modes", argument,
+      ])
+      #expect(cycleModes(from: invocation.command) == expected)
     }
   }
 
-  @Test(
-    "Selects the next mode in canonical order",
-    arguments: [
-      NextModeCase(
-        "advances",
-        current: "transparency",
-        within: ["transparency", "adaptive", "noise-cancellation"],
-        expected: "adaptive"
-      ),
-      NextModeCase(
-        "wraps",
-        current: "noise-cancellation",
-        within: ["transparency", "adaptive", "noise-cancellation"],
-        expected: "transparency"
-      ),
-      NextModeCase(
-        "wraps through off",
-        current: "noise-cancellation",
-        within: ["off", "transparency", "adaptive", "noise-cancellation"],
-        expected: "off"
-      ),
-      NextModeCase(
-        "folds an excluded current mode",
-        current: "adaptive",
-        within: ["transparency", "noise-cancellation"],
-        expected: "noise-cancellation"
-      ),
-      NextModeCase(
-        "folding wraps",
-        current: "adaptive",
-        within: ["off", "transparency"],
-        expected: "off"
-      ),
-      NextModeCase(
-        "cycles out of off",
-        current: "off",
-        within: ["transparency", "adaptive", "noise-cancellation"],
-        expected: "transparency"
-      ),
-      NextModeCase(
-        "starts an unknown mode at the beginning",
-        current: nil,
-        within: ["transparency", "adaptive", "noise-cancellation"],
-        expected: "transparency"
-      ),
+  @Test("Rejects invalid command workflows")
+  func rejectsInvalidCommandWorkflows() {
+    let invalidInvocations = [
+      ["lm", "set", "normal"],
+      ["--device", "A", "--device", "B", "lm", "get"],
+      ["lm", "get", "--device"],
+      ["lm", "get", "--device", "--modes"],
+      ["--debug", "--debug", "lm", "get"],
+      ["--device", "AirPods", "version"],
+      ["support-report", "--with-write-tests", "--no-write-tests"],
+      ["support-report", "--with-write-tests", "--with-write-tests"],
+      ["lm", "get", "--with-write-tests"],
+      ["--no-write-tests", "version"],
+      ["support-report", "extra"],
+      ["support-report", "--json"],
+      ["--device", "AirPods", "support-report"],
+      ["st"],
+      ["status", "extra"],
+      ["status", "--modes", "transparency,adaptive"],
+      ["status", "--with-write-tests"],
+      ["status", "--no-write-tests"],
+      ["lm", "cycle", "extra"],
+      ["lm", "cycle", "--modes"],
+      ["lm", "cycle", "--modes", "transparency"],
+      ["lm", "cycle", "--modes", "trans,transparency"],
+      ["lm", "cycle", "--modes", "transparency,normal"],
+      ["lm", "cycle", "--modes", ",transparency,adaptive"],
+      ["lm", "cycle", "--modes", "a,b", "--modes", "a,b"],
+      ["lm", "get", "--modes", "transparency,adaptive"],
+      ["--modes", "transparency,adaptive", "version"],
     ]
-  )
-  func selectsNextCycleMode(_ example: NextModeCase) throws {
-    let current = try example.current.map {
-      try #require(ListeningMode(token: $0))
+
+    for arguments in invalidInvocations {
+      #expect(throws: CLIParseError.self, "Accepted \(arguments)") {
+        _ = try parseInvocation(arguments)
+      }
     }
-    let cycle = try example.within.map {
-      try #require(ListeningMode(token: $0))
+  }
+
+  @Test("Selects the next mode through a complete cycle")
+  func selectsNextCycleMode() {
+    let noOff = ListeningMode.allCases.filter { $0 != .off }
+    let cases: [(ListeningMode?, [ListeningMode], ListeningMode)] = [
+      (.transparency, noOff, .adaptive),
+      (.noiseCancellation, noOff, .transparency),
+      (.noiseCancellation, ListeningMode.allCases, .off),
+      (.adaptive, [.transparency, .noiseCancellation], .noiseCancellation),
+      (.adaptive, [.off, .transparency], .off),
+      (.off, noOff, .transparency),
+      (nil, noOff, .transparency),
+    ]
+
+    for (current, cycle, expected) in cases {
+      #expect(ListeningMode.next(current: current, within: cycle) == expected)
     }
-
-    #expect(
-      ListeningMode.next(current: current, within: cycle).rawValue
-        == example.expected
-    )
   }
 }
 
-struct AliasCase: Sendable, CustomTestStringConvertible {
-  let token: String
-  let expected: String
-
-  init(_ token: String, expected: String) {
-    self.token = token
-    self.expected = expected
-  }
-
-  var testDescription: String { token }
-}
-
-struct InvalidInvocation: Sendable, CustomTestStringConvertible {
-  let name: String
-  let arguments: [String]
-
-  init(_ name: String, _ arguments: [String]) {
-    self.name = name
-    self.arguments = arguments
-  }
-
-  var testDescription: String { name }
-}
-
-enum ExpectedWritePreference: Sendable {
+private enum ExpectedWritePreference: Equatable {
   case ask
   case always
   case never
-}
-
-struct WritePreferenceCase: Sendable, CustomTestStringConvertible {
-  let name: String
-  let arguments: [String]
-  let expected: ExpectedWritePreference
-
-  init(
-    _ name: String,
-    _ arguments: [String],
-    _ expected: ExpectedWritePreference
-  ) {
-    self.name = name
-    self.arguments = arguments
-    self.expected = expected
-  }
-
-  var testDescription: String { name }
-}
-
-enum CycleSelection: Equatable {
-  case defaultModes
-  case explicit([String])
-}
-
-struct CycleCase: Sendable, CustomTestStringConvertible {
-  let name: String
-  let argument: String
-  let expected: [String]
-
-  init(_ name: String, _ argument: String, _ expected: [String]) {
-    self.name = name
-    self.argument = argument
-    self.expected = expected
-  }
-
-  var testDescription: String { name }
-}
-
-struct NextModeCase: Sendable, CustomTestStringConvertible {
-  let name: String
-  let current: String?
-  let within: [String]
-  let expected: String
-
-  init(
-    _ name: String,
-    current: String?,
-    within: [String],
-    expected: String
-  ) {
-    self.name = name
-    self.current = current
-    self.within = within
-    self.expected = expected
-  }
-
-  var testDescription: String { name }
 }
 
 private func listeningModeSet(from command: CLICommand) -> ListeningMode? {
@@ -419,8 +155,7 @@ private func writePreference(
   }
 }
 
-private func cycleSelection(from command: CLICommand) -> CycleSelection? {
+private func cycleModes(from command: CLICommand) -> [ListeningMode]? {
   guard case let .listeningModeCycle(requested) = command else { return nil }
-  guard let requested else { return .defaultModes }
-  return .explicit(requested.map(\.rawValue))
+  return requested ?? []
 }
