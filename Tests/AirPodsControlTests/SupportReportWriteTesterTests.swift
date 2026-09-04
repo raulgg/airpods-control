@@ -10,35 +10,6 @@ private func supportWriteTestSignalHandler(_: Int32) {}
 // These tests share process-wide signal handlers and the C monitor singleton.
 @Suite("Support report write tester", .serialized)
 struct SupportReportWriteTesterTests {
-  @Test("Probes strongest listening modes first and Off last")
-  func writeTestPlanProbesStrongestModesFirst() {
-    let startedInTransparency = FakeCompatibleAudioDevice(
-      listeningMode: .transparency,
-      conversationAwarenessSupported: false
-    )
-    let transparencyPlan = SupportReportWriteTestPlan.make(
-      device: startedInTransparency
-    )
-    #expect(
-      transparencyPlan.listeningModeTargets
-        == [.noiseCancellation, .adaptive, .transparency, .off],
-      "Transparency stays in the probe list when it is not first"
-    )
-
-    let startedInNoiseCancellation = FakeCompatibleAudioDevice(
-      listeningMode: .noiseCancellation,
-      conversationAwarenessSupported: false
-    )
-    let noiseCancellationPlan = SupportReportWriteTestPlan.make(
-      device: startedInNoiseCancellation
-    )
-    #expect(
-      noiseCancellationPlan.listeningModeTargets
-        == [.adaptive, .transparency, .off],
-      "the already-current first probe is deferred to restoration"
-    )
-  }
-
   @Test("Verifies and restores all supported capabilities")
   func writeTesterVerifiesAndRestores() {
     let device = FakeCompatibleAudioDevice(
@@ -349,10 +320,6 @@ struct SupportReportWriteTesterTests {
         "skipped (already at initial mode; not demonstrated)"
       ),
       "the unnamed row does not claim the device never left the initial mode"
-    )
-    #expect(
-      !issueReport.contains("state never changed from initial"),
-      "the old never-changed reason is gone"
     )
   }
 

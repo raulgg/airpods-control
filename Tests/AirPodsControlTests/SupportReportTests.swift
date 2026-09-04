@@ -66,7 +66,7 @@ struct SupportReportTests {
       device.inEarPlacementStatusReadCount == 0,
       "report does not read ear placement"
     )
-    let invocation = try parseInvocation(["support-report"])
+    let invocation = try parseInvocation(["support-report", "--debug"])
     let outcome = CommandExecution.execute(invocation) { _, _ in device }
     #expect(outcome.supportReportIssueDraft != nil, "supported-device command path creates an issue draft")
   }
