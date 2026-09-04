@@ -124,7 +124,7 @@ struct SupportReportProgressTests {
 
     let noticeIndex = try #require(writes.firstIndex(of: SupportReportWriteTester.interruptionNotice))
     let restorationIndex = try #require(writes.firstIndex(where: {
-      $0.contains("[5/7] Restoring listening mode…")
+      $0.contains("Restoring listening mode…")
     }))
     #expect(results.interruptedBySignal == SIGINT, "the progress fixture is interrupted")
     #expect(

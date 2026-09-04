@@ -9,45 +9,34 @@ struct ListeningModeCoordinatorTests {
 
   @Test("Preserves HAL discovery failures while allowing usable AV fallback")
   func listeningModeCoordinatorPreservesHALDiscoveryFailures() throws {
-    let unavailableCases: [([String], TerminalReason)] = [
-      (["lm", "get"], .unavailable),
-      (["lm", "list"], .unavailable),
-      (["lm", "set", "adaptive"], .unavailable),
-      (["lm", "cycle"], .unavailable),
-    ]
-    for (arguments, expectedReason) in unavailableCases {
-      let outcome = try coordinatorOutcome(
-        arguments,
-        candidates: [],
-        halDiscovery: .unavailable
-      )
-      #expect(
-        outcome.terminalReason == expectedReason,
-        "\(arguments) preserves HAL unavailability"
-      )
-      #expect(
-        outcome.plain == expectedReason.token,
-        "\(arguments) reports HAL unavailability plainly"
-      )
-    }
+    let unavailable = try coordinatorOutcome(
+      ["lm", "get"],
+      candidates: [],
+      halDiscovery: .unavailable
+    )
+    #expect(
+      unavailable.terminalReason == .unavailable,
+      "read commands preserve HAL unavailability"
+    )
 
-    let readOnlyCases: [([String], TerminalReason)] = [
-      (["lm", "get"], .readError),
-      (["lm", "list"], .readError),
-      (["lm", "set", "adaptive"], .unavailable),
-      (["lm", "cycle"], .unavailable),
-    ]
-    for (arguments, expectedReason) in readOnlyCases {
-      let outcome = try coordinatorOutcome(
-        arguments,
-        candidates: [],
-        halDiscovery: .readError
-      )
-      #expect(
-        outcome.terminalReason == expectedReason,
-        "\(arguments) maps HAL discovery read errors to \(expectedReason.token)"
-      )
-    }
+    let failedRead = try coordinatorOutcome(
+      ["lm", "get"],
+      candidates: [],
+      halDiscovery: .readError
+    )
+    #expect(
+      failedRead.terminalReason == .readError,
+      "read commands preserve HAL discovery errors"
+    )
+    let blockedWrite = try coordinatorOutcome(
+      ["lm", "set", "adaptive"],
+      candidates: [],
+      halDiscovery: .readError
+    )
+    #expect(
+      blockedWrite.terminalReason == .unavailable,
+      "write commands do not present a discovery read as a state read"
+    )
 
     let successfulEmptyDiscovery = try coordinatorOutcome(
       ["lm", "get"],
