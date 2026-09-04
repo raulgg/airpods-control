@@ -15,7 +15,7 @@ Homebrew formula in
    and description (`PR_TITLE` and `PR_BODY`).
 4. Require these status checks on `main`: `Build, test, and verify install`,
    `Build, test, and verify runtime (macOS 26)`,
-   `Build, test, and verify runtime (Intel)`, `Swift formatting`, `rumdl`, and
+   `Build, test, and verify runtime (Intel)`, `Check formatting`, and
    `Release PR body`.
 5. For tags matching `v*`, restrict updates and deletions but allow creation.
 6. Create the `tap-dispatch` environment. Allow deployments from `main` and

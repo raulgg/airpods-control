@@ -1,0 +1,37 @@
+name: Set up mise
+description: Install pinned mise and the requested tools on the arm64 macOS runner
+
+inputs:
+  install_args:
+    description: Tools to install from the repository configuration
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Check runner architecture
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" != "macOS" || "$RUNNER_ARCH" != "ARM64" ]]; then
+          echo "::error::This action pins mise-v2026.8.14-macos-arm64; use an arm64 macOS runner or update the version and checksum together."
+          exit 1
+        fi
+
+    - name: Set up mise
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        # Keep the action commit, version, and checksum pinned together.
+        # macos-14 is an arm64 runner, and this checksum covers the extracted
+        # mise-v2026.8.14-macos-arm64 executable, not its archive. Before
+        # updating the mise pin, wait seven days after release, verify the
+        # signed SHASUMS256.txt, and review the resulting workflow run.
+        version: "2026.8.14"
+        sha256: "ba93b3fe7e47964e4392d40c8b7bfa5740e8c2a0a575e3e86268e9764082ed3e"
+        install_args: ${{ inputs.install_args }}
+
+    - name: Require explicit tool installation
+      shell: bash
+      run: |
+        echo "MISE_TASK_RUN_AUTO_INSTALL=false" >>"$GITHUB_ENV"
+        echo "MISE_OFFLINE=true" >>"$GITHUB_ENV"

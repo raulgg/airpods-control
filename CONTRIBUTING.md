@@ -42,6 +42,10 @@ mise install
 
 This installs the development tools and versions listed in `mise.toml`. The
 build still needs the macOS Command Line Tools or Xcode listed above.
+`mise.lock` pins their download URLs and checksums. Use `mise use` or
+`mise upgrade` to change tool versions; mise updates `mise.lock` as needed. If
+you edit `mise.toml` manually, run `mise lock` before committing. Commit both
+files together when either changes.
 
 You can run the full test suite with `mise run test`. It calls `make test`.
 
@@ -116,19 +120,22 @@ The names follow Swift target conventions. The Makefile is the source of
 truth for builds: it compiles architectures the toolchain supports, ad-hoc
 signs both artifacts, and installs them together.
 
-### Swift formatting
+### Formatting
 
-`mise install` installs the SwiftFormat version pinned in `mise.toml`.
+`mise install` installs the formatter versions pinned in `mise.toml`.
 
 ```sh
 mise run format-check
 mise run format
 ```
 
-Both commands cover `Package.swift`, `Sources/AirPodsControl`, and
-`Tests/AirPodsControlTests`. They skip generated files. The rules normalize
-line endings, ensure a final newline, and remove trailing whitespace. They keep
-two-space indentation.
+These aggregate tasks check or format Swift and Markdown. SwiftFormat covers
+`Package.swift`, `Sources/AirPodsControl`, and `Tests/AirPodsControlTests`, and
+skips generated files. The rules normalize line endings, ensure a final
+newline, and remove trailing whitespace. They keep two-space indentation.
+
+Use `mise run markdown-check` or `mise run markdown-format` when working on
+Markdown only.
 
 Keep formatter upgrades and whitespace cleanup separate from behavior changes.
 Run `make test` after formatting. CI checks formatting on pull requests and
@@ -151,8 +158,8 @@ mise exec -- pre-commit run --all-files
 
 Markdown files in the repository follow rumdl's standard 80-column wrapping.
 Do not wrap GitHub pull request descriptions. rumdl never sees them. Use
-`mise run markdown-check` to check Markdown, or use `mise run markdown-format`
-to format it. The optional Git hooks also format and check Markdown.
+the focused Markdown tasks above when needed. The optional Git hooks also
+format and check Markdown.
 
 ## Pull requests
 

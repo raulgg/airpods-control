@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  swift-format:
-    name: Swift formatting
+  formatting:
+    name: Check formatting
     runs-on: macos-14
     timeout-minutes: 5
 
@@ -23,29 +23,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install SwiftFormat
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - name: Install formatters
+        uses: ./.github/actions/setup-mise
         with:
-          minimum_release_age: 7d
-          install_args: swiftformat
+          install_args: swiftformat rumdl
 
-      - name: Check Swift formatting
+      - name: Check formatting
+        env:
+          RUMDL_OUTPUT_FORMAT: github
         run: |
           swiftformat --version
-          make format-check
-
-  rumdl:
-    name: rumdl
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check Markdown
-        uses: rvben/rumdl@95a982d941d00cf41a0dcef4d0788bd15a29be1b # v0
-        with:
-          version: "0.2.52"
-          report-type: annotations
-          args: --deny-config-warnings
+          rumdl --version
+          mise run format-check

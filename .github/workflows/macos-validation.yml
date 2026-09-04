@@ -1,4 +1,4 @@
-name: CI
+name: macOS validation
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: macos-validation-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -62,7 +62,7 @@ jobs:
 
           mkdir -p "$stage/usr/local/bin"
           printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
-          if make install DESTDIR="$stage" PREFIX=/usr/local >/dev/null 2>&1; then
+          if DESTDIR="$stage" PREFIX=/usr/local make install >/dev/null 2>&1; then
             echo "make install replaced a command it does not own" >&2
             exit 1
           fi
@@ -70,7 +70,7 @@ jobs:
           test ! -e "$stage/usr/local/libexec/airpods-control/airpods-control"
           rm -f "$stage/usr/local/bin/airpods-control"
 
-          make install DESTDIR="$stage" PREFIX=/usr/local
+          DESTDIR="$stage" PREFIX=/usr/local make install
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
           test -f "$stage/usr/local/share/man/man1/airpods-control.1"
@@ -79,7 +79,7 @@ jobs:
 
           rm -f "$stage/usr/local/bin/airpods-control"
           printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
-          if make uninstall DESTDIR="$stage" PREFIX=/usr/local >/dev/null 2>&1; then
+          if DESTDIR="$stage" PREFIX=/usr/local make uninstall >/dev/null 2>&1; then
             echo "make uninstall removed a command it does not own" >&2
             exit 1
           fi
@@ -87,7 +87,7 @@ jobs:
           test -e "$stage/usr/local/libexec/airpods-control/airpods-control"
           rm -f "$stage/usr/local/bin/airpods-control"
 
-          make uninstall DESTDIR="$stage" PREFIX=/usr/local
+          DESTDIR="$stage" PREFIX=/usr/local make uninstall
           test ! -e "$stage/usr/local/bin/airpods-control"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
 
@@ -120,7 +120,7 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
           expected_version=$(cat version.txt)
-          make install DESTDIR="$stage" PREFIX=/usr/local
+          DESTDIR="$stage" PREFIX=/usr/local make install
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
           test "$("$stage/usr/local/bin/airpods-control" --version)" = \
@@ -157,7 +157,7 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
           expected_version=$(cat version.txt)
-          make install DESTDIR="$stage" PREFIX=/usr/local
+          DESTDIR="$stage" PREFIX=/usr/local make install
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
             "../libexec/airpods-control/airpods-control"
           test "$("$stage/usr/local/bin/airpods-control" --version)" = \
