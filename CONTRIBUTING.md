@@ -118,37 +118,41 @@ signs both artifacts, and installs them together.
 
 ### Swift formatting
 
-`mise install` installs the SwiftFormat version pinned in `mise.toml`. Run:
+`mise install` installs the SwiftFormat version pinned in `mise.toml`.
 
 ```sh
 mise run format-check
 mise run format
 ```
 
-These call `make format-check` and `make format`. You can also run
-`mise exec -- make format-check` without activating mise in your shell.
-Formatting covers `Package.swift`, `Sources/AirPodsControl`, and
-`Tests/AirPodsControlTests`. Generated build and SwiftPM files are
-excluded.
+Both commands cover `Package.swift`, `Sources/AirPodsControl`, and
+`Tests/AirPodsControlTests`. They skip generated files. The rules normalize
+line endings, ensure a final newline, and remove trailing whitespace. They keep
+two-space indentation.
 
-The initial rules normalize line endings, ensure a final newline, and remove
-trailing whitespace. Keep the existing two-space indentation. Broader formatting
-rules and formatter upgrades belong in separate pull requests with reviewed
-diffs. Keep whitespace cleanup separate from behavior changes, and preserve
-string contents and test assertions.
+Keep formatter upgrades and whitespace cleanup separate from behavior changes.
+Run `make test` after formatting. CI checks formatting on pull requests and
+pushes to `main`.
 
-Run `git diff --check` and `git diff --cached --check` before opening a pull
-request. Remove surplus blank lines at EOF when Git reports them. Formatting
-does not replace `make test` and is not required to build or install the CLI.
+Each local clone needs its own Git hook installation. After cloning the
+repository, run:
+
+```sh
+mise exec -- pre-commit install
+```
+
+To run every hook against the repository without making a commit, run:
+
+```sh
+mise exec -- pre-commit run --all-files
+```
 
 ### Documentation
 
 Markdown files in the repository follow rumdl's standard 80-column wrapping.
 Do not wrap GitHub pull request descriptions. rumdl never sees them. Use
 `mise run markdown-check` to check Markdown, or use `mise run markdown-format`
-to format it. Run `mise exec -- pre-commit install` once per clone. Use
-`mise exec -- pre-commit run --all-files` to format and check the full Markdown
-set.
+to format it. The optional Git hooks also format and check Markdown.
 
 ## Pull requests
 
