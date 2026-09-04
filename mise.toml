@@ -1,24 +1,45 @@
+[settings]
+locked = true
+
 [tools]
 pre-commit = "4.6.2"
 rumdl = "0.2.52"
 swiftformat = "0.63.0"
 
+[tasks.build]
+description = "Build the CLI"
+run = "make"
+
+[tasks.test]
+description = "Build and run tests"
+run = "make test"
+
+[tasks.verify-runtime]
+description = "Verify the DYLD interpose runtime"
+run = "make verify-runtime"
+
+[tasks.cli-install]
+description = "Install the CLI"
+run = "make install"
+
+[tasks.cli-uninstall]
+description = "Uninstall the CLI"
+run = "make uninstall"
+
 [tasks.format]
-description = "Format Swift whitespace"
-run = "make format"
+description = "Format Swift and Markdown"
+depends = ["markdown-format"]
+run = "swiftformat Package.swift Sources/AirPodsControl Tests/AirPodsControlTests --config .swiftformat --cache ignore"
 
 [tasks.format-check]
-description = "Check Swift whitespace"
-run = "make format-check"
-
-[tasks.markdown-check]
-description = "Check Markdown"
-run = "rumdl check . --deny-config-warnings"
+description = "Check Swift and Markdown formatting"
+depends = ["markdown-check"]
+run = "swiftformat Package.swift Sources/AirPodsControl Tests/AirPodsControlTests --config .swiftformat --cache ignore --lint"
 
 [tasks.markdown-format]
 description = "Format Markdown"
 run = "rumdl fmt . --deny-config-warnings"
 
-[tasks.test]
-description = "Build and run tests"
-run = "make test"
+[tasks.markdown-check]
+description = "Check Markdown formatting"
+run = "rumdl check . --deny-config-warnings"
