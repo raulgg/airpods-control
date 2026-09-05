@@ -202,7 +202,8 @@ An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to C
 The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
 .SS LISTENING MODE
 For each command, a command-ready selected AirPods output uses the private AV
-provider; an eligible device proven unselected uses its mapped Core Audio HAL
+provider and skips Classic Bluetooth and HAL inventory. An eligible device
+proven unselected uses its mapped Core Audio HAL
 output endpoint that exposes the lstm property. In a group with several Core
 Audio outputs, this control endpoint can differ from the named display endpoint.
 Unknown routing tries AV before a pre-write HAL fallback. Once a setter is
