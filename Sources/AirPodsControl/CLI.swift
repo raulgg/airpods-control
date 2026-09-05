@@ -215,10 +215,12 @@ Options:
   --help, -h   Print this help and exit without accessing the device.
 
 Listening-mode commands use a command-ready AV endpoint for the selected
-output and an eligible Core Audio HAL output endpoint when unselected. They
-never change the audio route. In an interactive terminal, multiple unnamed
-targets prompt for a displayed number; declining, automated use, and JSON use
-all report ambiguous-device.
+output and an eligible Core Audio HAL output endpoint when unselected. If
+the selected AV endpoint can already run the command, this invocation
+skips Classic Bluetooth and HAL inventory. These commands never change
+the audio route. In an interactive terminal, multiple unnamed targets prompt
+for a displayed number; declining, automated use, and JSON use all report
+ambiguous-device.
 HAL-backed commands can reuse a recent AV Allow Off observation for the exact
 output endpoint. The observation expires after seven days. On a cache miss,
 only an explicit set off or explicit cycle containing off may probe once; a

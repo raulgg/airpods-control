@@ -127,9 +127,11 @@ this limitation without changing route-aware selection or transport stickiness.
 
 ## Consequences
 
-The CLI gains route-independent listening-mode operations for unselected
-devices without taking ownership of the Bluetooth protocol or disturbing the
-audio route. The cost is a fail-closed target chooser, two private and
-version-sensitive adapters, transport-specific capability differences, and
-readback that is operational evidence rather than proof of device-level
-acknowledgement.
+The CLI can run listening-mode commands on unselected devices without taking
+ownership of the Bluetooth protocol or changing the audio route.
+Classic/HAL inventory runs only when AV cannot uniquely serve the command.
+A selected AV endpoint that is already command-ready stays on the AV path
+and does not open IOBluetooth or enumerate Core Audio devices. The cost is
+a fail-closed target chooser, two private and version-sensitive adapters,
+transport-specific capability differences, and readback that is operational
+evidence rather than proof of device-level acknowledgement.

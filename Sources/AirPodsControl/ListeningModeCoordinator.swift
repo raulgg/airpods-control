@@ -301,7 +301,7 @@ enum ListeningModeAmbiguousChoice {
   case unavailable
 }
 
-enum ListeningModeHALDiscovery {
+enum ListeningModeHALDiscovery: Equatable {
   // An empty candidate list is meaningful only when discovery succeeded.
   case available
   case unavailable
@@ -366,6 +366,29 @@ final class ListeningModeCoordinator {
     halCandidates = candidates.filter { $0.halTransport != nil }
     self.halDiscovery = halDiscovery
     self.logger = logger
+  }
+
+  // One selected AV candidate already ready for this command. Otherwise nil,
+  // which means load HAL and call resolve(). Does not offer the chooser.
+  func uniqueSelectedReadySession(
+    command: ListeningModeCommand,
+    named requestedName: String?
+  ) -> ListeningModeSession? {
+    let selectedCandidate: ListeningModeCandidate
+    if let requestedName {
+      let matches = matching(requestedName, in: avCandidates)
+      guard matches.count == 1, let only = matches.first else { return nil }
+      selectedCandidate = only
+    } else {
+      let candidates = logicalCandidates()
+      guard candidates.count == 1, let only = candidates.first else { return nil }
+      selectedCandidate = only
+    }
+    guard selectedCandidate.route == .selected else { return nil }
+    guard let session = selectTransport(for: selectedCandidate, command: command),
+      isReady(session, for: command)
+    else { return nil }
+    return session
   }
 
   func resolve(

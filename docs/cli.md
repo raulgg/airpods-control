@@ -88,14 +88,17 @@ $ airpods-control lm set noise-cancellation
 no-op
 ```
 
-The provider is selected before any write. A command-ready selected AV endpoint
-uses the existing AV control surface; an unselected device uses its mapped Core
-Audio HAL output endpoint that exposes `lstm`. In a group with multiple Core
-Audio outputs, that control endpoint can differ from the named display endpoint.
-Unknown routing tries AV first and may fall back to HAL only if AV preflight
-fails before a setter call. Once a setter is attempted,
-the command never retries through the other provider. No listening-mode command
-changes the default output or starts an audio stream.
+The provider is selected before any write. If the selected output already
+has a command-ready AV endpoint, the command uses that AV control surface
+and skips Classic Bluetooth and HAL inventory. An unselected device uses
+its mapped Core Audio HAL output endpoint that exposes `lstm`. In a group
+with multiple Core Audio outputs, that control endpoint can differ from
+the named display endpoint. HAL inventory still runs for unknown routing,
+an incomplete selected AV endpoint, or a `--device` name that does not
+resolve on AV. Unknown routing tries AV first and may fall back to HAL
+only if AV preflight fails before a setter call. Once a setter is attempted,
+the command never retries through the other provider. No listening-mode
+command changes the default output or starts an audio stream.
 
 A matching bounded readback means the chosen macOS control surface reports the
 requested state. It is operational verification for this CLI, not a direct
@@ -753,12 +756,15 @@ Add `--debug` to emit private-API discovery and operation diagnostics on stderr:
 $ airpods-control --debug listening-mode get
 debug: cli.command="listening-mode.get"
 info: audio_context_selector="sharedSystemAudioContext"
+debug: listening_mode.hal_inventory="deferred"
 info: listening_mode.transport="av"
 transparency
 ```
 
 Debug output covers discovery, selection, reads, writes, and the entitlement
-bypass. Status logs the result of each inventory and selection gate, using terms
+bypass. Listening-mode commands log `listening_mode.hal_inventory=deferred`
+when they skip Classic/HAL inventory, and `loaded` when they run it.
+Status logs the result of each inventory and selection gate, using terms
 such as `mapped`, `composite`, and `unresolved`. It does not log Core Audio
 handles, raw HAL values, addresses, UIDs, or private route IDs. The enrichment
 probe also keeps `associatedAudioDeviceID`, its translated handle, and the

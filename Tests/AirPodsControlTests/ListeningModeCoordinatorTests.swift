@@ -512,6 +512,109 @@ struct ListeningModeCoordinatorTests {
   }
 
   @Test
+  func uniqueSelectedReadySessionFailsClosed() {
+    let logger = DebugLogger(enabled: false)
+
+    let unknownRaw = FakeRawDevice(name: "Nearby AirPods")
+    let unknownAV = PrivateAudioDevice.compatible(
+      object: unknownRaw,
+      sources: [.contextPlural],
+      index: 0,
+      logger: logger
+    )!
+    let unknownCoordinator = ListeningModeCoordinator(
+      avDevices: [unknownAV],
+      halCandidates: [],
+      logger: logger
+    )
+    #expect(
+      unknownCoordinator.uniqueSelectedReadySession(command: .get, named: nil) == nil,
+      "unknown-route AV is not a unique selected ready session"
+    )
+
+    let firstRaw = FakeRawDevice(name: "Desk AirPods")
+    let firstAV = PrivateAudioDevice.compatible(
+      object: firstRaw,
+      sources: [.contextSingular],
+      index: 0,
+      logger: logger
+    )!
+    let secondRaw = FakeRawDevice(name: "Travel AirPods")
+    let secondAV = PrivateAudioDevice.compatible(
+      object: secondRaw,
+      sources: [.contextSingular],
+      index: 1,
+      logger: logger
+    )!
+    let twoSelectedCoordinator = ListeningModeCoordinator(
+      avDevices: [firstAV, secondAV],
+      halCandidates: [],
+      logger: logger
+    )
+    #expect(
+      twoSelectedCoordinator.uniqueSelectedReadySession(command: .get, named: nil) == nil,
+      "two selected AV endpoints fail closed"
+    )
+
+    let incompleteRaw = FakeRawDevice(name: "Desk AirPods", modes: [])
+    let incompleteAV = PrivateAudioDevice.compatible(
+      object: incompleteRaw,
+      sources: [.contextSingular],
+      index: 0,
+      logger: logger
+    )!
+    let incompleteCoordinator = ListeningModeCoordinator(
+      avDevices: [incompleteAV],
+      halCandidates: [],
+      logger: logger
+    )
+    #expect(
+      incompleteCoordinator.uniqueSelectedReadySession(
+        command: .set(.adaptive),
+        named: nil
+      ) == nil,
+      "selected AV with an empty inventory is not command-ready"
+    )
+
+    let selectedRaw = FakeRawDevice(name: "Desk AirPods")
+    let selectedAV = PrivateAudioDevice.compatible(
+      object: selectedRaw,
+      sources: [.contextSingular],
+      index: 0,
+      logger: logger
+    )!
+    let selectedCoordinator = ListeningModeCoordinator(
+      avDevices: [selectedAV],
+      halCandidates: [],
+      logger: logger
+    )
+    #expect(
+      selectedCoordinator.uniqueSelectedReadySession(
+        command: .get,
+        named: "Travel AirPods"
+      ) == nil,
+      "a named AV miss is not a unique selected ready session"
+    )
+
+    let unnamed = selectedCoordinator.uniqueSelectedReadySession(
+      command: .get,
+      named: nil
+    )
+    #expect(
+      unnamed?.transport.listeningModeTransportKind == .av,
+      "unnamed unique selected AV get uses AV"
+    )
+    let named = selectedCoordinator.uniqueSelectedReadySession(
+      command: .get,
+      named: "desk airpods"
+    )
+    #expect(
+      named?.transport.listeningModeTransportKind == .av,
+      "named unique selected AV get uses AV"
+    )
+  }
+
+  @Test
   func hALListeningModeTranslationAndOffLimitation() throws {
     let backend = FakeHALRoutingBackend()
     backend.rawModeRead = .value(1)
