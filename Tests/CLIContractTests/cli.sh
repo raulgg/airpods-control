@@ -17,14 +17,6 @@ assert_equal() {
     fail "$description: expected '$expected', got '$actual'"
 }
 
-assert_contains() {
-  haystack="$1"
-  needle="$2"
-  description="$3"
-  printf '%s' "$haystack" | grep -F -- "$needle" >/dev/null ||
-    fail "$description: expected output containing '$needle'"
-}
-
 expect_failure() {
   expected_status="$1"
   expected_output="$2"
@@ -49,7 +41,6 @@ PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/airpods-control-test.XXXXXX")
 trap 'rm -rf "$PROBE_DIR"' EXIT HUP INT TERM
 cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
 CLI="$PROBE_DIR/airpods-control"
-MISSING_DEVICE='__airpods_control_cli_contract_missing__'
 
 "$CLI" --help >/dev/null
 "$CLI" lm --help >/dev/null
@@ -72,53 +63,5 @@ assert_equal "$VERSION" "$(cat "$PROBE_DIR/debug.stdout")" \
 expect_failure 2 bad-args "$CLI" unknown-command
 expect_failure 2 '{"error":"bad-args","result":"error"}' \
   "$CLI" lm get --json --json
-
-# Omitting the bypass leaves public HAL discovery available to listening-mode
-# commands, while private-provider commands report unavailable.
-# Valid mutating invocations stay in the Swift suite. This black-box contract
-# never runs one against production discovery, even with a sentinel name.
-expect_failure 1 no-device "$CLI" \
-  --device "$MISSING_DEVICE" lm set anc
-expect_failure 1 \
-  '{"device":null,"error":"no-device","listeningMode":null,"result":"error","supportedListeningModes":[]}' \
-  "$CLI" --device "$MISSING_DEVICE" --json lm list
-expect_failure 6 \
-  '{"conversationAwareness":null,"device":null,"error":"unavailable","result":"error"}' \
-  "$CLI" --device "$MISSING_DEVICE" ca get --json
-expect_failure 1 \
-  '{"devices":[],"error":"no-device","result":"error"}' \
-  "$CLI" --json status
-
-set +e
-support_report_output=$(
-  "$CLI" support-report 2>"$PROBE_DIR/support-report.stderr"
-)
-support_report_status=$?
-set -e
-assert_equal 6 "$support_report_status" "support-report unavailable exit status"
-assert_contains "$support_report_output" \
-  'Connect exactly one compatible AirPods or Beats device' \
-  "support-report unique-device guidance"
-assert_equal '' "$(cat "$PROBE_DIR/support-report.stderr")" \
-  "support-report unavailable has no prompt"
-
-# --with-write-tests authorizes real writes. This probe copy has no bypass
-# dylib, and this immediately preceding operational command proves discovery is
-# blocked before the consented invocation runs.
-expect_failure 1 no-device "$CLI" lm get
-set +e
-support_report_writes_output=$(
-  "$CLI" support-report --with-write-tests \
-    2>"$PROBE_DIR/support-report-writes.stderr"
-)
-support_report_writes_status=$?
-set -e
-assert_equal 6 "$support_report_writes_status" \
-  "consented support-report unavailable exit status"
-assert_contains "$support_report_writes_output" \
-  'Connect exactly one compatible AirPods or Beats device' \
-  "consented support-report unique-device guidance"
-assert_equal '' "$(cat "$PROBE_DIR/support-report-writes.stderr")" \
-  "unavailable discovery means no consent prompt and no writes"
 
 printf '%s\n' 'CLI contract tests passed'

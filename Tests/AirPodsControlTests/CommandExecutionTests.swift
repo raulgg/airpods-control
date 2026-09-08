@@ -49,9 +49,20 @@ struct CommandExecutionTests {
     let noDeviceList = CommandExecution.executeListeningMode(listInvocation) { _, _, _ in
       .failed(.noDevice)
     }
+    #expect(noDeviceList.plain == "no-device", "missing-device list has plain no-device")
+    #expect(noDeviceList.exitCode == 1, "missing-device list exits one")
     #expect(
-      noDeviceList.payload["supportedListeningModes"] as? [String] == [],
-      "missing-device list has an empty supported mode list"
+      payloadEquals(
+        noDeviceList.payload,
+        [
+          "device": NSNull(),
+          "error": "no-device",
+          "listeningMode": NSNull(),
+          "result": "error",
+          "supportedListeningModes": [String](),
+        ]
+      ),
+      "missing-device list preserves its complete JSON payload"
     )
 
     let awarenessInvocation = try parseInvocation(["ca", "get"])
@@ -75,6 +86,147 @@ struct CommandExecutionTests {
       "support-report requires an unambiguous privacy-preserving target"
     )
     #expect(noDeviceReport.supportReport == nil, "missing device does not offer issue creation")
+  }
+
+  @Test("Preserves the named listening-mode setter no-device contract")
+  func namedListeningModeSetterNoDeviceOutcome() throws {
+    let missingName = "__missing_airpods__"
+    let invocation = try parseInvocation([
+      "--device", missingName, "lm", "set", "anc",
+    ])
+    var resolverCallCount = 0
+    var capturedName: String?
+    let outcome = CommandExecution.executeListeningMode(
+      invocation,
+      resolveSession: { command, name, _ in
+        resolverCallCount += 1
+        capturedName = name
+        guard case let .set(target) = command, target == .noiseCancellation else {
+          Issue.record("listening-mode execution must pass the requested set target")
+          return .failed(.noDevice)
+        }
+        return .failed(.noDevice)
+      }
+    )
+
+    #expect(resolverCallCount == 1, "named setter resolves exactly once")
+    #expect(capturedName == missingName, "named setter forwards the requested device name")
+    #expect(outcome.plain == "no-device", "missing device set has plain no-device")
+    #expect(outcome.exitCode == 1, "missing device set exits one")
+    #expect(
+      payloadEquals(
+        outcome.payload,
+        [
+          "device": NSNull(),
+          "error": "no-device",
+          "listeningMode": NSNull(),
+          "result": "error",
+        ]
+      ),
+      "missing device set preserves its complete JSON payload"
+    )
+  }
+
+  @Test("Preserves unavailable Conversation Awareness discovery")
+  func unavailableConversationAwarenessOutcome() throws {
+    let invocation = try parseInvocation(["ca", "get", "--json"])
+    let outcome = CommandExecution.execute(
+      invocation,
+      resolveDevices: { _, _, _ in .failed(.unavailable) }
+    )
+
+    #expect(outcome.plain == "unavailable", "unavailable awareness has plain token")
+    #expect(outcome.exitCode == 6, "unavailable awareness exits six")
+    #expect(
+      payloadEquals(
+        outcome.payload,
+        [
+          "conversationAwareness": NSNull(),
+          "device": NSNull(),
+          "error": "unavailable",
+          "result": "error",
+        ]
+      ),
+      "unavailable awareness preserves its complete JSON payload"
+    )
+  }
+
+  @Test(
+    "Preserves unavailable support-report discovery without side effects",
+    arguments: [
+      ["support-report"],
+      ["support-report", "--with-write-tests"],
+    ]
+  )
+  func unavailableSupportReportOutcome(arguments: [String]) throws {
+    let invocation = try parseInvocation(arguments)
+    var consentRequests = 0
+    var writeRuns = 0
+    let outcome = CommandExecution.execute(
+      invocation,
+      resolveDevices: { _, _, _ in .failed(.unavailable) },
+      supportReport: SupportReportCommand(
+        requestWriteTestConsent: { _ in
+          consentRequests += 1
+          Issue.record("unavailable discovery must not request write consent")
+          return true
+        },
+        runWriteTests: { _, _ in
+          writeRuns += 1
+          Issue.record("unavailable discovery must not run write tests")
+          return SupportReportWriteTestResults(
+            listeningModes: .skipped(reason: "unexpected write callback"),
+            conversationAwareness: .skipped(reason: "unexpected write callback"),
+            interruptedBySignal: nil
+          )
+        }
+      )
+    )
+
+    #expect(outcome.exitCode == 6, "unavailable support-report discovery exits six")
+    #expect(
+      outcome.plain == """
+      AirPods or Beats report-device discovery is unavailable.
+      Connect exactly one compatible AirPods or Beats device as a macOS output device,
+      then run `airpods-control support-report` again.
+      Nothing was sent to GitHub.
+      """,
+      "support-report preserves unavailable discovery guidance"
+    )
+    #expect(
+      payloadEquals(
+        outcome.payload,
+        ["error": "unavailable", "result": "error"]
+      ),
+      "unavailable support-report preserves its complete JSON payload"
+    )
+    #expect(outcome.supportReport == nil, "unavailable discovery has no report")
+
+    var readResponses = 0
+    var openedURLs = 0
+    var output = [String]()
+    var errors = [String]()
+    let presentationReason = SupportReportInteraction.present(
+      outcome: outcome,
+      inputIsInteractive: true,
+      readResponse: {
+        readResponses += 1
+        return "yes"
+      },
+      openURL: { _ in
+        openedURLs += 1
+        return true
+      },
+      writeOutput: { output.append($0) },
+      writeError: { errors.append($0) }
+    )
+    #expect(presentationReason == .unavailable, "unavailable report preserves its reason")
+    #expect(output == [outcome.plain], "unavailable report preserves plain stdout")
+    #expect(errors.isEmpty, "unavailable report preserves empty stderr")
+    #expect(consentRequests == 0, "unavailable discovery never requests write consent")
+    #expect(writeRuns == 0, "unavailable discovery never runs writes")
+    #expect(readResponses == 0, "unavailable report never requests issue confirmation")
+    #expect(openedURLs == 0, "unavailable report never opens an issue form")
   }
 
   @Test("Renders listening-mode reads and verified, unsupported, or no-op writes")
@@ -353,4 +505,11 @@ struct CommandExecutionTests {
     #expect(outcome.payload["device"] is NSNull, "\(arguments) has no selected device")
     #expect(outcome.payload["supportedListeningModes"] == nil, "Conversation Awareness omits supported modes")
   }
+}
+
+private func payloadEquals(
+  _ actual: [String: Any],
+  _ expected: [String: Any]
+) -> Bool {
+  NSDictionary(dictionary: actual).isEqual(to: expected)
 }
