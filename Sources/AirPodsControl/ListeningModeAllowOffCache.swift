@@ -167,6 +167,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   private let saltGenerator: () throws -> Data
   private let markExcludedFromBackup: (URL) throws -> Void
   private let fileManager: FileManager
+  private let lockRetryObserver: () -> Void
 
   init(
     fileURL: URL,
@@ -175,7 +176,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     saltGenerator: @escaping () throws -> Data = secureAllowOffCacheSalt,
     markExcludedFromBackup: @escaping (URL) throws -> Void =
       excludeAllowOffCacheURLFromBackup,
-    fileManager: FileManager = .default
+    fileManager: FileManager = .default,
+    lockRetryObserver: @escaping () -> Void = {}
   ) {
     self.fileURL = fileURL
     self.ttl = ttl
@@ -183,6 +185,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     self.saltGenerator = saltGenerator
     self.markExcludedFromBackup = markExcludedFromBackup
     self.fileManager = fileManager
+    self.lockRetryObserver = lockRetryObserver
   }
 
   static func defaultFileURL(
@@ -625,6 +628,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         return false
       }
 
+      lockRetryObserver()
       let elapsed = DispatchTime.now().uptimeNanoseconds - startedAt
       guard elapsed < allowOffCacheLockTimeoutNanoseconds else { return false }
       let remainingMicroseconds =
