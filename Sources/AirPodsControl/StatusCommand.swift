@@ -28,7 +28,7 @@ private struct DeviceStatusSnapshot {
   let audioInputSelection: AudioDeviceSelectionObservation
   let inEarPlacement: DeviceStatusField<BluetoothEarPlacement>
 
-  static func capture(_ device: any CompatibleAudioDevice) -> DeviceStatusSnapshot? {
+  static func capture(_ device: any AudioDeviceStatusReading) -> DeviceStatusSnapshot? {
     guard let deviceName = device.name else { return nil }
     return DeviceStatusSnapshot(
       deviceName: deviceName,
@@ -197,7 +197,7 @@ private extension BluetoothEarPlacementState {
 enum StatusCommand {
   static let noDevicePlain = "No compatible AirPods or Beats device is connected."
 
-  static func outcome(devices: [any CompatibleAudioDevice]) -> CommandOutcome {
+  static func outcome(devices: [any AudioDeviceStatusReading]) -> CommandOutcome {
     let snapshots = devices.compactMap(DeviceStatusSnapshot.capture)
     guard !snapshots.isEmpty, snapshots.count == devices.count else {
       return noDeviceOutcome()

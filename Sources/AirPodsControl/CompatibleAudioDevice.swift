@@ -44,20 +44,28 @@ enum DeviceSelection<Value> {
 
 enum CommandDeviceResolution {
   case devices([any CompatibleAudioDevice])
+  case statusDevices([any AudioDeviceStatusReading])
   case failed(TerminalReason)
 }
 
-protocol CompatibleAudioDevice {
+protocol AudioDeviceStatusReading {
   // Absent when the adapter was told not to read the customizable name, which
   // is what the support-report path asks for. Absence is not a blank name:
   // there is nothing here to print.
   var name: String? { get }
 
+  func readListeningModeStatus() -> DeviceStatusField<ListeningMode>
+  func readConversationAwarenessStatus() -> DeviceStatusField<Bool>
+  func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation
+  func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation
+  func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement>
+}
+
+protocol CompatibleAudioDevice: AudioDeviceStatusReading {
   func supportReportMetadata() -> SupportReportDeviceMetadata
 
   func availableListeningModes() -> [ListeningMode]
   func currentListeningMode() -> ListeningMode?
-  func readListeningModeStatus() -> DeviceStatusField<ListeningMode>
   func canSetListeningMode() -> Bool
   func setListeningModeAndReadBack(
     _ target: ListeningMode
@@ -65,16 +73,10 @@ protocol CompatibleAudioDevice {
 
   func supportsConversationAwareness() -> Bool?
   func conversationAwarenessState() -> Bool?
-  func readConversationAwarenessStatus() -> DeviceStatusField<Bool>
   func canSetConversationAwareness() -> Bool
   func setConversationAwarenessAndReadBack(
     _ target: Bool
   ) -> DeviceWriteObservation<Bool>
-
-  func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement>
-
-  func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation
-  func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation
 
   // Blocks for the given interval without going stale: the production
   // adapter must keep pumping the main run loop while it waits. How long to
@@ -82,7 +84,7 @@ protocol CompatibleAudioDevice {
   func settle(for interval: TimeInterval)
 }
 
-extension CompatibleAudioDevice {
+extension AudioDeviceStatusReading {
   func readInEarPlacementStatus() -> DeviceStatusField<BluetoothEarPlacement> {
     .unresolved
   }
