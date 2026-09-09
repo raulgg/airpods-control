@@ -72,15 +72,15 @@ private func allowOffCacheJSON(
   at fileURL: URL
 ) -> [String: Any]? {
   guard let data = try? Data(contentsOf: fileURL),
-    let value = try? JSONSerialization.jsonObject(with: data),
-    let object = value as? [String: Any]
+        let value = try? JSONSerialization.jsonObject(with: data),
+        let object = value as? [String: Any]
   else { return nil }
   return object
 }
 
 private func allowOffCachePermissions(at url: URL) -> Int? {
   guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
-    let permissions = attributes[.posixPermissions] as? NSNumber
+        let permissions = attributes[.posixPermissions] as? NSNumber
   else { return nil }
   return permissions.intValue
 }
@@ -303,11 +303,11 @@ struct PersistentListeningModeAllowOffCacheTests {
       )
 
       guard let data = try? Data(contentsOf: fileURL),
-        let text = String(data: data, encoding: .utf8),
-        let object = allowOffCacheJSON(at: fileURL),
-        let schemaVersion = object["schemaVersion"] as? NSNumber,
-        let salt = object["salt"] as? String,
-        let entries = object["positiveEvidence"] as? [String: Any]
+            let text = String(data: data, encoding: .utf8),
+            let object = allowOffCacheJSON(at: fileURL),
+            let schemaVersion = object["schemaVersion"] as? NSNumber,
+            let salt = object["salt"] as? String,
+            let entries = object["positiveEvidence"] as? [String: Any]
       else {
         Issue.record("allow-off cache document is readable JSON")
         return

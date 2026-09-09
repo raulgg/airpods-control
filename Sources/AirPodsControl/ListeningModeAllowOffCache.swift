@@ -215,9 +215,9 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
   func lookup(rawDeviceUID: String) -> AllowOffCacheLookup {
     guard validTTL,
-      case .value(let document) = readPersistedCache(),
-      let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID),
-      let observation = document.observations[key]
+          case .value(let document) = readPersistedCache(),
+          let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID),
+          let observation = document.observations[key]
     else { return .miss }
     switch readDenyMarker(for: key) {
     case let .value(deniedAt) where deniedAt >= observation.observedAt:
@@ -227,7 +227,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return .denied(AllowOffCacheRecord(evidence: deniedEvidence, key: key))
     case .missing, .value:
       guard observation.allowsOff,
-        let evidence = usableEvidence(observedAt: observation.observedAt)
+            let evidence = usableEvidence(observedAt: observation.observedAt)
       else { return .miss }
       let record = AllowOffCacheRecord(evidence: evidence, key: key)
       return .allowed(record)
@@ -268,7 +268,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     recordsDenial: Bool
   ) -> AllowOffCacheMutation {
     guard validTTL, isValidRawDeviceUID(rawDeviceUID),
-      observedAt.timeIntervalSince1970.isFinite
+          observedAt.timeIntervalSince1970.isFinite
     else { return .unavailable }
     return withExclusiveMutationLock(
       body: {
@@ -309,8 +309,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
           case .value(let deniedAt):
             guard usableEvidence(observedAt: deniedAt) == nil else {
               guard let existing = observations[key],
-                existing.allowsOff,
-                existing.observedAt > deniedAt
+                    existing.allowsOff,
+                    existing.observedAt > deniedAt
               else {
                 return .unchanged
               }
@@ -335,7 +335,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
           with: effectiveCandidate
         ) else {
           guard recordsDenial, !effectiveCandidate.allowsOff,
-            observations[key]?.allowsOff == false
+                observations[key]?.allowsOff == false
           else {
             return .unchanged
           }
@@ -363,7 +363,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         }
         if recordsDenial {
           guard !allowsOff,
-            appendDenyMarker(for: key, observedAt: effectiveCandidate.observedAt)
+                appendDenyMarker(for: key, observedAt: effectiveCandidate.observedAt)
           else { return .unavailable }
         }
         return .applied
@@ -415,7 +415,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     let current = now()
     let currentSeconds = current.timeIntervalSince1970
     guard observedSeconds.isFinite, currentSeconds.isFinite,
-      current >= observedAt
+          current >= observedAt
     else { return nil }
     let expiresAt = observedAt.addingTimeInterval(ttl)
     guard expiresAt.timeIntervalSince1970.isFinite, current < expiresAt else {
@@ -440,12 +440,12 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     existing: AllowOffObservation?
   ) -> AllowOffObservation {
     guard !candidate.allowsOff,
-      let existing,
-      existing.allowsOff
+          let existing,
+          existing.allowsOff
     else { return candidate }
     let current = now()
     guard current.timeIntervalSince1970.isFinite,
-      current >= existing.observedAt
+          current >= existing.observedAt
     else {
       return AllowOffObservation(
         allowsOff: false,
@@ -460,7 +460,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     observedAt: Date
   ) -> AllowOffCacheMutation {
     guard case .value(let document) = readPersistedCache(),
-      let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID)
+          let key = digestKey(salt: document.salt, rawDeviceUID: rawDeviceUID)
     else { return .unavailable }
     let candidate = effectiveObservation(
       AllowOffObservation(allowsOff: false, observedAt: observedAt),
@@ -486,7 +486,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return .invalid
     case .value(let data):
       guard let document = try? decoder.decode(PersistedAllowOffCache.self, from: data),
-        validate(document)
+            validate(document)
       else { return .invalid }
       return .value(document)
     }
@@ -537,15 +537,15 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
     var value = stat()
     guard fstat(descriptor, &value) == 0,
-      isRegularFile(value),
-      value.st_uid == geteuid(),
-      value.st_nlink == 1,
-      value.st_size >= 0,
-      UInt64(value.st_size) + UInt64(line.count)
-        <= UInt64(allowOffCacheDenyMarkerMaximumByteCount),
-      fchmod(descriptor, allowOffCacheFilePermissions) == 0,
-      writeAll(line, to: descriptor),
-      fsync(descriptor) == 0
+          isRegularFile(value),
+          value.st_uid == geteuid(),
+          value.st_nlink == 1,
+          value.st_size >= 0,
+          UInt64(value.st_size) + UInt64(line.count)
+          <= UInt64(allowOffCacheDenyMarkerMaximumByteCount),
+          fchmod(descriptor, allowOffCacheFilePermissions) == 0,
+          writeAll(line, to: descriptor),
+          fsync(descriptor) == 0
     else { return false }
     do {
       try markExcludedFromBackup(url)
@@ -557,10 +557,10 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
   private func validate(_ document: PersistedAllowOffCache) -> Bool {
     guard document.schemaVersion == allowOffCacheSchemaVersion,
-      document.salt.count == allowOffCacheSaltByteCount,
-      Set(document.positiveEvidence.keys)
-        .union(document.negativeEvidence.keys)
-        .count <= allowOffCacheMaximumEntryCount
+          document.salt.count == allowOffCacheSaltByteCount,
+          Set(document.positiveEvidence.keys)
+          .union(document.negativeEvidence.keys)
+          .count <= allowOffCacheMaximumEntryCount
     else {
       return false
     }
@@ -577,8 +577,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     from document: PersistedAllowOffCache
   ) -> AllowOffCacheMutation {
     guard let existing = document.observations[key],
-      existing.allowsOff,
-      existing.observedAt == observedAt
+          existing.allowsOff,
+          existing.observedAt == observedAt
     else { return .unchanged }
 
     var observations = document.observations
@@ -652,9 +652,9 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         attributes: attributes
       )
       guard let status = status(of: directoryURL),
-        isDirectory(status),
-        status.st_uid == geteuid(),
-        chmodURL(directoryURL, permissions: allowOffCacheDirectoryPermissions)
+            isDirectory(status),
+            status.st_uid == geteuid(),
+            chmodURL(directoryURL, permissions: allowOffCacheDirectoryPermissions)
       else { return false }
       try markExcludedFromBackup(directoryURL)
       return true
@@ -672,10 +672,10 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard descriptor >= 0 else { return nil }
     var value = stat()
     guard fstat(descriptor, &value) == 0,
-      isRegularFile(value),
-      value.st_uid == geteuid(),
-      value.st_nlink == 1,
-      fchmod(descriptor, allowOffCacheFilePermissions) == 0
+          isRegularFile(value),
+          value.st_uid == geteuid(),
+          value.st_nlink == 1,
+          fchmod(descriptor, allowOffCacheFilePermissions) == 0
     else {
       Darwin.close(descriptor)
       return nil
@@ -701,8 +701,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       return errno == ENOENT ? .missing : .invalid
     }
     guard isDirectory(directoryStatus),
-      directoryStatus.st_uid == geteuid(),
-      permissionBits(directoryStatus) == allowOffCacheDirectoryPermissions
+          directoryStatus.st_uid == geteuid(),
+          permissionBits(directoryStatus) == allowOffCacheDirectoryPermissions
     else { return .invalid }
 
     let descriptor = openFile(url, flags: O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
@@ -713,12 +713,12 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
     var value = stat()
     guard fstat(descriptor, &value) == 0,
-      isRegularFile(value),
-      value.st_uid == geteuid(),
-      value.st_nlink == 1,
-      value.st_size >= 0,
-      UInt64(value.st_size) <= UInt64(allowOffCacheMaximumByteCount),
-      permissionBits(value) == allowOffCacheFilePermissions
+          isRegularFile(value),
+          value.st_uid == geteuid(),
+          value.st_nlink == 1,
+          value.st_size >= 0,
+          UInt64(value.st_size) <= UInt64(allowOffCacheMaximumByteCount),
+          permissionBits(value) == allowOffCacheFilePermissions
     else { return .invalid }
 
     var data = Data()
@@ -743,8 +743,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
   private func write(_ document: PersistedAllowOffCache) -> Bool {
     guard validate(document),
-      let data = try? encoder.encode(document),
-      data.count <= allowOffCacheMaximumByteCount
+          let data = try? encoder.encode(document),
+          data.count <= allowOffCacheMaximumByteCount
     else { return false }
 
     let temporaryURL = directoryURL.appendingPathComponent(
@@ -765,8 +765,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     }
 
     guard writeAll(data, to: descriptor),
-      fchmod(descriptor, allowOffCacheFilePermissions) == 0,
-      fsync(descriptor) == 0
+          fchmod(descriptor, allowOffCacheFilePermissions) == 0,
+          fsync(descriptor) == 0
     else { return false }
     do {
       try markExcludedFromBackup(temporaryURL)
@@ -842,7 +842,7 @@ func excludeAllowOffCacheURLFromBackup(_ url: URL) throws {
 
 private func digestKey(salt: Data, rawDeviceUID: String) -> String? {
   guard salt.count == allowOffCacheSaltByteCount,
-    isValidRawDeviceUID(rawDeviceUID)
+        isValidRawDeviceUID(rawDeviceUID)
   else { return nil }
   var hasher = SHA256()
   hasher.update(data: salt)
