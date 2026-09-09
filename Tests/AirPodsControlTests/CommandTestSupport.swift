@@ -2,6 +2,16 @@ import Foundation
 
 @testable import AirPodsControlCore
 
+extension CommandOutcome {
+  // Keep existing unit tests on their convenient Foundation view while the
+  // production command path remains typed as JSONValue.
+  var payload: [String: Any] {
+    jsonPayload.reduce(into: [String: Any]()) { result, entry in
+      result[entry.key] = entry.value.foundationValue
+    }
+  }
+}
+
 func commandOutcome(
   _ arguments: [String],
   device: any CompatibleAudioDevice

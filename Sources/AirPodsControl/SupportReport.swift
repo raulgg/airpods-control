@@ -106,7 +106,8 @@ struct SupportReportDocument {
 
   static func make(
     snapshot: SupportReportSnapshot,
-    writeTests: SupportReportWriteTestResults? = nil
+    writeTests: SupportReportWriteTestResults? = nil,
+    cliVersion: String = BuildVersion.current
   ) -> SupportReportDocument {
     let setterTested = writeTests != nil
     let results = writeTests.map(writeTestResults) ?? []
@@ -118,7 +119,7 @@ struct SupportReportDocument {
         modelIdentifier: snapshot.modelIdentifier,
         bluetoothProductID: snapshot.bluetoothProductID,
         macOS: snapshot.macOS,
-        cliVersion: BuildVersion.current
+        cliVersion: cliVersion
       ),
       capabilities: Capabilities(
         listeningModes: snapshot.listeningModes,
