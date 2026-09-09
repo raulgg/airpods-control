@@ -359,6 +359,76 @@ struct AudioRoutingTests {
   }
 
   @Test
+  func coreAudioInventoryPreservesReadOrderAndGateShortCircuits() throws {
+    let aggregate = NSObject()
+    let nonBluetooth = NSObject()
+    let dead = NSObject()
+    let noStreams = NSObject()
+    let valid = NSObject()
+    let readLog = FakeInventoryReadLog()
+    let backend = FakeAudioRoutingBackend()
+    backend.inventoryReadLog = readLog
+
+    let (controller, runtime) = makeBluetoothController(
+      inventory: [
+        FakeInventoryEndpoint(
+          audioDeviceID: 1,
+          bluetoothDevice: aggregate,
+          aggregate: .value(true)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 2,
+          bluetoothDevice: nonBluetooth,
+          transport: .value(kAudioDeviceTransportTypeBuiltIn)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 3,
+          bluetoothDevice: dead,
+          alive: .value(false)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 4,
+          bluetoothDevice: noStreams,
+          inputStreams: .value(false),
+          outputStreams: .value(false)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 5,
+          bluetoothDevice: valid,
+          manufacturer: .value("Apple Inc."),
+          name: .value("Valid AirPods")
+        ),
+      ],
+      backend: backend,
+      configureRuntime: { $0.inventoryReadLog = readLog }
+    )
+
+    #expect(
+      controller.selectDevices(named: nil, policy: .allOrExact)?.map(\.name)
+        == ["Valid AirPods"],
+      "only the fully admitted endpoint becomes a compatible device"
+    )
+    #expect(
+      runtime.mappingReads == [5],
+      "mapping is reached only after all preceding admission gates pass"
+    )
+    #expect(
+      readLog.events == [
+        "aggregate:1",
+        "aggregate:2", "transport:2",
+        "aggregate:3", "transport:3", "alive:3",
+        "aggregate:4", "transport:4", "alive:4",
+        "streams:4:input", "streams:4:output",
+        "aggregate:5", "transport:5", "alive:5",
+        "streams:5:input", "streams:5:output",
+        "apple:5", "manufacturer:5", "mapping:5", "name:5",
+        "listening-mode:5", "in-ear:5",
+      ],
+      "inventory reads follow aggregate, transport, alive, streams, admission, mapping, name, and optional feature order"
+    )
+  }
+
+  @Test
   func coreAudioInventoryPreservesFirstGroupOccurrenceOrder() throws {
     let first = NSObject()
     let second = NSObject()

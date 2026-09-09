@@ -3,6 +3,14 @@ import Foundation
 
 @testable import AirPodsControlCore
 
+final class FakeInventoryReadLog {
+  private(set) var events: [String] = []
+
+  func append(_ event: String) {
+    events.append(event)
+  }
+}
+
 final class FakeAudioRoutingBackend: AudioRoutingBackend {
   var audioDevices: AudioRoutingRead<[AudioDeviceID]> = .value([])
   var outputDefaults: [AudioRoutingRead<AudioDeviceID?>] = [.value(nil), .value(nil)]
@@ -31,6 +39,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   private(set) var listeningModeReads: [AudioDeviceID] = []
   private(set) var inEarPlacementReads: [AudioDeviceID] = []
   private(set) var deviceUIDReads: [AudioDeviceID] = []
+  var inventoryReadLog: FakeInventoryReadLog?
 
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]> {
     audioDeviceReadCount += 1
@@ -52,6 +61,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
 
   func isAggregateDevice(_ deviceID: AudioDeviceID) -> AudioRoutingRead<Bool> {
     aggregateReads.append(deviceID)
+    inventoryReadLog?.append("aggregate:\(deviceID)")
     return aggregates[deviceID] ?? .value(false)
   }
 
@@ -59,17 +69,25 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32> {
     transportReads.append(deviceID)
+    inventoryReadLog?.append("transport:\(deviceID)")
     return transports[deviceID] ?? .value(kAudioDeviceTransportTypeBluetooth)
   }
 
   func readDeviceIsAlive(_ deviceID: AudioDeviceID) -> AudioRoutingRead<Bool> {
-    alive[deviceID] ?? .value(true)
+    inventoryReadLog?.append("alive:\(deviceID)")
+    return alive[deviceID] ?? .value(true)
   }
 
   func readHasStreams(
     for deviceID: AudioDeviceID,
     direction: AudioRoutingDirection
   ) -> AudioRoutingRead<Bool> {
+    let label: String
+    switch direction {
+    case .input: label = "input"
+    case .output: label = "output"
+    }
+    inventoryReadLog?.append("streams:\(deviceID):\(label)")
     switch direction {
     case .input: return inputStreams[deviceID] ?? .value(false)
     case .output: return outputStreams[deviceID] ?? .value(true)
@@ -79,13 +97,15 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   func readManufacturer(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<String?> {
-    manufacturers[deviceID] ?? .value("Apple Inc.")
+    inventoryReadLog?.append("manufacturer:\(deviceID)")
+    return manufacturers[deviceID] ?? .value("Apple Inc.")
   }
 
   func readName(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<String?> {
-    names[deviceID] ?? .value("Test AirPods")
+    inventoryReadLog?.append("name:\(deviceID)")
+    return names[deviceID] ?? .value("Test AirPods")
   }
 
   func readDeviceUID(
@@ -98,13 +118,15 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   func readIsAppleAudioDevice(
     _ deviceID: AudioDeviceID
   ) -> AudioRoutingRead<Bool> {
-    appleAudioDevices[deviceID] ?? .unavailable
+    inventoryReadLog?.append("apple:\(deviceID)")
+    return appleAudioDevices[deviceID] ?? .unavailable
   }
 
   func readBluetoothListeningMode(
     for deviceID: AudioDeviceID
   ) -> AudioRoutingRead<UInt32> {
     listeningModeReads.append(deviceID)
+    inventoryReadLog?.append("listening-mode:\(deviceID)")
     return listeningModes[deviceID] ?? .unavailable
   }
 
@@ -138,6 +160,7 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
     for deviceID: AudioDeviceID
   ) -> BluetoothEarPlacementRead {
     inEarPlacementReads.append(deviceID)
+    inventoryReadLog?.append("in-ear:\(deviceID)")
     return inEarPlacements[deviceID] ?? .unavailable
   }
 
@@ -161,6 +184,7 @@ struct FakeBluetoothEntry {
 final class FakeBluetoothAudioRuntime: BluetoothAudioRuntime {
   var entries: [ObjectIdentifier: FakeBluetoothEntry] = [:]
   var mappings: [AudioDeviceID: AudioRoutingRead<AnyObject?>] = [:]
+  var inventoryReadLog: FakeInventoryReadLog?
   private(set) var mappingReads: [AudioDeviceID] = []
 
   func add(_ device: AnyObject, entry: FakeBluetoothEntry) {
@@ -175,6 +199,7 @@ final class FakeBluetoothAudioRuntime: BluetoothAudioRuntime {
     for audioDeviceID: AudioDeviceID
   ) -> AudioRoutingRead<AnyObject?> {
     mappingReads.append(audioDeviceID)
+    inventoryReadLog?.append("mapping:\(audioDeviceID)")
     return mappings[audioDeviceID] ?? .unavailable
   }
 
