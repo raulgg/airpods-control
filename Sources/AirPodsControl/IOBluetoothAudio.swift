@@ -212,7 +212,7 @@ private enum CoreAudioInEarPlacementObservation {
   case readFailure
 }
 
-final class IOBluetoothStatusDevice: CompatibleAudioDevice {
+final class IOBluetoothStatusDevice: AudioDeviceStatusReading {
   let object: AnyObject
   let name: String?
   private let coreAudioListeningMode: CoreAudioListeningModeObservation
@@ -234,27 +234,6 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     self.coreAudioInEarPlacement = coreAudioInEarPlacement
     self.runtime = runtime
     self.routingObserver = routingObserver
-  }
-
-  func supportReportMetadata() -> SupportReportDeviceMetadata {
-    SupportReportDeviceMetadata(
-      family: nil,
-      modelIdentifier: nil,
-      unrecognizedListeningModes: [],
-      listeningModeQueryAnswered: currentListeningMode() != nil
-    )
-  }
-
-  func availableListeningModes() -> [ListeningMode] { [] }
-
-  func currentListeningMode() -> ListeningMode? {
-    switch coreAudioListeningMode {
-    case let .value(mode): return mode
-    case .unrecognized, .conflict: return nil
-    case .unavailable, .readFailure: break
-    }
-    guard case let .value(rawMode) = runtime.listeningMode(object) else { return nil }
-    return bluetoothModeByRawValue[UInt32(rawMode)]
   }
 
   func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
@@ -286,30 +265,6 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     return .unresolved
   }
 
-  func canSetListeningMode() -> Bool { false }
-
-  func setListeningModeAndReadBack(
-    _ target: ListeningMode
-  ) -> DeviceWriteObservation<ListeningMode> {
-    DeviceWriteObservation(setterAccepted: false, observed: currentListeningMode())
-  }
-
-  func supportsConversationAwareness() -> Bool? {
-    guard let endpoint = routingObserver.activeFeatureEndpoint(for: object),
-          endpoint.responds(to: statusAVSupportsCASelector)
-    else { return nil }
-    let shim = unsafeBitCast(endpoint, to: StatusConversationAwarenessSupportShim.self)
-    return shim.supportsConversationAwareness()
-  }
-
-  func conversationAwarenessState() -> Bool? {
-    guard let endpoint = routingObserver.activeFeatureEndpoint(for: object),
-          endpoint.responds(to: statusAVCAEnabledSelector)
-    else { return nil }
-    let shim = unsafeBitCast(endpoint, to: StatusConversationAwarenessStateShim.self)
-    return shim.conversationAwarenessEnabled()
-  }
-
   func readConversationAwarenessStatus() -> DeviceStatusField<Bool> {
     guard let endpoint = routingObserver.activeFeatureEndpoint(for: object) else {
       return .unresolved
@@ -334,14 +289,6 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     }
   }
 
-  func canSetConversationAwareness() -> Bool { false }
-
-  func setConversationAwarenessAndReadBack(
-    _ target: Bool
-  ) -> DeviceWriteObservation<Bool> {
-    DeviceWriteObservation(setterAccepted: false, observed: conversationAwarenessState())
-  }
-
   func readAudioOutputSelectionStatus() -> AudioDeviceSelectionObservation {
     routingObserver.selectionObservation(bluetoothDevice: object, direction: .output)
   }
@@ -350,9 +297,6 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     routingObserver.selectionObservation(bluetoothDevice: object, direction: .input)
   }
 
-  func settle(for interval: TimeInterval) {
-    RunLoop.current.run(until: Date(timeIntervalSinceNow: interval))
-  }
 }
 
 private let recognizedAppleAudioManufacturers: Set<String> = [
