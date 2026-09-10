@@ -1,18 +1,6 @@
 import CoreAudio
 import Foundation
 
-private let halListeningModeByRawValue: [UInt32: ListeningMode] = [
-  1: .off,
-  2: .noiseCancellation,
-  3: .transparency,
-  4: .adaptive,
-]
-private let halWritableRawValueByListeningMode: [ListeningMode: UInt32] = [
-  .off: 1,
-  .noiseCancellation: 2,
-  .transparency: 3,
-  .adaptive: 4,
-]
 private let halListeningModeSupportMask: UInt32 = 0b111
 private let halReadbackAttempts = 16
 private let halReadbackInterval: TimeInterval = 0.05
@@ -84,7 +72,7 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
     switch backend.readBluetoothListeningMode(for: audioDeviceID) {
     case .value(let rawValue):
       logger.debug("hal.listening_mode_raw", rawValue)
-      return halListeningModeByRawValue[rawValue]
+      return BluetoothListeningModeMapping.modeByRawValue[rawValue]
         .map(ListeningModeStateObservation.value) ?? .unknown
     case .unavailable:
       logger.debug("hal.listening_mode", "unavailable")
@@ -127,7 +115,7 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
     _ target: ListeningMode,
     allowOff: Bool
   ) -> DeviceWriteObservation<ListeningMode> {
-    guard let rawTarget = halWritableRawValueByListeningMode[target],
+    guard let rawTarget = BluetoothListeningModeMapping.rawValueByMode[target],
           target == .off ? allowOff : availableListeningModes().contains(target)
     else {
       return DeviceWriteObservation(
