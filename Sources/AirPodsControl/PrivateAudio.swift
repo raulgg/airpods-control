@@ -662,26 +662,6 @@ final class PrivateAudioController {
     return resolved
   }
 
-  func selectDevice(named requestedName: String?) -> PrivateAudioDevice? {
-    guard case let .selected(devices) = resolveDevices(
-      named: requestedName,
-      policy: .singleOrExact
-    ) else { return nil }
-    return devices.first
-  }
-
-  // Kept as a narrow compatibility adapter for the device-adapter tests.
-  func selectDevices(
-    named requestedName: String?,
-    policy: DeviceSelectionPolicy
-  ) -> [PrivateAudioDevice]? {
-    guard case let .selected(devices) = resolveDevices(
-      named: requestedName,
-      policy: policy
-    ) else { return nil }
-    return devices
-  }
-
   func resolveDevices(
     named requestedName: String?,
     policy: DeviceSelectionPolicy
