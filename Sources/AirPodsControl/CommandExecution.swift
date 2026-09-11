@@ -3,13 +3,13 @@ import Foundation
 struct CommandOutcome {
   let plain: String
   let terminalReason: TerminalReason
-  let data: [String: Any]
+  let data: [String: JSONValue]
   let supportReport: SupportReportDocument?
 
   init(
     plain: String,
     terminalReason: TerminalReason = .success,
-    data: [String: Any] = [:],
+    data: [String: JSONValue] = [:],
     supportReport: SupportReportDocument? = nil
   ) {
     self.plain = plain
@@ -19,7 +19,10 @@ struct CommandOutcome {
   }
 
   var exitCode: Int32 { terminalReason.exitCode }
-  var payload: [String: Any] { terminalReason.addingEnvelope(to: data) }
+  var jsonPayload: [String: JSONValue] {
+    terminalReason.addingEnvelope(to: data)
+  }
+
 }
 
 enum CommandExecution {
@@ -86,7 +89,7 @@ enum CommandExecution {
         state: session.currentMode?.rawValue,
         extra: listeningModeExtra(
           for: session,
-          adding: ["supportedListeningModes": tokens]
+          adding: ["supportedListeningModes": .array(tokens.map(JSONValue.string))]
         )
       )
 
@@ -166,7 +169,7 @@ enum CommandExecution {
     if case .version = invocation.command {
       return CommandOutcome(
         plain: BuildVersion.current,
-        data: ["version": BuildVersion.current]
+        data: ["version": .string(BuildVersion.current)]
       )
     }
 
@@ -366,9 +369,9 @@ enum CommandExecution {
     guard let resource = command.resource else {
       preconditionFailure("version does not require a device")
     }
-    let extra: [String: Any]
+    let extra: [String: JSONValue]
     if case .listeningModeList = command {
-      extra = ["supportedListeningModes": [String]()]
+      extra = ["supportedListeningModes": .array([])]
     } else {
       extra = [:]
     }
@@ -388,11 +391,11 @@ enum CommandExecution {
     plain: String,
     terminalReason: TerminalReason = .success,
     state: String?,
-    extra: [String: Any] = [:]
+    extra: [String: JSONValue] = [:]
   ) -> CommandOutcome {
     var payload = extra
-    payload["device"] = deviceName ?? NSNull()
-    payload[resource.stateKey] = state ?? NSNull()
+    payload["device"] = deviceName.map(JSONValue.string) ?? .null
+    payload[resource.stateKey] = state.map(JSONValue.string) ?? .null
     return CommandOutcome(
       plain: plain,
       terminalReason: terminalReason,
@@ -402,19 +405,19 @@ enum CommandExecution {
 
   private static func listeningModeExtra(
     for session: ListeningModeSession,
-    adding extra: [String: Any] = [:]
-  ) -> [String: Any] {
+    adding extra: [String: JSONValue] = [:]
+  ) -> [String: JSONValue] {
     var result = extra
     guard let evidence = session.cachedAllowOffEvidence else {
       return result
     }
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    result["allowOffAvailability"] = [
-      "source": "cached-av-observation",
-      "observedAt": formatter.string(from: evidence.observedAt),
-      "expiresAt": formatter.string(from: evidence.expiresAt),
-    ]
+    result["allowOffAvailability"] = .object([
+      "source": .string("cached-av-observation"),
+      "observedAt": .string(formatter.string(from: evidence.observedAt)),
+      "expiresAt": .string(formatter.string(from: evidence.expiresAt)),
+    ])
     return result
   }
 }

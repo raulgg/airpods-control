@@ -107,25 +107,25 @@ private struct DeviceStatusSnapshot {
     return lines.joined(separator: "\n")
   }
 
-  var payload: [String: Any] {
-    var payload: [String: Any] = ["device": deviceName]
+  var payload: [String: JSONValue] {
+    var payload: [String: JSONValue] = ["device": .string(deviceName)]
 
     switch listeningMode {
     case let .value(mode):
-      payload[StatusFieldKey.listeningMode.rawValue] = mode.rawValue
+      payload[StatusFieldKey.listeningMode.rawValue] = .string(mode.rawValue)
     case .unsupported:
       break
     case .unresolved, .readError:
-      payload[StatusFieldKey.listeningMode.rawValue] = NSNull()
+      payload[StatusFieldKey.listeningMode.rawValue] = .null
     }
 
     switch conversationAwareness {
     case let .value(enabled):
-      payload[StatusFieldKey.conversationAwareness.rawValue] = enabled ? "on" : "off"
+      payload[StatusFieldKey.conversationAwareness.rawValue] = .string(enabled ? "on" : "off")
     case .unsupported:
       break
     case .unresolved, .readError:
-      payload[StatusFieldKey.conversationAwareness.rawValue] = NSNull()
+      payload[StatusFieldKey.conversationAwareness.rawValue] = .null
     }
 
     payload[StatusFieldKey.isSelectedAudioOutput.rawValue] = audioOutputSelection.jsonValue
@@ -133,19 +133,21 @@ private struct DeviceStatusSnapshot {
 
     switch inEarPlacement {
     case let .value(placement):
-      payload[StatusFieldKey.leftEarPlacement.rawValue] = placement.left.statusToken
-      payload[StatusFieldKey.rightEarPlacement.rawValue] = placement.right.statusToken
+      payload[StatusFieldKey.leftEarPlacement.rawValue] = .string(placement.left.statusToken)
+      payload[StatusFieldKey.rightEarPlacement.rawValue] = .string(placement.right.statusToken)
     case .unsupported:
       break
     case .unresolved, .readError:
-      payload[StatusFieldKey.leftEarPlacement.rawValue] = NSNull()
-      payload[StatusFieldKey.rightEarPlacement.rawValue] = NSNull()
+      payload[StatusFieldKey.leftEarPlacement.rawValue] = .null
+      payload[StatusFieldKey.rightEarPlacement.rawValue] = .null
     }
 
     let errors = readErrorFields
     if !errors.isEmpty {
-      payload["errors"] = Dictionary(
-        uniqueKeysWithValues: errors.map { ($0.rawValue, "read-error") }
+      payload["errors"] = .object(
+        Dictionary(uniqueKeysWithValues: errors.map {
+          ($0.rawValue, JSONValue.string("read-error"))
+        })
       )
     }
     return payload
@@ -173,11 +175,11 @@ private extension AudioDeviceSelectionObservation {
     }
   }
 
-  var jsonValue: Any {
+  var jsonValue: JSONValue {
     switch self {
-    case .selected: return true
-    case .notSelected: return false
-    case .unresolved, .readError: return NSNull()
+    case .selected: return .bool(true)
+    case .notSelected: return .bool(false)
+    case .unresolved, .readError: return .null
     }
   }
 }
@@ -205,7 +207,7 @@ enum StatusCommand {
     return CommandOutcome(
       plain: snapshots.map(\.plain).joined(separator: "\n\n"),
       terminalReason: hasNonErrorResult ? .success : .readError,
-      data: ["devices": snapshots.map(\.payload)]
+      data: ["devices": .array(snapshots.map { .object($0.payload) })]
     )
   }
 
@@ -231,7 +233,7 @@ enum StatusCommand {
       plain: plain,
       terminalReason: reason,
       data: [
-        "devices": [[String: Any]](),
+        "devices": .array([]),
       ]
     )
   }

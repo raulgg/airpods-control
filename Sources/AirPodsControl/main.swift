@@ -61,22 +61,16 @@ func ensureBypass(logger: DebugLogger) {
   logger.debug("bypass.errno", errno)
 }
 
-func writeJSON(_ payload: [String: Any]) {
-  let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-  print(String(decoding: data, as: UTF8.self))
-}
-
 func finish(
   plain: String,
   terminalReason: TerminalReason = .success,
   jsonOutput: Bool,
-  data: [String: Any] = [:]
+  data: [String: JSONValue] = [:]
 ) -> Never {
-  if jsonOutput {
-    writeJSON(terminalReason.addingEnvelope(to: data))
-  } else {
-    print(plain)
-  }
+  let output = jsonOutput
+    ? CLIOutputSerializer.json(terminalReason.addingEnvelope(to: data))
+    : CLIOutputSerializer.plain(plain)
+  print(output, terminator: "")
   exit(terminalReason.exitCode)
 }
 

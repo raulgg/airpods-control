@@ -42,7 +42,7 @@ enum TerminalReason: Equatable {
     }
   }
 
-  func addingEnvelope(to data: [String: Any]) -> [String: Any] {
+  func addingEnvelope(to data: [String: JSONValue]) -> [String: JSONValue] {
     let reservedKeys = ["result", "error", "signal"]
     precondition(
       reservedKeys.allSatisfy { data[$0] == nil },
@@ -52,16 +52,16 @@ enum TerminalReason: Equatable {
     var payload = data
     switch self {
     case .success:
-      payload["result"] = "ok"
+      payload["result"] = .string("ok")
     case .noOp:
-      payload["result"] = "no-op"
+      payload["result"] = .string("no-op")
     case let .caughtSignal(signal):
-      payload["result"] = "interrupted"
-      payload["signal"] = signal
+      payload["result"] = .string("interrupted")
+      payload["signal"] = .integer(signal)
     case .noDevice, .badArgs, .unsupported, .readError,
       .unavailable, .stateUncertain, .ambiguousDevice:
-      payload["result"] = "error"
-      payload["error"] = token
+      payload["result"] = .string("error")
+      payload["error"] = .string(token)
     }
     return payload
   }
