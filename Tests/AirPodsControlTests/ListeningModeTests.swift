@@ -16,6 +16,35 @@ struct ListeningModeTests {
     #expect(ListeningMode(token: "normal") == nil, "private raw names are not public tokens")
   }
 
+  @Test("Shares the canonical Bluetooth listening-mode numeric mapping")
+  func bluetoothListeningModeNumericMapping() {
+    #expect(
+      BluetoothListeningModeMapping.modeByRawValue == [
+        1: .off,
+        2: .noiseCancellation,
+        3: .transparency,
+        4: .adaptive,
+      ],
+      "literal Bluetooth raw values map to canonical modes"
+    )
+    #expect(
+      BluetoothListeningModeMapping.rawValueByMode == [
+        .off: 1,
+        .noiseCancellation: 2,
+        .transparency: 3,
+        .adaptive: 4,
+      ],
+      "the reverse mapping is derived from the canonical forward map"
+    )
+
+    #expect(BluetoothListeningModeMapping.modeByRawValue[0] == nil, "raw value 0 is unknown")
+    #expect(BluetoothListeningModeMapping.modeByRawValue[5] == nil, "raw value 5 is unknown")
+    #expect(
+      BluetoothListeningModeMapping.modeByRawValue[UInt32.max] == nil,
+      "UInt32.max is unknown"
+    )
+  }
+
   @Test("Preserves observations when Off fallback cannot be inferred")
   func offFallbackResolutionSeams() {
     let verified = resolveListeningModeWrite(

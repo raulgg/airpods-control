@@ -1,12 +1,5 @@
 import CoreAudio
 
-let bluetoothModeByRawValue: [UInt32: ListeningMode] = [
-  1: .off,
-  2: .noiseCancellation,
-  3: .transparency,
-  4: .adaptive,
-]
-
 enum CoreAudioListeningModeObservation {
   case value(ListeningMode)
   case unavailable
@@ -251,7 +244,7 @@ struct IOBluetoothInventory {
       logger.debug("\(prefix).listening_mode", "available")
       logger.debug(
         "\(prefix).recognized_listening_mode",
-        bluetoothModeByRawValue[listeningMode] != nil
+        BluetoothListeningModeMapping.modeByRawValue[listeningMode] != nil
       )
     case .unavailable:
       logger.debug("\(prefix).listening_mode", "unavailable")
@@ -418,7 +411,7 @@ struct IOBluetoothInventory {
     for endpoint in endpoints {
       switch endpoint.listeningMode {
       case let .value(rawValue):
-        if let mode = bluetoothModeByRawValue[rawValue] {
+        if let mode = BluetoothListeningModeMapping.modeByRawValue[rawValue] {
           recognizedModes.insert(mode)
         } else if rawValue != 0 {
           sawUnrecognizedMode = true

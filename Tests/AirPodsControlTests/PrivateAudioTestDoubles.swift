@@ -363,8 +363,12 @@ func scriptedPrivateAudioDevice(
 }
 
 func privateAudioDevice(_ rawDevice: AnyObject) -> PrivateAudioDevice {
-  PrivateAudioController(
+  let resolution = PrivateAudioController(
     rawDevices: [rawDevice],
     logger: DebugLogger(enabled: false)
-  ).selectDevice(named: nil)!
+  ).resolveDevices(named: nil, policy: .singleOrExact)
+  guard case let .selected(devices) = resolution, let device = devices.first else {
+    preconditionFailure("private audio fixture requires one selected device")
+  }
+  return device
 }

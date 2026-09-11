@@ -1,5 +1,27 @@
 import Darwin
 import Foundation
+import Testing
+
+@testable import AirPodsControlCore
+
+func requireSelectedDevices<Value>(
+  _ resolution: DeviceSelection<Value>,
+  _ message: Comment = "device selection succeeds",
+  sourceLocation: SourceLocation = #_sourceLocation
+) throws -> [Value] {
+  let selected: [Value]?
+  switch resolution {
+  case let .selected(devices): selected = devices
+  case .noDevice, .ambiguousDevice: selected = nil
+  }
+  let devices = try #require(selected, message, sourceLocation: sourceLocation)
+  try #require(
+    !devices.isEmpty,
+    "selected device list must not be empty",
+    sourceLocation: sourceLocation
+  )
+  return devices
+}
 
 // Shared across suites because stderr redirection affects the entire process.
 private let standardErrorCaptureLock = NSLock()
