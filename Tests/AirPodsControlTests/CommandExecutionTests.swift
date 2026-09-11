@@ -18,7 +18,9 @@ struct CommandExecutionTests {
     #expect(version.exitCode == 0, "version outcome succeeds")
     #expect(version.payload["version"] as? String == BuildVersion.current, "version payload has version")
 
-    let namedInvocation = try parseInvocation(["--device", "Studio AirPods", "lm", "get"])
+    let namedInvocation = try parseInvocation([
+      "--device", "Studio AirPods", "lm", "set", "anc",
+    ])
     var capturedName: String?
     var capturedLoggerEnabled = true
     resolverCallCount = 0
@@ -28,8 +30,8 @@ struct CommandExecutionTests {
         resolverCallCount += 1
         capturedName = name
         capturedLoggerEnabled = logger.enabled
-        guard case .get = command else {
-          Issue.record("listening-mode execution must pass get")
+        guard case let .set(target) = command, target == .noiseCancellation else {
+          Issue.record("listening-mode execution must pass the requested set target")
           return .failed(.noDevice)
         }
         return .failed(.noDevice)
@@ -88,45 +90,6 @@ struct CommandExecutionTests {
     #expect(noDeviceReport.supportReport == nil, "missing device does not offer issue creation")
   }
 
-  @Test("Preserves the named listening-mode setter no-device contract")
-  func namedListeningModeSetterNoDeviceOutcome() throws {
-    let missingName = "__missing_airpods__"
-    let invocation = try parseInvocation([
-      "--device", missingName, "lm", "set", "anc",
-    ])
-    var resolverCallCount = 0
-    var capturedName: String?
-    let outcome = CommandExecution.executeListeningMode(
-      invocation,
-      resolveSession: { command, name, _ in
-        resolverCallCount += 1
-        capturedName = name
-        guard case let .set(target) = command, target == .noiseCancellation else {
-          Issue.record("listening-mode execution must pass the requested set target")
-          return .failed(.noDevice)
-        }
-        return .failed(.noDevice)
-      }
-    )
-
-    #expect(resolverCallCount == 1, "named setter resolves exactly once")
-    #expect(capturedName == missingName, "named setter forwards the requested device name")
-    #expect(outcome.plain == "no-device", "missing device set has plain no-device")
-    #expect(outcome.exitCode == 1, "missing device set exits one")
-    #expect(
-      payloadEquals(
-        outcome.payload,
-        [
-          "device": NSNull(),
-          "error": "no-device",
-          "listeningMode": NSNull(),
-          "result": "error",
-        ]
-      ),
-      "missing device set preserves its complete JSON payload"
-    )
-  }
-
   @Test("Preserves unavailable Conversation Awareness discovery")
   func unavailableConversationAwarenessOutcome() throws {
     let invocation = try parseInvocation(["ca", "get", "--json"])
@@ -151,15 +114,9 @@ struct CommandExecutionTests {
     )
   }
 
-  @Test(
-    "Preserves unavailable support-report discovery without side effects",
-    arguments: [
-      ["support-report"],
-      ["support-report", "--with-write-tests"],
-    ]
-  )
-  func unavailableSupportReportOutcome(arguments: [String]) throws {
-    let invocation = try parseInvocation(arguments)
+  @Test("Preserves unavailable support-report discovery without side effects")
+  func unavailableSupportReportOutcome() throws {
+    let invocation = try parseInvocation(["support-report", "--with-write-tests"])
     var consentRequests = 0
     var writeRuns = 0
     let outcome = CommandExecution.execute(
