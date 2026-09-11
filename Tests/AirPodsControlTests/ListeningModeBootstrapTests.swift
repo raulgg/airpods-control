@@ -58,12 +58,19 @@ private final class HALInventoryRecorder {
 struct ListeningModeBootstrapTests {
 
   @Test
-  func defersInventoryForSelectedReadyGet() throws {
-    let (selected, _) = privateAVDevice(
+  func defersInventoryAcrossSelectedReadyWorkflow() throws {
+    let (selected, selectedRaw) = privateAVDevice(
       name: "Desk AirPods",
       sources: [.contextSingular]
     )
-    let recorder = HALInventoryRecorder()
+    let unusedHAL = FakeListeningModeTransport(
+      name: "Desk AirPods",
+      kind: .hal,
+      modes: [.transparency, .adaptive, .noiseCancellation]
+    )
+    let recorder = HALInventoryRecorder(
+      candidates: [candidate(hal: unusedHAL, route: .selected)]
+    )
     var outcome: CommandOutcome?
     let stderr = try capturingStandardError {
       outcome = try bootstrapListeningModeOutcome(
@@ -86,95 +93,50 @@ struct ListeningModeBootstrapTests {
       stderr.contains("info: listening_mode.transport=\"av\""),
       "selected AV-ready path logs the AV transport"
     )
-  }
 
-  @Test
-  func defersInventoryForSelectedReadyList() throws {
-    let (selected, _) = privateAVDevice(
-      name: "Desk AirPods",
-      sources: [.contextSingular]
-    )
-    let recorder = HALInventoryRecorder()
-    let outcome = try bootstrapListeningModeOutcome(
+    outcome = try bootstrapListeningModeOutcome(
       ["lm", "list"],
       avDevices: [selected],
       loadHAL: recorder.load
     )
     #expect(
-      outcome.plain == "off,transparency,adaptive,noise-cancellation",
+      outcome?.plain == "off,transparency,adaptive,noise-cancellation",
       "selected AV-ready list uses AV"
     )
-    #expect(recorder.loadCount == 0, "selected AV-ready list does not construct HAL inventory")
-  }
 
-  @Test
-  func defersInventoryForSelectedReadySet() throws {
-    let (selected, selectedRaw) = privateAVDevice(
-      name: "Desk AirPods",
-      sources: [.contextSingular]
-    )
-    let unusedHAL = FakeListeningModeTransport(
-      name: "Desk AirPods",
-      kind: .hal,
-      modes: [.transparency, .adaptive, .noiseCancellation]
-    )
-    let recorder = HALInventoryRecorder(
-      candidates: [candidate(hal: unusedHAL, route: .selected)]
-    )
-
-    let setOutcome = try bootstrapListeningModeOutcome(
-      ["lm", "set", "adaptive"],
-      avDevices: [selected],
-      loadHAL: recorder.load
-    )
-    #expect(setOutcome.plain == "ok", "selected AV-ready set still writes through AV")
-
-    let namedSet = try bootstrapListeningModeOutcome(
-      ["--device", "Desk AirPods", "lm", "set", "noise-cancellation"],
-      avDevices: [selected],
-      loadHAL: recorder.load
-    )
-    #expect(namedSet.plain == "ok", "named selected AV-ready set still writes through AV")
-    #expect(
-      selectedRaw.listeningModeSetCount == 2,
-      "selected AV receives both unnamed and named setters"
-    )
-    #expect(unusedHAL.setterTargets.isEmpty, "deferred HAL inventory performs no setter")
-    #expect(recorder.loadCount == 0, "selected AV-ready set does not construct HAL inventory")
-  }
-
-  @Test
-  func defersInventoryForSelectedAVOff() throws {
-    let (selected, selectedRaw) = privateAVDevice(
-      name: "Desk AirPods",
-      sources: [.contextSingular]
-    )
-    let recorder = HALInventoryRecorder()
-    let outcome = try bootstrapListeningModeOutcome(
-      ["lm", "set", "off"],
-      avDevices: [selected],
-      loadHAL: recorder.load
-    )
-    #expect(outcome.plain == "ok", "selected AV that advertises Off writes Off without HAL")
-    #expect(selectedRaw.listeningModeSetCount == 1, "AV Off write does not require HAL inventory")
-    #expect(recorder.loadCount == 0, "AV-ready Off does not construct HAL inventory")
-  }
-
-  @Test
-  func defersInventoryForSelectedReadyCycle() throws {
-    let (selected, selectedRaw) = privateAVDevice(
-      name: "Desk AirPods",
-      sources: [.contextSingular]
-    )
-    let recorder = HALInventoryRecorder()
-    let outcome = try bootstrapListeningModeOutcome(
+    outcome = try bootstrapListeningModeOutcome(
       ["lm", "cycle"],
       avDevices: [selected],
       loadHAL: recorder.load
     )
-    #expect(outcome.plain == "adaptive", "selected AV-ready cycle advances from transparency")
-    #expect(selectedRaw.listeningModeSetCount == 1, "selected AV receives the cycle setter")
-    #expect(recorder.loadCount == 0, "selected AV-ready cycle does not construct HAL inventory")
+    #expect(outcome?.plain == "adaptive", "selected AV-ready cycle advances the mode")
+
+    outcome = try bootstrapListeningModeOutcome(
+      ["lm", "set", "noise-cancellation"],
+      avDevices: [selected],
+      loadHAL: recorder.load
+    )
+    #expect(outcome?.plain == "ok", "selected AV-ready set still writes through AV")
+
+    outcome = try bootstrapListeningModeOutcome(
+      ["--device", "Desk AirPods", "lm", "set", "adaptive"],
+      avDevices: [selected],
+      loadHAL: recorder.load
+    )
+    #expect(outcome?.plain == "ok", "named selected AV-ready set writes through AV")
+
+    outcome = try bootstrapListeningModeOutcome(
+      ["lm", "set", "off"],
+      avDevices: [selected],
+      loadHAL: recorder.load
+    )
+    #expect(outcome?.plain == "ok", "selected AV that advertises Off writes Off without HAL")
+    #expect(
+      selectedRaw.listeningModeSetCount == 4,
+      "selected AV receives cycle, unnamed, named, and Off setters"
+    )
+    #expect(unusedHAL.setterTargets.isEmpty, "deferred HAL inventory performs no setter")
+    #expect(recorder.loadCount == 0, "the selected AV workflow never constructs HAL inventory")
   }
 
   @Test
