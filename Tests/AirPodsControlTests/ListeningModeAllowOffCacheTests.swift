@@ -25,6 +25,7 @@ private enum AllowOffCacheTestError: Error {
 private let allowOffCacheTestSalt = Data(0..<32)
 
 private func withTemporaryAllowOffCache(
+  cleanupIf: () -> Bool = { true },
   _ body: (URL) -> Void
 ) {
   let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -40,7 +41,12 @@ private func withTemporaryAllowOffCache(
     Issue.record("allow-off cache test creates its temporary root")
     return
   }
-  defer { try? FileManager.default.removeItem(at: root) }
+  defer {
+    // Preserve the directory when a timed-out worker may still access it.
+    if cleanupIf() {
+      try? FileManager.default.removeItem(at: root)
+    }
+  }
   body(
     root
       .appendingPathComponent("cache", isDirectory: true)
@@ -77,19 +83,6 @@ private func allowOffCachePermissions(at url: URL) -> Int? {
     let permissions = attributes[.posixPermissions] as? NSNumber
   else { return nil }
   return permissions.intValue
-}
-
-private func allowOffCacheFileLockIsContended(fileURL: URL) -> Bool {
-  let lockURL = fileURL.deletingLastPathComponent()
-    .appendingPathComponent("allow-off-v1.lock")
-  let descriptor = Darwin.open(lockURL.path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
-  guard descriptor >= 0 else { return false }
-  defer { Darwin.close(descriptor) }
-  if Darwin.lockf(descriptor, F_TLOCK, 0) == 0 {
-    _ = Darwin.lockf(descriptor, F_ULOCK, 0)
-    return false
-  }
-  return errno == EACCES || errno == EAGAIN
 }
 
 private func withHeldAllowOffCacheFileLock(
@@ -1106,17 +1099,19 @@ struct PersistentListeningModeAllowOffCacheTests {
 
   @Test("Waits through brief lock contention without losing the observation time")
   func persistentCacheWaitsThroughBriefLockContention() {
-    withTemporaryAllowOffCache { fileURL in
+    var workerDidComplete = false
+    withTemporaryAllowOffCache(cleanupIf: { workerDidComplete }) { fileURL in
       let observedAt = Date(timeIntervalSince1970: 1_734_000_000)
       let afterContention = observedAt.addingTimeInterval(10)
+      let retryObserved = DispatchSemaphore(value: 0)
+      let workerCompleted = DispatchSemaphore(value: 0)
+      let resultLock = NSLock()
+      var workerResult: AllowOffCacheMutation?
       let cache = PersistentListeningModeAllowOffCache(
         fileURL: fileURL,
-        now: {
-          allowOffCacheFileLockIsContended(fileURL: fileURL)
-            ? observedAt
-            : afterContention
-        },
-        saltGenerator: { allowOffCacheTestSalt }
+        now: { afterContention },
+        saltGenerator: { allowOffCacheTestSalt },
+        lockRetryObserver: { retryObserved.signal() }
       )
       _ = cache.applyObservation(
         rawDeviceUID: "seed",
@@ -1124,24 +1119,31 @@ struct PersistentListeningModeAllowOffCacheTests {
         observedAt: observedAt
       )
 
-      var result: AllowOffCacheMutation = .unavailable
       let waiter = Thread {
-        result = cache.applyObservation(
+        let result = cache.applyObservation(
           rawDeviceUID: "delayed",
           allowsOff: true,
           observedAt: observedAt
         )
+        resultLock.lock()
+        workerResult = result
+        resultLock.unlock()
+        workerCompleted.signal()
       }
       withHeldAllowOffCacheFileLock(fileURL: fileURL) {
         waiter.start()
-        _ = Darwin.usleep(50_000)
+        #expect(
+          retryObserved.wait(timeout: .now() + 2) == .success,
+          "worker reports a failed lock attempt before the lock is released"
+        )
       }
-      let deadline = DispatchTime.now().uptimeNanoseconds + 1_000_000_000
-      while !waiter.isFinished,
-        DispatchTime.now().uptimeNanoseconds < deadline
-      {
-        _ = Darwin.usleep(1_000)
-      }
+      workerDidComplete =
+        workerCompleted.wait(timeout: .now() + 2) == .success
+      #expect(workerDidComplete, "worker completes before temporary cache cleanup")
+      guard workerDidComplete else { return }
+      resultLock.lock()
+      let result = workerResult
+      resultLock.unlock()
       #expect(
         result == .applied,
         "positive observation waits for brief lock contention"
