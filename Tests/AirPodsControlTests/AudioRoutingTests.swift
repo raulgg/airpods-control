@@ -92,10 +92,8 @@ struct AudioRoutingTests {
             "input and output endpoints mapping to one canonical object form one record")
     #expect(devices?.first?.name == "Office AirPods",
             "the output endpoint supplies the deterministic Core Audio display name")
-    #expect(devices?.first?.availableListeningModes() == [],
-            "the status-only adapter does not advertise modes for write commands")
     #expect(devices?.first?.readListeningModeStatus().value == .transparency,
-            "HAL current mode is preferred over a sparse mapped object")
+            "the status-only adapter reports HAL current mode through its status interface")
     #expect(devices?.first?.readConversationAwarenessStatus().isUnresolved == true,
             "a sparse mapped object reports unknown Conversation Awareness honestly")
     #expect(runtime.mappingReads == [101, 202],

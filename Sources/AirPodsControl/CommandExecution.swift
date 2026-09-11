@@ -185,17 +185,33 @@ enum CommandExecution {
       selectionPolicy,
       logger
     )
+
+    if case .status = invocation.command {
+      switch resolution {
+      case let .statusDevices(resolved):
+        precondition(!resolved.isEmpty, "successful status resolution must not be empty")
+        return StatusCommand.outcome(devices: resolved)
+      case let .devices(resolved):
+        // A writable compatible device also satisfies the status-reading
+        // interface. The production status resolver uses statusDevices.
+        precondition(!resolved.isEmpty, "successful device resolution must not be empty")
+        return StatusCommand.outcome(
+          devices: resolved.map { $0 as any AudioDeviceStatusReading }
+        )
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(for: invocation.command, reason: reason)
+      }
+    }
+
     let devices: [any CompatibleAudioDevice]
     switch resolution {
     case let .devices(resolved):
       precondition(!resolved.isEmpty, "successful device resolution must not be empty")
       devices = resolved
+    case .statusDevices:
+      preconditionFailure("status device resolution used for a non-status command")
     case let .failed(reason):
       return deviceResolutionFailureOutcome(for: invocation.command, reason: reason)
-    }
-
-    if case .status = invocation.command {
-      return StatusCommand.outcome(devices: devices)
     }
 
     let device = devices[0]

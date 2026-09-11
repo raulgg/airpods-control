@@ -119,7 +119,7 @@ func bootstrapAndResolveAudioDevices(
     case .readError: return .failed(.readError)
     }
     switch controller.resolveDevices(named: requestedName, policy: policy) {
-    case let .selected(devices): return .devices(devices.map { $0 })
+    case let .selected(devices): return .statusDevices(devices.map { $0 })
     case .noDevice: return .failed(.noDevice)
     case .ambiguousDevice: return .failed(.ambiguousDevice)
     }
