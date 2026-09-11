@@ -59,7 +59,10 @@ make test
 `make test` builds both architectures when the installed toolchain supports
 them. It then runs the shell CLI contract tests, the C signal-monitor race test,
 and the Swift unit tests. Tests must not require AirPods or write device
-settings.
+settings. Production Swift is compiled in Swift 5 mode with warnings treated
+as errors. The SwiftPM package remains in Swift 5 mode and applies the same
+warnings-as-errors check to its test targets. Production C and the signal
+monitor race test compile with `-Wall -Wextra -Wpedantic -Werror`.
 
 For runtime-bypass changes, launch the built CLI and confirm the interpose
 reports active. This stays out of `make test` because it depends on the
@@ -104,6 +107,8 @@ device or capability status.
 - `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.
   All Swift tests and their helpers live directly in this folder and use
   Swift Testing.
+- `Tests/CLIOutputTests` compiles a small device-free Swift fixture to check
+  CLI output contracts.
 - `Tests/CLIContractTests` verifies the built executable's output and exit
   codes.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in
@@ -127,19 +132,24 @@ signs both artifacts, and installs them together.
 ```sh
 mise run format-check
 mise run format
+mise run swift-lint
 ```
 
 These aggregate tasks check or format Swift and Markdown. SwiftFormat covers
-`Package.swift`, `Sources/AirPodsControl`, and `Tests/AirPodsControlTests`, and
-skips generated files. The rules normalize line endings, ensure a final
-newline, and remove trailing whitespace. They keep two-space indentation.
+`Package.swift`, `Sources/AirPodsControl`, `Tests/AirPodsControlTests`, and
+`Tests/CLIOutputTests`, and skips generated files. The rules normalize line
+endings, ensure a final newline, and remove trailing whitespace. They keep
+two-space indentation.
+`swift-lint` runs SwiftFormat's pinned `unusedArguments` check separately and
+reports unused closure arguments without rewriting protocol or
+Objective-C-facing declarations.
 
 Use `mise run markdown-check` or `mise run markdown-format` when working on
 Markdown only.
 
 Keep formatter upgrades and whitespace cleanup separate from behavior changes.
-Run `make test` after formatting. CI checks formatting on pull requests and
-pushes to `main`.
+Run `make test` after formatting. CI checks formatting and the Swift lint task
+on pull requests and pushes to `main`.
 
 Each local clone needs its own Git hook installation. After cloning the
 repository, run:

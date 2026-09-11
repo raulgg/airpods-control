@@ -36,6 +36,10 @@ description = "Check Swift and Markdown formatting"
 depends = ["markdown-check"]
 run = "swiftformat Package.swift Sources/AirPodsControl Tests/AirPodsControlTests Tests/CLIOutputTests --config .swiftformat --cache ignore --lint"
 
+[tasks.swift-lint]
+description = "Check Swift argument usage"
+run = "swiftformat Package.swift Sources/AirPodsControl Tests/AirPodsControlTests Tests/CLIOutputTests --config .swiftformat --cache ignore --lint --lint-only unusedArguments --stripunusedargs closure-only"
+
 [tasks.markdown-format]
 description = "Format Markdown"
 run = "rumdl fmt . --deny-config-warnings"
