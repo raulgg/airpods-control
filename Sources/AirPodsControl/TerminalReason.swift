@@ -59,7 +59,7 @@ enum TerminalReason: Equatable {
       payload["result"] = .string("interrupted")
       payload["signal"] = .integer(signal)
     case .noDevice, .badArgs, .unsupported, .readError,
-      .unavailable, .stateUncertain, .ambiguousDevice:
+         .unavailable, .stateUncertain, .ambiguousDevice:
       payload["result"] = .string("error")
       payload["error"] = .string(token)
     }

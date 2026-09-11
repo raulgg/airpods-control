@@ -50,12 +50,12 @@ struct InteractiveDeviceChooserTests {
     )
 
     let expectedMenu = """
-      Multiple compatible devices are connected:
-        1. Zulu AirPods
-        2. alpha AirPods
-        3. Beats Studio
+    Multiple compatible devices are connected:
+      1. Zulu AirPods
+      2. alpha AirPods
+      3. Beats Studio
 
-      """
+    """
     #expect(output.hasPrefix(expectedMenu), "device names preserve deterministic discovery order")
     #expect(outcome == .selected(index: 1), "displayed number maps directly to discovery index")
   }
@@ -78,9 +78,9 @@ struct InteractiveDeviceChooserTests {
 
     let expectedOutput =
       "Multiple compatible devices are connected:\n"
-      + "  1. Desk AirPods\n"
-      + "  2. Café 🎧\\n\\r\\t\\\\\\u{001B}\\u{007F}\\u{2028}\\u{2029}\n"
-      + "Select a device [1-2] (blank or q declines): "
+        + "  1. Desk AirPods\n"
+        + "  2. Café 🎧\\n\\r\\t\\\\\\u{001B}\\u{007F}\\u{2028}\\u{2029}\n"
+        + "Select a device [1-2] (blank or q declines): "
     #expect(
       output == expectedOutput,
       "chooser escapes record-breaking and terminal control characters"
@@ -97,7 +97,7 @@ struct InteractiveDeviceChooserTests {
     )
     let unsafeName =
       "AirPods\u{061C}\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}"
-      + "\u{2066}\u{2067}\u{2068}\u{2069} Pro"
+        + "\u{2066}\u{2067}\u{2068}\u{2069} Pro"
     var output = ""
     let outcome = InteractiveDeviceChooser.choose(
       deviceNames: ["Desk AirPods", unsafeName],
@@ -108,7 +108,7 @@ struct InteractiveDeviceChooserTests {
 
     let expectedName =
       "AirPods\\u{061C}\\u{200E}\\u{200F}\\u{202A}\\u{202B}\\u{202C}\\u{202D}\\u{202E}"
-      + "\\u{2066}\\u{2067}\\u{2068}\\u{2069} Pro"
+        + "\\u{2066}\\u{2067}\\u{2068}\\u{2069} Pro"
     #expect(output.contains("  2. \(expectedName)\n"), "chooser escapes bidirectional controls")
     #expect(outcome == .selected(index: 1), "escaping preserves the selected candidate index")
   }

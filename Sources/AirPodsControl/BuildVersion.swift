@@ -1,7 +1,7 @@
 enum BuildVersion {
   #if SWIFT_PACKAGE
-  static let current = "0.0.0-test"
+    static let current = "0.0.0-test"
   #else
-  static let current = VERSION
+    static let current = VERSION
   #endif
 }

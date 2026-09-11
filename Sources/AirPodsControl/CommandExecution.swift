@@ -211,7 +211,7 @@ enum CommandExecution {
       return supportReport.outcome(writeTests: writeTestsPreference, device: device)
 
     case .listeningModeGet, .listeningModeList,
-      .listeningModeSet, .listeningModeCycle:
+         .listeningModeSet, .listeningModeCycle:
       preconditionFailure("listening-mode commands use executeListeningMode")
 
     case .conversationAwarenessGet:

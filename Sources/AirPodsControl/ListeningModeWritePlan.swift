@@ -67,10 +67,10 @@ struct ListeningModeWritePlan {
       }
     }
     if target == .off,
-      allowOffAuthorization != nil,
-      observation.setterAccepted,
-      let observed = observation.observed,
-      observed != .off
+       allowOffAuthorization != nil,
+       observation.setterAccepted,
+       let observed = observation.observed,
+       observed != .off
     {
       allowOffAuthorization?.invalidate()
     }
