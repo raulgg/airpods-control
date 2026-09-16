@@ -175,4 +175,3 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
     wait(interval)
   }
 }
-
