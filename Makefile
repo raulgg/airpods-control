@@ -148,6 +148,7 @@ test: all
 	./Tests/ReleasePleaseTests/release-pr-body.sh
 	./Tests/ResolvePrefixTests/resolve-prefix.sh
 	./Tests/InstallFromSourceTests/install-from-source.sh
+	./Tests/HomebrewInstallsBadgeTests/homebrew-installs-badge.sh
 	./Tests/CLIOutputTests/output-contract.sh
 	./Tests/CLIContractTests/cli.sh
 	"$(CLANG)" -O2 -pthread -DAIRPODS_CONTROL_SIGNAL_MONITOR_TESTING \

@@ -1,0 +1,13 @@
+{
+  "category": "formula_install",
+  "items": [
+    {
+      "formula": "wget",
+      "count": "1,415,554"
+    },
+    {
+      "formula": "raulgg/tap/airpods-control",
+      "count": "6"
+    }
+  ]
+}

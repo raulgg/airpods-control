@@ -1,0 +1,17 @@
+{
+  "category": "formula_install",
+  "items": [
+    {
+      "formula": "raulgg/tap/airpods-control",
+      "count": "4"
+    },
+    {
+      "formula": "raulgg/tap/airpods-control --HEAD",
+      "count": "2"
+    },
+    {
+      "formula": "raulgg/tap/airpods-control-extra",
+      "count": "9"
+    }
+  ]
+}

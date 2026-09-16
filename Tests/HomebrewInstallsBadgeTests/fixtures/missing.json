@@ -1,0 +1,9 @@
+{
+  "category": "formula_install",
+  "items": [
+    {
+      "formula": "wget",
+      "count": "12"
+    }
+  ]
+}

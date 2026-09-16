@@ -1,0 +1,72 @@
+name: Homebrew install badge
+
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/homebrew-installs-badge.sh
+      - .github/workflows/homebrew-installs-badge.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: homebrew-installs-badge
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish Shields endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch Homebrew analytics
+        run: |
+          curl -fsSL \
+            -A "airpods-control-homebrew-badge (+https://github.com/raulgg/airpods-control)" \
+            -o "$RUNNER_TEMP/install-90d.json" \
+            https://formulae.brew.sh/api/analytics/install/90d.json
+
+      - name: Build endpoint JSON
+        run: |
+          ./scripts/homebrew-installs-badge.sh \
+            --analytics-file "$RUNNER_TEMP/install-90d.json" \
+            --output "$RUNNER_TEMP/homebrew-installs.json"
+          python3 -c 'import json,sys; json.load(open(sys.argv[1]))' \
+            "$RUNNER_TEMP/homebrew-installs.json"
+
+      - name: Publish to badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          work=$(mktemp -d)
+          trap 'rm -rf "$work"' EXIT
+          if git ls-remote --exit-code "$remote" refs/heads/badges >/dev/null; then
+            git clone --depth 1 --branch badges "$remote" "$work/repo"
+          else
+            git clone --depth 1 "$remote" "$work/repo"
+            git -C "$work/repo" checkout --orphan badges
+            git -C "$work/repo" rm -rf --quiet .
+          fi
+          cp "$RUNNER_TEMP/homebrew-installs.json" \
+            "$work/repo/homebrew-installs.json"
+          git -C "$work/repo" config user.name "github-actions[bot]"
+          git -C "$work/repo" config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$work/repo" add homebrew-installs.json
+          if git -C "$work/repo" diff --cached --quiet; then
+            echo "badge data unchanged"
+            exit 0
+          fi
+          git -C "$work/repo" commit -m "chore: update Homebrew install badge"
+          git -C "$work/repo" push origin badges
