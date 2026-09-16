@@ -141,6 +141,9 @@ Keep changes with the layer that owns them:
   `ListeningModeAllowOffCachePolicy.swift` owns evidence decisions; and
   `ListeningModeAllowOffCacheStorage.swift` owns persistence and file I/O.
 
+Files this list does not name follow the same rule: keep a change in the
+file that already owns its concern.
+
 ### Formatting
 
 `mise install` installs the formatter versions pinned in `mise.toml`.
