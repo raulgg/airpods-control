@@ -73,14 +73,41 @@ esac
 command -v python3 >/dev/null 2>&1 || die 1 "error: python3 is required"
 
 badge=$(FORMULA=$formula PERIOD=$period LABEL=$label python3 - "$analytics_file" <<'PY'
+import datetime
 import json
 import os
 import sys
+
+PERIOD_DAYS = {"30d": 30, "90d": 90, "365d": 365}
+WINDOW_TOLERANCE_DAYS = 3
 
 path = sys.argv[1]
 formula = os.environ["FORMULA"]
 period = os.environ["PERIOD"]
 label = os.environ["LABEL"]
+
+
+def parse_date(payload, key):
+    raw = payload.get(key)
+    if not isinstance(raw, str):
+        raise SystemExit("error: analytics JSON must contain %s" % key)
+    try:
+        return datetime.date.fromisoformat(raw)
+    except ValueError as exc:
+        raise SystemExit("error: invalid %s: %s" % (key, raw)) from exc
+
+
+def parse_count(raw):
+    if isinstance(raw, bool):
+        raise SystemExit("error: invalid install count: %r" % (raw,))
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, str):
+        digits = raw.replace(",", "").strip()
+        if not digits.isdigit():
+            raise SystemExit("error: invalid install count: %s" % raw)
+        return int(digits)
+    raise SystemExit("error: invalid install count: %r" % (raw,))
 
 try:
     with open(path, encoding="utf-8") as fh:
@@ -93,10 +120,30 @@ except OSError as exc:
 if not isinstance(payload, dict):
     raise SystemExit("error: analytics JSON must be an object")
 
+start_date = parse_date(payload, "start_date")
+end_date = parse_date(payload, "end_date")
+window_days = (end_date - start_date).days
+expected_days = PERIOD_DAYS[period]
+if abs(window_days - expected_days) > WINDOW_TOLERANCE_DAYS:
+    raise SystemExit(
+        "error: analytics window %s to %s (%d days) does not match --period %s"
+        % (start_date, end_date, window_days, period)
+    )
+
 items = payload.get("items")
 if not isinstance(items, list):
     raise SystemExit("error: analytics JSON must contain an items array")
 
+# Homebrew may drop the long tail of low-count formulae, so a formula absent
+# from a truncated list is not necessarily at zero installs.
+total_items = payload.get("total_items")
+truncated = (
+    isinstance(total_items, int)
+    and not isinstance(total_items, bool)
+    and len(items) < total_items
+)
+
+found = False
 total = 0
 for item in items:
     if not isinstance(item, dict):
@@ -106,24 +153,22 @@ for item in items:
         continue
     if name != formula and not name.startswith(formula + " "):
         continue
-    raw = item.get("count", 0)
-    if isinstance(raw, bool):
-        raise SystemExit("error: invalid install count: %r" % (raw,))
-    if isinstance(raw, int):
-        count = raw
-    elif isinstance(raw, str):
-        digits = raw.replace(",", "").strip()
-        if not digits.isdigit():
-            raise SystemExit("error: invalid install count: %s" % raw)
-        count = int(digits)
-    else:
-        raise SystemExit("error: invalid install count: %r" % (raw,))
-    total += count
+    if "count" not in item:
+        raise SystemExit("error: analytics item for %s has no count" % name)
+    found = True
+    total += parse_count(item["count"])
+
+if found:
+    message = "%d/%s" % (total, period)
+elif truncated:
+    message = "<1/%s" % period
+else:
+    message = "0/%s" % period
 
 badge = {
     "schemaVersion": 1,
     "label": label,
-    "message": "%s/%s" % (total, period),
+    "message": message,
     "color": "FBB040",
     "namedLogo": "homebrew",
     "logoColor": "black",

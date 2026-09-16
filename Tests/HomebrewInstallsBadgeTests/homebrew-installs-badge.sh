@@ -60,10 +60,18 @@ expect_message "$TMP/missing.json" 0/90d
 	--period 365d --output "$TMP/empty.json"
 expect_message "$TMP/empty.json" 0/365d
 
-"$SCRIPT" --analytics-file "$FIXTURES/found.json" \
+"$SCRIPT" --analytics-file "$FIXTURES/wget-30d.json" \
 	--formula wget --period 30d --label downloads --output "$TMP/wget.json"
 expect_message "$TMP/wget.json" 1415554/30d
 expect_field "$TMP/wget.json" label downloads
+
+"$SCRIPT" --analytics-file "$FIXTURES/truncated-missing.json" \
+	--output "$TMP/truncated-missing.json"
+expect_message "$TMP/truncated-missing.json" '<1/90d'
+
+"$SCRIPT" --analytics-file "$FIXTURES/truncated-found.json" \
+	--output "$TMP/truncated-found.json"
+expect_message "$TMP/truncated-found.json" 6/90d
 
 expect_failure "missing analytics file" "$SCRIPT"
 expect_failure "unknown period" "$SCRIPT" \
@@ -72,5 +80,9 @@ expect_failure "invalid JSON" "$SCRIPT" \
 	--analytics-file "$FIXTURES/invalid.json"
 expect_failure "missing file" "$SCRIPT" \
 	--analytics-file "$TMP/does-not-exist.json"
+expect_failure "window does not match period" "$SCRIPT" \
+	--analytics-file "$FIXTURES/found.json" --period 30d
+expect_failure "matched item missing count" "$SCRIPT" \
+	--analytics-file "$FIXTURES/missing-count.json"
 
 echo "ok: homebrew-installs-badge fixtures"

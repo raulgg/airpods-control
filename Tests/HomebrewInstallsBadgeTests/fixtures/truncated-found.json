@@ -2,11 +2,15 @@
   "category": "formula_install",
   "start_date": "2026-06-18",
   "end_date": "2026-09-16",
-  "total_items": 1,
+  "total_items": 10000,
   "items": [
     {
       "formula": "wget",
-      "count": "12"
+      "count": "1,415,554"
+    },
+    {
+      "formula": "raulgg/tap/airpods-control",
+      "count": "6"
     }
   ]
 }

@@ -1,5 +1,8 @@
 {
   "category": "formula_install",
+  "start_date": "2026-06-18",
+  "end_date": "2026-09-16",
+  "total_items": 3,
   "items": [
     {
       "formula": "raulgg/tap/airpods-control",
