@@ -296,7 +296,6 @@ final class IOBluetoothStatusDevice: AudioDeviceStatusReading {
   func readAudioInputSelectionStatus() -> AudioDeviceSelectionObservation {
     routingObserver.selectionObservation(bluetoothDevice: object, direction: .input)
   }
-
 }
 
 private let recognizedAppleAudioManufacturers: Set<String> = [
