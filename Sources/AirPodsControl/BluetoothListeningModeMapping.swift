@@ -1,4 +1,6 @@
 enum BluetoothListeningModeMapping {
+  // The reverse map is derived from this one, so two raw values must never
+  // name the same mode.
   static let modeByRawValue: [UInt32: ListeningMode] = [
     1: .off,
     2: .noiseCancellation,
