@@ -61,6 +61,7 @@ struct AudioDeviceStatusReadingTests {
       return .failed(.unavailable)
     }
 
+    #expect(outcome.exitCode == 6, "status discovery unavailability exits six")
     #expect(
       outcome.plain == "Compatible device discovery is unavailable.",
       "status discovery failures keep their established sentence"
