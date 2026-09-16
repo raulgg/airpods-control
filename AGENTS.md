@@ -14,6 +14,7 @@ here and avoid them.
 - Do not skip `make test`.
 - Run `mise run format-check` for Swift changes. Keep generated files out of
   formatting and whitespace cleanup separate from behavior changes.
+- Run `mise run swift-lint` for Swift changes.
 - Leave `verify-runtime` and `verify-catalog` out of `make test`.
 - Do not add tests that need AirPods or write device settings.
 - Do not rename `Build, test, and verify install` or turn it into a matrix.
