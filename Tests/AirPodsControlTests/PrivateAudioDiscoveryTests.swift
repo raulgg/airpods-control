@@ -151,22 +151,22 @@ struct PrivateAudioDiscoveryTests {
       deviceIdentifier: "11:22:33:44:55:66"
     )
     let context = FakeContext(devices: [plural], currentDevice: singular)
-    var selected: PrivateAudioDevice?
 
     _ = try capturingStandardError {
       let rawDevices = PrivateAudioDiscovery.outputDevices(
         from: context,
         logger: DebugLogger(enabled: true)
       ) ?? []
-      let devices = try requireSelectedDevices(PrivateAudioController(
-        rawDevices: rawDevices,
-        logger: DebugLogger(enabled: true),
-        includeDeviceNames: false
-      ).resolveDevices(named: nil, policy: .singleOrExact))
-      selected = devices[0]
+      _ = try requireSelectedDevices(
+        PrivateAudioController(
+          rawDevices: rawDevices,
+          logger: DebugLogger(enabled: true),
+          includeDeviceNames: false
+        ).resolveDevices(named: nil, policy: .singleOrExact),
+        "support-report selects one compatible plural endpoint"
+      )
     }
 
-    #expect(selected != nil, "support-report selects one compatible plural endpoint")
     #expect(context.outputDeviceReadCount == 0, "support-report never reads singular outputDevice")
     #expect(
       plural.nameReadCount == 0 && singular.nameReadCount == 0,
