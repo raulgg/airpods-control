@@ -470,5 +470,4 @@ final class IOBluetoothStatusController {
       return .selected(devices)
     }
   }
-
 }

@@ -8,7 +8,6 @@ private let continuityCaptureWiredTransport: UInt32 = 0x6363_7764 // ccwd
 private let continuityCaptureWirelessTransport: UInt32 = 0x6363_776C // ccwl
 private let continuityCaptureTransport: UInt32 = 0x6363_6170 // ccap
 
-
 enum AudioRoutingDirection: CaseIterable {
   case output
   case input
@@ -66,7 +65,6 @@ enum AudioRoutingWrite: Equatable {
   case failure(OSStatus)
 }
 
-
 protocol AudioRoutingBackend {
   func readAudioDevices() -> AudioRoutingRead<[AudioDeviceID]>
   func readDefaultDevice(
@@ -121,7 +119,6 @@ extension AudioRoutingBackend {
     .unavailable
   }
 }
-
 
 protocol BluetoothAudioDeviceMappingBackend {
   func bluetoothDevice(
