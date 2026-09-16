@@ -75,11 +75,25 @@ struct ListeningModePreflightTests {
         false
       ),
       (
+        "AV Off set",
+        .value([.transparency, .adaptive]),
+        .av,
+        .set(.off),
+        true
+      ),
+      (
         "AV default cycle",
         .value([.transparency, .adaptive]),
         .av,
         .cycle(nil),
         false
+      ),
+      (
+        "AV explicit Off cycle",
+        .value([.transparency, .adaptive]),
+        .av,
+        .cycle([.transparency, .off]),
+        true
       ),
     ]
 
@@ -120,6 +134,20 @@ struct ListeningModePreflightTests {
         offPermission: .authorized(.live(cache: nil, record: nil))
       ) == expected,
       "an authorization permission adds Off"
+    )
+    #expect(
+      ListeningModePreflightPolicy.effectiveModes(
+        availableModes: expected,
+        offPermission: .probe
+      ) == expected,
+      "advertised Off is not duplicated or reordered"
+    )
+    #expect(
+      ListeningModePreflightPolicy.effectiveModes(
+        availableModes: [],
+        offPermission: .authorized(.live(cache: nil, record: nil))
+      ) == [.off],
+      "a permission offers Off even when nothing else is advertised"
     )
   }
 
@@ -170,5 +198,32 @@ struct ListeningModePreflightTests {
       ),
       "an explicit Off cycle may use Allow Off cache evidence"
     )
+
+    // The two predicates disagree for `list`: it surfaces cached Allow Off
+    // evidence without opting into a probe.
+    let cases: [(
+      name: String,
+      command: ListeningModeCommand,
+      targetsOff: Bool,
+      mayUseCache: Bool
+    )] = [
+      ("list", .list, false, true),
+      ("Off set", .set(.off), true, true),
+      ("non-Off set", .set(.adaptive), false, false),
+      ("get", .get, false, false),
+    ]
+
+    for example in cases {
+      #expect(
+        ListeningModePreflightPolicy.commandExplicitlyTargetsOff(example.command)
+          == example.targetsOff,
+        "\(example.name) explicit Off targeting"
+      )
+      #expect(
+        ListeningModePreflightPolicy.commandMayUseAllowOffCache(example.command)
+          == example.mayUseCache,
+        "\(example.name) Allow Off cache eligibility"
+      )
+    }
   }
 }
