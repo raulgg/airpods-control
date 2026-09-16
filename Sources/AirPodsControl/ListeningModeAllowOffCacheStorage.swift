@@ -55,7 +55,7 @@ final class AllowOffCacheFileStorage {
     case .invalid:
       return .invalid
     case .value(let data):
-      guard let document = try? AllowOffCacheCodec.decoder.decode(
+      guard let document = try? AllowOffCacheCodec.makeDecoder().decode(
         PersistedAllowOffCache.self,
         from: data
       ),
@@ -74,7 +74,7 @@ final class AllowOffCacheFileStorage {
     case .value(let data):
       var newest: Date?
       for line in data.split(separator: 0x0A) {
-        guard let marker = try? AllowOffCacheCodec.decoder.decode(
+        guard let marker = try? AllowOffCacheCodec.makeDecoder().decode(
           PersistedAllowOffDenyMarker.self,
           from: Data(line)
         ),
@@ -90,7 +90,7 @@ final class AllowOffCacheFileStorage {
   }
 
   func appendDenyMarker(for key: String, observedAt: Date) -> Bool {
-    guard let encoded = try? AllowOffCacheCodec.encoder.encode(
+    guard let encoded = try? AllowOffCacheCodec.makeEncoder().encode(
       PersistedAllowOffDenyMarker(observedAt: observedAt)
     ) else { return false }
     var line = encoded
@@ -130,7 +130,7 @@ final class AllowOffCacheFileStorage {
 
   func write(_ document: PersistedAllowOffCache) -> Bool {
     guard document.isValid,
-          let data = try? AllowOffCacheCodec.encoder.encode(document),
+          let data = try? AllowOffCacheCodec.makeEncoder().encode(document),
           data.count <= AllowOffCachePolicy.maximumByteCount
     else { return false }
 

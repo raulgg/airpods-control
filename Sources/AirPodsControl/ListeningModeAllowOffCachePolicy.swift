@@ -229,15 +229,17 @@ enum AllowOffDenyMarkerRead {
   case invalid
 }
 
+// Each caller gets its own coder: JSONEncoder and JSONDecoder are not safe to
+// share across the concurrent cache mutation paths.
 enum AllowOffCacheCodec {
-  static var encoder: JSONEncoder {
+  static func makeEncoder() -> JSONEncoder {
     let value = JSONEncoder()
     value.dateEncodingStrategy = .secondsSince1970
     value.outputFormatting = [.sortedKeys]
     return value
   }
 
-  static var decoder: JSONDecoder {
+  static func makeDecoder() -> JSONDecoder {
     let value = JSONDecoder()
     value.dateDecodingStrategy = .secondsSince1970
     return value

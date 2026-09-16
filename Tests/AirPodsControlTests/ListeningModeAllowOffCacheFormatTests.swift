@@ -25,7 +25,7 @@ struct ListeningModeAllowOffCacheFormatTests {
         ),
       ]
     )
-    let encoded = try AllowOffCacheCodec.encoder.encode(document)
+    let encoded = try AllowOffCacheCodec.makeEncoder().encode(document)
     let expected = Data(
       #"{"negativeEvidence":{"2222222222222222222222222222222222222222222222222222222222222222":{"observedAt":1700000010}},"positiveEvidence":{"1111111111111111111111111111111111111111111111111111111111111111":{"observedAt":1700000000}},"salt":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=","schemaVersion":1}"#.utf8
     )
@@ -38,7 +38,7 @@ struct ListeningModeAllowOffCacheFormatTests {
     let legacyDocument = Data(
       #"{"positiveEvidence":{"1111111111111111111111111111111111111111111111111111111111111111":{"observedAt":1700000000}},"salt":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=","schemaVersion":1}"#.utf8
     )
-    let decoded = try AllowOffCacheCodec.decoder.decode(
+    let decoded = try AllowOffCacheCodec.makeDecoder().decode(
       PersistedAllowOffCache.self,
       from: legacyDocument
     )
