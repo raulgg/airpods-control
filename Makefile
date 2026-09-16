@@ -7,7 +7,9 @@ ARCHS ?= arm64 x86_64
 SWIFTC ?= swiftc
 SWIFT_TOOLCHAIN_DRIVER := $(shell xcrun --find swift)
 SWIFT ?= $(SWIFT_TOOLCHAIN_DRIVER)
+SWIFT_PRODUCTION_FLAGS := -swift-version 5 -warnings-as-errors
 CLANG ?= clang
+C_WARNING_FLAGS := -Wall -Wextra -Wpedantic -Werror
 LIPO ?= lipo
 CODESIGN ?= codesign
 INSTALL ?= install
@@ -50,6 +52,7 @@ ifneq ($(shell test -d "$(SWIFT_TESTING_INTEROP)" && echo yes),)
 SWIFT_TESTING_FLAGS += -Xlinker -rpath -Xlinker "$(SWIFT_TESTING_INTEROP)"
 endif
 SWIFT_PACKAGE_EXTRA_FLAGS ?=
+SWIFT_PACKAGE_WARNING_FLAGS := -Xswiftc -warnings-as-errors
 SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
 LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
@@ -88,19 +91,20 @@ _build: $(VERSION_SOURCE)
 	host_arch=$$(uname -m); \
 	build_arch() { \
 		arch="$$1"; \
-		"$(CLANG)" -O2 -arch "$$arch" \
+		"$(CLANG)" $(C_WARNING_FLAGS) -O2 -arch "$$arch" \
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -dynamiclib \
 			-o "$$tmp/avbypass.$$arch.dylib" "$(AV_BYPASS_SOURCE)" \
 			-framework CoreFoundation -framework Security && \
-		"$(CLANG)" -O2 -arch "$$arch" \
+		"$(CLANG)" $(C_WARNING_FLAGS) -O2 -arch "$$arch" \
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -c \
 			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 			-o "$$tmp/signal-monitor.$$arch.o" "$(SIGNAL_MONITOR_SOURCE)" && \
-		"$(CLANG)" -O2 -arch "$$arch" \
+		"$(CLANG)" $(C_WARNING_FLAGS) -O2 -arch "$$arch" \
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -c \
 			-I"$(BYPASS_PROBE_INCLUDE_DIR)" \
 			-o "$$tmp/bypass-probe.$$arch.o" "$(BYPASS_PROBE_SOURCE)" && \
-		"$(SWIFTC)" -O -target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
+		"$(SWIFTC)" -O $(SWIFT_PRODUCTION_FLAGS) \
+			-target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" -I"$(BYPASS_PROBE_INCLUDE_DIR)" \
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 			-o "$$tmp/airpods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
@@ -151,7 +155,8 @@ test: all
 	./Tests/HomebrewInstallsBadgeTests/homebrew-installs-badge.sh
 	./Tests/CLIOutputTests/output-contract.sh
 	./Tests/CLIContractTests/cli.sh
-	"$(CLANG)" -O2 -pthread -DAIRPODS_CONTROL_SIGNAL_MONITOR_TESTING \
+	"$(CLANG)" $(C_WARNING_FLAGS) -O2 -pthread \
+		-DAIRPODS_CONTROL_SIGNAL_MONITOR_TESTING \
 		-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" \
 		-o "$(SIGNAL_MONITOR_RACE_TEST_BINARY)" \
 		"$(SIGNAL_MONITOR_SOURCE)" "$(SIGNAL_MONITOR_RACE_TEST_SOURCE)"
@@ -163,6 +168,7 @@ test: all
 		--config-path "$(SWIFT_PACKAGE_CONFIG)" \
 		--security-path "$(SWIFT_PACKAGE_SECURITY)" \
 		$(SWIFT_PACKAGE_EXTRA_FLAGS) \
+		$(SWIFT_PACKAGE_WARNING_FLAGS) \
 		--enable-swift-testing --no-parallel $(SWIFT_TESTING_FLAGS)
 
 # Deliberately outside `test`: the result depends on the macOS version of
