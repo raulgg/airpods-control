@@ -124,7 +124,7 @@ struct SystemActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
     guard let before = endpointAndIdentifier(),
           outputContext.responds(to: activeAssociatedDeviceIDSelector),
           let rawAssociatedID = outputContext.perform(activeAssociatedDeviceIDSelector)?
-            .takeUnretainedValue(),
+          .takeUnretainedValue(),
           let associatedUID = rawAssociatedID as? String,
           !associatedUID.isEmpty,
           associatedUID.utf8.count <= maximumActiveRouteIdentifierLength,
@@ -147,10 +147,10 @@ struct SystemActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
   private func endpointAndIdentifier() -> (endpoint: AnyObject, identifier: String)? {
     guard outputContext.responds(to: activeOutputDeviceSelector),
           let endpoint = outputContext.perform(activeOutputDeviceSelector)?
-            .takeUnretainedValue(),
+          .takeUnretainedValue(),
           endpoint.responds(to: statusAVDeviceIDSelector),
           let identifier = endpoint.perform(statusAVDeviceIDSelector)?
-            .takeUnretainedValue() as? String,
+          .takeUnretainedValue() as? String,
           !identifier.isEmpty,
           identifier.utf8.count <= maximumActiveRouteIdentifierLength
     else { return nil }
@@ -261,7 +261,7 @@ final class IOBluetoothStatusDevice: CompatibleAudioDevice {
     if let endpoint = routingObserver.activeFeatureEndpoint(for: object),
        endpoint.responds(to: statusAVCurrentModeSelector),
        let rawMode = endpoint.perform(statusAVCurrentModeSelector)?
-        .takeUnretainedValue() as? String
+       .takeUnretainedValue() as? String
     {
       guard let mode = statusListeningModesByRawValue[rawMode] else {
         return .unresolved
@@ -699,9 +699,9 @@ final class IOBluetoothStatusController {
       }
       guard let namedEndpoint = outputEndpoints.first(where: { $0.name != nil }),
             let outputEndpoint =
-              controlEndpoints.first(where: { $0.name != nil })
+            controlEndpoints.first(where: { $0.name != nil })
               ?? controlEndpoints.first,
-            let name = namedEndpoint.name
+              let name = namedEndpoint.name
       else { return nil }
       return IOBluetoothListeningModeBinding(
         name: name,

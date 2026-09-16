@@ -190,7 +190,7 @@ final class HALListeningModeTransport: ListeningModeAllowOffTransport {
     allowOff: Bool
   ) -> DeviceWriteObservation<ListeningMode> {
     guard let rawTarget = halWritableRawValueByListeningMode[target],
-      target == .off ? allowOff : availableListeningModes().contains(target)
+          target == .off ? allowOff : availableListeningModes().contains(target)
     else {
       return DeviceWriteObservation(
         setterAccepted: false,
@@ -261,7 +261,7 @@ enum ListeningModeCommand {
     case .listeningModeCycle(let requested):
       self = .cycle(requested)
     case .version, .status, .supportReport,
-      .conversationAwarenessGet, .conversationAwarenessSet:
+         .conversationAwarenessGet, .conversationAwarenessSet:
       return nil
     }
   }
@@ -386,7 +386,7 @@ final class ListeningModeCoordinator {
     }
     guard selectedCandidate.route == .selected else { return nil }
     guard let session = selectTransport(for: selectedCandidate, command: command),
-      isReady(session, for: command)
+          isReady(session, for: command)
     else { return nil }
     return session
   }
@@ -562,12 +562,12 @@ final class ListeningModeCoordinator {
       )
       sessions.append(captured)
       if transport.listeningModeTransportKind == .av,
-        captured.allowOffAuthorization != nil
+         captured.allowOffAuthorization != nil
       {
         liveAllowOffAuthorization = captured.allowOffAuthorization
       }
       if transport.listeningModeTransportKind == .av,
-        captured.blocksCachedAllowOff
+         captured.blocksCachedAllowOff
       {
         blocksCachedAllowOff = true
         liveAllowOffAuthorization = nil
@@ -733,9 +733,9 @@ final class ListeningModeCoordinator {
     hasAuthorization: Bool
   ) -> Bool {
     guard transport.listeningModeTransportKind == .hal,
-      commandExplicitlyTargetsOff(command),
-      case .value = availability,
-      !hasAuthorization
+          commandExplicitlyTargetsOff(command),
+          case .value = availability,
+          !hasAuthorization
     else { return false }
     return correlation?.hasCachedDenial() != true
   }
@@ -795,8 +795,8 @@ final class ListeningModeCoordinator {
     command: ListeningModeCommand
   ) -> Bool {
     guard transport.listeningModeTransportKind == .av,
-      commandMayUseAllowOffCache(command),
-      case .value(let modes) = availability
+          commandMayUseAllowOffCache(command),
+          case .value(let modes) = availability
     else { return false }
     return !modes.contains(.off)
   }

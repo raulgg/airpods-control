@@ -61,10 +61,10 @@ func resolveListeningModeWrite(
   let verified = setterAccepted && observed == requested
   let inferredOffFallback =
     requested == .off
-    && !verified
-    && setterAccepted
-    && transparencySupported
-    && observed != .transparency
+      && !verified
+      && setterAccepted
+      && transparencySupported
+      && observed != .transparency
   return ListeningModeWriteResolution(
     setterAccepted: setterAccepted,
     verified: verified,

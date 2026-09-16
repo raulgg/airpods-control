@@ -163,19 +163,19 @@ final class ListeningModeAllowOffCorrelation {
 
   private func withUnambiguousRawUID(_ body: (String) -> Void) {
     guard collisionAudioDeviceIDs.contains(targetAudioDeviceID),
-      !collisionAudioDeviceIDs.isEmpty
+          !collisionAudioDeviceIDs.isEmpty
     else { return }
 
     var values: [(AudioDeviceID, String)] = []
     for audioDeviceID in collisionAudioDeviceIDs {
       guard case .value(.some(let rawUID)) = backend.readDeviceUID(for: audioDeviceID),
-        !rawUID.isEmpty,
-        rawUID.utf8.count <= 4_096
+            !rawUID.isEmpty,
+            rawUID.utf8.count <= 4_096
       else { return }
       values.append((audioDeviceID, rawUID))
     }
     guard let targetUID = values.first(where: { $0.0 == targetAudioDeviceID })?.1,
-      values.filter({ $0.1 == targetUID }).count == 1
+          values.filter({ $0.1 == targetUID }).count == 1
     else { return }
     body(targetUID)
   }
