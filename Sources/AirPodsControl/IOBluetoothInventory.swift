@@ -112,7 +112,7 @@ struct IOBluetoothInventory {
       routingObserver: routingObserver,
       logger: logger
     )
-    let cacheCollisionAudioDeviceIDs = cacheCollisionAudioDeviceIDs(from: groups)
+    let cacheCollisionAudioDeviceIDs = collisionAudioDeviceIDs(from: groups)
     let listeningModeBindings = listeningModeBindings(
       from: groups,
       cacheCollisionAudioDeviceIDs: cacheCollisionAudioDeviceIDs,
@@ -325,7 +325,7 @@ struct IOBluetoothInventory {
     }
   }
 
-  private static func cacheCollisionAudioDeviceIDs(
+  private static func collisionAudioDeviceIDs(
     from groups: [CoreAudioBluetoothDeviceGroup]
   ) -> [AudioDeviceID] {
     groups.flatMap { group -> [AudioDeviceID] in
