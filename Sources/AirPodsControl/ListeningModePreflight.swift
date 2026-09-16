@@ -1,5 +1,7 @@
 import Foundation
 
+// Off gating switches exhaustively over this enum instead of testing for nil,
+// so a new case has to state whether it grants a privileged Off write.
 enum ListeningModeOffPermission {
   case authorized(ListeningModeAllowOffAuthorization)
   case probe
@@ -65,9 +67,13 @@ enum ListeningModePreflightPolicy {
     availableModes: [ListeningMode],
     offPermission: ListeningModeOffPermission?
   ) -> [ListeningMode] {
-    guard offPermission != nil else { return availableModes }
-    let advertised = Set(availableModes).union([.off])
-    return ListeningMode.allCases.filter { advertised.contains($0) }
+    switch offPermission {
+    case .authorized, .probe:
+      let advertised = Set(availableModes).union([.off])
+      return ListeningMode.allCases.filter { advertised.contains($0) }
+    case .none:
+      return availableModes
+    }
   }
 }
 

@@ -18,9 +18,14 @@ struct ListeningModeWritePlan {
     self.availableModes = availableModes
     self.offPermission = offPermission
     self.allowOffCorrelation = allowOffCorrelation
+    let permitsOff: Bool
+    switch offPermission {
+    case .authorized, .probe: permitsOff = true
+    case .none: permitsOff = false
+    }
     authorizesHALOff = transport.listeningModeTransportKind == .hal
       && allowOffTransport != nil
-      && offPermission != nil
+      && permitsOff
   }
 
   func canWrite(_ target: ListeningMode) -> Bool {
@@ -82,7 +87,9 @@ struct ListeningModeWritePlan {
   }
 
   private var isProbePermission: Bool {
-    if case .probe = offPermission { return true }
-    return false
+    switch offPermission {
+    case .probe: return true
+    case .authorized, .none: return false
+    }
   }
 }
