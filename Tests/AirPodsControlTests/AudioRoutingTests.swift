@@ -423,8 +423,9 @@ struct AudioRoutingTests {
         "streams:5:input", "streams:5:output",
         "apple:5", "manufacturer:5", "mapping:5", "name:5",
         "listening-mode:5", "in-ear:5",
+        "listening-mode-presence:5",
       ],
-      "inventory reads follow aggregate, transport, alive, streams, admission, mapping, name, and optional feature order"
+      "inventory reads follow aggregate, transport, alive, streams, admission, mapping, name, optional feature, and control-endpoint order"
     )
   }
 

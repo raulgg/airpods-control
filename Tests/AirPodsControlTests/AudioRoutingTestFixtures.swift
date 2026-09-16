@@ -133,7 +133,8 @@ final class FakeAudioRoutingBackend: AudioRoutingBackend {
   func hasBluetoothListeningMode(
     for deviceID: AudioDeviceID
   ) -> Bool {
-    listeningModePresence[deviceID] ?? (listeningModes[deviceID] != nil)
+    inventoryReadLog?.append("listening-mode-presence:\(deviceID)")
+    return listeningModePresence[deviceID] ?? (listeningModes[deviceID] != nil)
   }
 
   func readBluetoothListeningModeSupport(
