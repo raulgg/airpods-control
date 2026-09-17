@@ -21,10 +21,6 @@
 (`off`, `transparency`, `adaptive`, `noise-cancellation`) and Conversation
 Awareness on connected AirPods and Beats headphones.
 
-It talks to private macOS audio interfaces. It does not use Control Center, a
-menu bar app, or Accessibility. Run it from the terminal, scripts, hotkeys,
-Stream Deck, Shortcuts, or `launchd`.
-
 ```console
 $ airpods-control status
 My AirPods Pro:
