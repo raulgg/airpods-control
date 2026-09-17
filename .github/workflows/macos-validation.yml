@@ -172,19 +172,28 @@ jobs:
     needs:
       - runtime-needed
       - macos-26
-    if: always() && needs.runtime-needed.result == 'success'
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Reflect macOS 26 runtime
         env:
+          DECIDE: ${{ needs.runtime-needed.result }}
           NEEDED: ${{ needs.runtime-needed.outputs.needed }}
           RESULT: ${{ needs.macos-26.result }}
         run: |
-          if [ "$NEEDED" != "true" ]; then
+          if [ "$DECIDE" != "success" ]; then
+            echo "runtime-needed job result: $DECIDE"
+            exit 1
+          fi
+          if [ "$NEEDED" = "false" ]; then
             echo "Skipping macOS 26 runtime; the diff does not affect the binary or interpose."
             exit 0
+          fi
+          if [ "$NEEDED" != "true" ]; then
+            echo "runtime-needed output needed is not true or false: '$NEEDED'"
+            exit 1
           fi
           if [ "$RESULT" != "success" ]; then
             echo "macOS 26 runtime job result: $RESULT"
@@ -237,19 +246,28 @@ jobs:
     needs:
       - runtime-needed
       - intel
-    if: always() && needs.runtime-needed.result == 'success'
+    if: always() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Reflect Intel runtime
         env:
+          DECIDE: ${{ needs.runtime-needed.result }}
           NEEDED: ${{ needs.runtime-needed.outputs.needed }}
           RESULT: ${{ needs.intel.result }}
         run: |
-          if [ "$NEEDED" != "true" ]; then
+          if [ "$DECIDE" != "success" ]; then
+            echo "runtime-needed job result: $DECIDE"
+            exit 1
+          fi
+          if [ "$NEEDED" = "false" ]; then
             echo "Skipping Intel runtime; the diff does not affect the binary or interpose."
             exit 0
+          fi
+          if [ "$NEEDED" != "true" ]; then
+            echo "runtime-needed output needed is not true or false: '$NEEDED'"
+            exit 1
           fi
           if [ "$RESULT" != "success" ]; then
             echo "Intel runtime job result: $RESULT"
