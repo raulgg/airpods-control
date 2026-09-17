@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-SCRIPT="$ROOT/scripts/runtime-ci-needed.sh"
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT="$DIR/runtime-ci-needed.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -47,6 +47,9 @@ printf '%s\n' 'scripts/verify-runtime.sh' |
 
 printf '%s\n' 'scripts/runtime-ci-needed.sh' |
   expect true "classifier script"
+
+printf '%s\n' 'scripts/runtime-ci-needed.test.sh' |
+  expect false "classifier tests"
 
 printf '%s\n' 'Tests/VerifyRuntimeTests/verify-runtime.sh' |
   expect true "verify-runtime tests"

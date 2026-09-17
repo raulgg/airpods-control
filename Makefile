@@ -165,7 +165,7 @@ _build: $(VERSION_SOURCE)
 test: all
 	./Tests/ReleasePleaseTests/release-pr-body.sh
 	./Tests/ResolvePrefixTests/resolve-prefix.sh
-	./Tests/RuntimeCINeededTests/runtime-ci-needed.sh
+	./scripts/runtime-ci-needed.test.sh
 	./Tests/InstallFromSourceTests/install-from-source.sh
 	./Tests/CLIOutputTests/output-contract.sh
 	./Tests/CLIContractTests/cli.sh
