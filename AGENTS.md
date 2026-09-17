@@ -26,6 +26,7 @@ here and avoid them.
 ## Pull requests
 
 - Conventional Commit title. That title becomes the squash-merge commit.
+- Formatter-only pull requests use `chore:`; `style:` is unsupported.
 - Fill the PR template.
 - Do not rewrite Release Please PR bodies.
 

@@ -339,7 +339,7 @@ private func statusOutcome(
     invocation,
     resolveDevices: { _, _, _ in
       guard let devices else { return .failed(.noDevice) }
-      return .devices(devices)
+      return .statusDevices(devices.map { $0 as any AudioDeviceStatusReading })
     }
   )
 }

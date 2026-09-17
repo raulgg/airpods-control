@@ -32,10 +32,11 @@ struct PrivateAudioTests {
     #expect(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
 
     let emptyRaw = FakeRawDevice(name: "Empty Inventory AirPods", modes: [])
-    let empty = PrivateAudioController(
+    let emptyDevices = try requireSelectedDevices(PrivateAudioController(
       endpoints: PrivateAudioContextEndpoints(plural: [], singular: emptyRaw),
       logger: DebugLogger(enabled: false)
-    ).selectDevice(named: nil)!
+    ).resolveDevices(named: nil, policy: .singleOrExact))
+    let empty = try #require(emptyDevices.first, "an empty AV inventory resolves its singular endpoint")
     if case .value(let modes) = empty.listeningModeAvailabilityObservation() {
       #expect(modes.isEmpty, "an answered empty AV inventory is typed evidence")
     } else {
@@ -94,10 +95,11 @@ struct PrivateAudioTests {
       logger: DebugLogger(enabled: false),
       includeDeviceNames: false
     )
-    guard let device = controller.selectDevice(named: nil) else {
-      Issue.record("support-report discovers an allowlisted device without a name")
-      return
-    }
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .singleOrExact),
+      "support-report discovers an allowlisted device without a name"
+    )
+    let device = try #require(devices.first, "support-report selected an allowlisted device")
     let report = passiveSupportReport(device: device)
     #expect(report != nil, "name-free private adapter produces a support report")
     #expect(
@@ -117,10 +119,13 @@ struct PrivateAudioTests {
       rawDevice.nameReadCount == 0,
       "support-report never invokes the customizable name selector"
     )
-    #expect(
-      controller.selectDevice(named: "Custom Owner Name") == nil,
-      "name-free discovery refuses --device selection"
-    )
+    if case .noDevice = controller.resolveDevices(
+      named: "Custom Owner Name",
+      policy: .singleOrExact
+    ) {
+    } else {
+      Issue.record("name-free discovery refuses --device selection")
+    }
     #expect(
       rawDevice.nameReadCount == 0,
       "refusing --device selection reads no customizable name"
@@ -141,10 +146,13 @@ struct PrivateAudioTests {
       logger: DebugLogger(enabled: false),
       includeDeviceNames: false
     )
-    #expect(
-      ambiguousController.selectDevice(named: nil) == nil,
-      "name-free support-report selection requires one unique compatible device"
-    )
+    if case .ambiguousDevice = ambiguousController.resolveDevices(
+      named: nil,
+      policy: .singleOrExact
+    ) {
+    } else {
+      Issue.record("name-free support-report selection requires one unique compatible device")
+    }
     #expect(
       rawDevice.nameReadCount == 0 && otherRawDevice.nameReadCount == 0,
       "rejecting multiple report devices still reads no customizable names"
@@ -155,10 +163,13 @@ struct PrivateAudioTests {
       logger: DebugLogger(enabled: false),
       includeDeviceNames: false
     )
-    #expect(
-      namelessController.selectDevice(named: nil) == nil,
-      "support-report rejects devices that other commands cannot target"
-    )
+    if case .noDevice = namelessController.resolveDevices(
+      named: nil,
+      policy: .singleOrExact
+    ) {
+    } else {
+      Issue.record("support-report rejects devices that other commands cannot target")
+    }
   }
 
   // support-report is the one command that resolves its device with
@@ -177,12 +188,13 @@ struct PrivateAudioTests {
     )
     var report: SupportReportDocument?
 
-    let captured = capturingStandardError {
-      guard let device = PrivateAudioController(
+    let captured = try capturingStandardError {
+      let devices = try requireSelectedDevices(PrivateAudioController(
         rawDevices: [rawDevice],
         logger: DebugLogger(enabled: true),
         includeDeviceNames: false
-      ).selectDevice(named: nil) else { return }
+      ).resolveDevices(named: nil, policy: .singleOrExact))
+      let device = try #require(devices.first, "name-free support-report selects one device")
       report = passiveSupportReport(device: device)
       // The write tester holds each mode for two seconds and carries no logger, so
       // the wait-free overloads reach every write-path log site without the wait.
@@ -367,10 +379,6 @@ struct PrivateAudioTests {
     let second = FakeRawDevice(name: "Studio AirPods")
     let controller = PrivateAudioController(rawDevices: [first, second], logger: logger)
 
-    #expect(
-      controller.selectDevice(named: nil) == nil,
-      "default single-target selection rejects multiple devices"
-    )
     if case .ambiguousDevice = controller.resolveDevices(
       named: nil,
       policy: .singleOrExact
@@ -378,39 +386,56 @@ struct PrivateAudioTests {
     } else {
       Issue.record("multiple unnamed devices have a typed ambiguous result")
     }
-    #expect(
-      controller.selectDevices(named: nil, policy: .allOrExact)?.compactMap(\.name)
-        == ["My AirPods Pro", "Studio AirPods"],
+    let allDevices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
       "all-device selection preserves private routing discovery order"
     )
     #expect(
-      controller.selectDevices(named: "STUDIO AIRPODS", policy: .allOrExact)?
-        .compactMap(\.name) == ["Studio AirPods"],
+      allDevices.compactMap(\.name) == ["My AirPods Pro", "Studio AirPods"],
+      "all-device selection preserves private routing discovery order"
+    )
+    let exactDevices = try requireSelectedDevices(
+      controller.resolveDevices(named: "STUDIO AIRPODS", policy: .allOrExact),
       "all-or-exact selection returns one uniquely named device"
     )
     #expect(
-      controller.selectDevice(named: "MY AIRPODS PRO")?.name == "My AirPods Pro",
+      exactDevices.compactMap(\.name) == ["Studio AirPods"],
+      "all-or-exact selection returns one uniquely named device"
+    )
+    let namedDevices = try requireSelectedDevices(
+      controller.resolveDevices(named: "MY AIRPODS PRO", policy: .singleOrExact),
       "device matching is case-insensitive and exact"
     )
-    #expect(
-      controller.selectDevice(named: "My") == nil,
-      "device matching does not use substrings"
-    )
-    #expect(
-      controller.selectDevice(named: "Missing AirPods") == nil,
-      "device matching never falls back"
-    )
+    let namedDevice = try #require(namedDevices.first, "device matching selects one exact device")
+    #expect(namedDevice.name == "My AirPods Pro", "device matching is case-insensitive and exact")
+    if case .noDevice = controller.resolveDevices(named: "My", policy: .singleOrExact) {
+    } else {
+      Issue.record("device matching does not use substrings")
+    }
+    if case .noDevice = controller.resolveDevices(
+      named: "Missing AirPods",
+      policy: .singleOrExact
+    ) {
+    } else {
+      Issue.record("device matching never falls back")
+    }
 
     let duplicate = FakeRawDevice(name: "MY AIRPODS PRO")
     let ambiguous = PrivateAudioController(rawDevices: [first, duplicate], logger: logger)
-    #expect(
-      ambiguous.selectDevice(named: "My AirPods Pro") == nil,
-      "duplicate exact names are rejected"
-    )
-    #expect(
-      ambiguous.selectDevices(named: "My AirPods Pro", policy: .allOrExact) == nil,
-      "status rejects duplicate case-insensitive exact names"
-    )
+    if case .ambiguousDevice = ambiguous.resolveDevices(
+      named: "My AirPods Pro",
+      policy: .singleOrExact
+    ) {
+    } else {
+      Issue.record("duplicate exact names are rejected")
+    }
+    if case .ambiguousDevice = ambiguous.resolveDevices(
+      named: "My AirPods Pro",
+      policy: .allOrExact
+    ) {
+    } else {
+      Issue.record("status rejects duplicate case-insensitive exact names")
+    }
     for arguments in [
       ["--device", "My AirPods Pro", "lm", "set", "adaptive"],
       ["--device", "My AirPods Pro", "ca", "set", "on"],
@@ -440,32 +465,45 @@ struct PrivateAudioTests {
 
     let incomplete = FakeIncompleteRawDevice()
     let filtered = PrivateAudioController(rawDevices: [incomplete, second], logger: logger)
-    #expect(
-      filtered.selectDevice(named: nil)?.name == "Studio AirPods",
+    let filteredDevices = try requireSelectedDevices(
+      filtered.resolveDevices(named: nil, policy: .singleOrExact),
       "devices missing a core selector are ignored"
     )
+    let filteredDevice = try #require(filteredDevices.first, "the filtered device is selected")
+    #expect(filteredDevice.name == "Studio AirPods", "devices missing a core selector are ignored")
     let beats = FakeRawDevice(name: "Studio Beats", modelIdentifier: "BeatsTest1,1")
     let ordered = PrivateAudioController(
       rawDevices: [second, incomplete, beats, first],
       logger: logger
     )
+    let orderedDevices = try requireSelectedDevices(
+      ordered.resolveDevices(named: nil, policy: .allOrExact),
+      "all-device selection keeps compatible Beats and stable filtered order"
+    )
     #expect(
-      ordered.selectDevices(named: nil, policy: .allOrExact)?.compactMap(\.name)
+      orderedDevices.compactMap(\.name)
         == ["Studio AirPods", "Studio Beats", "My AirPods Pro"],
       "all-device selection keeps compatible Beats and stable filtered order"
     )
 
     let readOnly = FakeReadOnlyRawDevice(name: "Read-only AirPods")
     let readOnlyController = PrivateAudioController(rawDevices: [readOnly], logger: logger)
-    let selectedReadOnly = readOnlyController.selectDevice(named: nil)
-    #expect(selectedReadOnly != nil, "read-only device remains available for reads")
-    #expect(selectedReadOnly?.canSetListeningMode() == false, "missing mode setter is detected")
+    let readOnlyDevices = try requireSelectedDevices(
+      readOnlyController.resolveDevices(named: nil, policy: .singleOrExact),
+      "read-only device remains available for reads"
+    )
+    let selectedReadOnly = try #require(readOnlyDevices.first, "read-only device is selected")
+    #expect(!selectedReadOnly.canSetListeningMode(), "missing mode setter is detected")
     #expect(
-      selectedReadOnly?.supportsConversationAwareness() == nil,
+      selectedReadOnly.supportsConversationAwareness() == nil,
       "missing Conversation Awareness selector is detected"
     )
 
-    let selected = controller.selectDevice(named: "Studio AirPods")!
+    let selectedDevices = try requireSelectedDevices(
+      controller.resolveDevices(named: "Studio AirPods", policy: .singleOrExact),
+      "a uniquely named device is selected"
+    )
+    let selected = try #require(selectedDevices.first, "the uniquely named device is selected")
     let reportMetadata = selected.supportReportMetadata()
     #expect(reportMetadata.family == .airPods, "report identifies AirPods from model metadata")
     #expect(
