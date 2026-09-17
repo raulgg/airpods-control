@@ -23,8 +23,7 @@ Conversation Awareness on connected AirPods and Beats headphones from the
 terminal, scripts, hotkeys, Stream Deck, Shortcuts, or `launchd`.
 
 It talks to private macOS audio interfaces. It does not use Control Center, a
-menu bar app, or Accessibility. It does not run on iOS, iPadOS, Windows, Linux,
-or Android.
+menu bar app, or Accessibility.
 
 ```console
 $ airpods-control status
@@ -60,8 +59,7 @@ The CLI does not poll in the background or automate the UI.
 
 ## Requirements
 
-- **macOS only** (developed and tested on Tahoe 26). Not iOS, Windows, Linux,
-  or Android.
+- **macOS only** (developed and tested on Tahoe 26).
 - A compatible AirPods or Beats device connected over Bluetooth. Operational
   listening-mode commands can use either the selected private AV output-device
   interface or an eligible mapped Core Audio HAL output endpoint. Conversation

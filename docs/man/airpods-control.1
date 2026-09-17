@@ -70,7 +70,6 @@ The
 .B AVOutputDevice
 object is macOS's per-endpoint audio control surface.
 A successful write means the selected macOS provider reports the requested state within a bounded readback window; it is not a direct accessory acknowledgement. No Control Center, menu bar, or Accessibility permission is involved.
-It does not run on iOS, Windows, Linux, or Android.
 .PP
 Reaching the API requires one private audio entitlement
 .RB ( com.apple.avfoundation.allow-system-wide-context )
