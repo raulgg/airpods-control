@@ -91,44 +91,48 @@ jobs:
           test ! -e "$stage/usr/local/bin/airpods-control"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
 
-  macos-26:
-    name: Build, test, and verify runtime (macOS 26)
-    runs-on: macos-26
-    timeout-minutes: 20
+  runtime-needed:
+    name: Decide runtime jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      needed: ${{ steps.decide.outputs.needed }}
 
     steps:
       - name: Checkout
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
-      - name: Show toolchain
+      - name: Decide
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          swiftc --version
-          clang --version
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "needed=true" >>"$GITHUB_OUTPUT"
+            echo "Running runtime jobs (not a pull request)"
+            exit 0
+          fi
+          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --depth=1 origin "$BASE_SHA"
+          fi
+          needed=$(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" |
+            ./scripts/runtime-ci-needed.sh)
+          echo "needed=$needed" >>"$GITHUB_OUTPUT"
+          echo "Runtime jobs needed: $needed"
+          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"
 
-      - name: Build
-        run: |
-          make
-          lipo build/airpods-control -verify_arch arm64 x86_64
-          lipo build/avbypass.dylib -verify_arch arm64 x86_64
-          codesign --verify --verbose build/airpods-control
-          codesign --verify --verbose build/avbypass.dylib
-
-      - name: Verify DYLD interpose runtime
-        run: make verify-runtime
-
-      - name: Verify install layout
-        run: |
-          stage="$RUNNER_TEMP/airpods-control-install"
-          expected_version=$(cat version.txt)
-          DESTDIR="$stage" PREFIX=/usr/local make install
-          test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
-            "../libexec/airpods-control/airpods-control"
-          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
-            "$expected_version"
-
-  intel:
-    name: Build, test, and verify runtime (Intel)
-    runs-on: macos-15-intel
+  macos-26:
+    name: Runtime (macOS 26)
+    needs: runtime-needed
+    if: >-
+      needs.runtime-needed.result == 'success' &&
+      needs.runtime-needed.outputs.needed == 'true'
+    runs-on: macos-26
     timeout-minutes: 20
 
     steps:
@@ -143,8 +147,8 @@ jobs:
 
       - name: Build
         run: |
-          make
           host_arch=$(uname -m)
+          make ARCHS="$host_arch"
           lipo build/airpods-control -verify_arch "$host_arch"
           lipo build/avbypass.dylib -verify_arch "$host_arch"
           codesign --verify --verbose build/airpods-control
@@ -162,3 +166,92 @@ jobs:
             "../libexec/airpods-control/airpods-control"
           test "$("$stage/usr/local/bin/airpods-control" --version)" = \
             "$expected_version"
+
+  macos-26-gate:
+    name: Build, test, and verify runtime (macOS 26)
+    needs:
+      - runtime-needed
+      - macos-26
+    if: always() && needs.runtime-needed.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Reflect macOS 26 runtime
+        env:
+          NEEDED: ${{ needs.runtime-needed.outputs.needed }}
+          RESULT: ${{ needs.macos-26.result }}
+        run: |
+          if [ "$NEEDED" != "true" ]; then
+            echo "Skipping macOS 26 runtime; the diff does not affect the binary or interpose."
+            exit 0
+          fi
+          if [ "$RESULT" != "success" ]; then
+            echo "macOS 26 runtime job result: $RESULT"
+            exit 1
+          fi
+
+  intel:
+    name: Runtime (Intel)
+    needs: runtime-needed
+    if: >-
+      needs.runtime-needed.result == 'success' &&
+      needs.runtime-needed.outputs.needed == 'true'
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Show toolchain
+        run: |
+          swiftc --version
+          clang --version
+          uname -m
+
+      - name: Build
+        run: |
+          host_arch=$(uname -m)
+          make ARCHS="$host_arch"
+          lipo build/airpods-control -verify_arch "$host_arch"
+          lipo build/avbypass.dylib -verify_arch "$host_arch"
+          codesign --verify --verbose build/airpods-control
+          codesign --verify --verbose build/avbypass.dylib
+
+      - name: Verify DYLD interpose runtime
+        run: make verify-runtime
+
+      - name: Verify install layout
+        run: |
+          stage="$RUNNER_TEMP/airpods-control-install"
+          expected_version=$(cat version.txt)
+          DESTDIR="$stage" PREFIX=/usr/local make install
+          test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
+            "../libexec/airpods-control/airpods-control"
+          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
+            "$expected_version"
+
+  intel-gate:
+    name: Build, test, and verify runtime (Intel)
+    needs:
+      - runtime-needed
+      - intel
+    if: always() && needs.runtime-needed.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Reflect Intel runtime
+        env:
+          NEEDED: ${{ needs.runtime-needed.outputs.needed }}
+          RESULT: ${{ needs.intel.result }}
+        run: |
+          if [ "$NEEDED" != "true" ]; then
+            echo "Skipping Intel runtime; the diff does not affect the binary or interpose."
+            exit 0
+          fi
+          if [ "$RESULT" != "success" ]; then
+            echo "Intel runtime job result: $RESULT"
+            exit 1
+          fi

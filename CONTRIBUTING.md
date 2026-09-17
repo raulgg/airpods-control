@@ -72,6 +72,12 @@ installed macOS:
 make verify-runtime
 ```
 
+CI always runs that check on macOS 15. The Intel and macOS 26 runtime jobs
+run on every push to `main`, and on a pull request only when the diff can
+change the binary, the interpose, `scripts/runtime-ci-needed.sh`, or
+`.github/workflows/macos-validation.yml`. Docs-only and unit-test-only pull
+requests skip those two runners.
+
 Check the product-name catalog against the pairings macOS itself publishes:
 
 ```sh
@@ -118,6 +124,8 @@ device or capability status.
 - `Tests/ResolvePrefixTests` verifies install-prefix path rules.
 - `Tests/InstallFromSourceTests` verifies the source install script.
 - `Tests/VerifyRuntimeTests` verifies the DYLD interpose on a built CLI.
+- `Tests/RuntimeCINeededTests` verifies which pull request paths require
+  the Intel and macOS 26 runtime jobs.
 - `version.txt` is the single source for the CLI and release version. The
   Makefile generates the corresponding Swift constant under `build/`.
 
