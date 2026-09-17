@@ -17,9 +17,8 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e5aff?style=flat-square"></a>
 </p>
 
-`airpods-control` is a **macOS CLI**. It reads and sets listening mode
-(`off`, `transparency`, `adaptive`, `noise-cancellation`) and Conversation
-Awareness on connected AirPods and Beats headphones.
+Control AirPods and Beats listening modes (`off`, `transparency`, `adaptive`,
+`noise-cancellation`) and Conversation Awareness on macOS.
 
 ```console
 $ airpods-control status
@@ -55,7 +54,7 @@ The CLI does not poll in the background or automate the UI.
 
 ## Requirements
 
-- **macOS only** (developed and tested on Tahoe 26).
+- macOS only (developed and tested on Tahoe 26).
 - A compatible AirPods or Beats device connected over Bluetooth. Operational
   listening-mode commands can use either the selected private AV output-device
   interface or an eligible mapped Core Audio HAL output endpoint. Conversation
@@ -295,7 +294,7 @@ rules, verdict vocabulary, restoration behavior, and exit codes.
 [NoiseBuddy](https://github.com/insidegui/NoiseBuddy) by Guilherme Rambo
 documented the AVFoundation technique used by this project.
 
-`airpods-control` is an independent macOS tool and is not endorsed by Apple.
+`airpods-control` is an independent tool and is not endorsed by Apple.
 AirPods and AirPods Pro are trademarks of Apple Inc. Beats is a trademark of
 Beats Electronics, LLC.
 
