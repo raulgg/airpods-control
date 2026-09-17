@@ -67,6 +67,8 @@ struct CLIInvocation {
 struct CLIParseError: Error {}
 
 let globalHelp = """
+A macOS CLI for AirPods and Beats.
+
 Usage:
   airpods-control [--device NAME] <resource> <command> [--json] [--debug]
   airpods-control status [--device NAME] [--json] [--debug]
