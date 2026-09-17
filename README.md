@@ -54,7 +54,7 @@ The CLI does not poll in the background or automate the UI.
 
 ## Requirements
 
-- macOS only (developed and tested on Golden Gate 27).
+- macOS only.
 - A compatible AirPods or Beats device connected over Bluetooth. Operational
   listening-mode commands can use either the selected private AV output-device
   interface or an eligible mapped Core Audio HAL output endpoint. Conversation
