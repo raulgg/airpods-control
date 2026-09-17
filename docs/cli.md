@@ -1,6 +1,6 @@
 # CLI reference
 
-This is the complete `airpods-control` command-line reference. See the
+This is the complete `airpods-control` CLI reference. See the
 [project README](../README.md) for installation and a shorter introduction.
 
 ## Synopsis
