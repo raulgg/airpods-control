@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/raulgg/airpods-control/actions/workflows/macos-validation.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/raulgg/airpods-control/macos-validation.yml?branch=main&amp;style=flat-square&amp;label=CI"></a>&nbsp;
   <a href="https://github.com/raulgg/airpods-control/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/raulgg/airpods-control?style=flat-square&amp;color=0a0a0c"></a>&nbsp;
-  <a href="#compatibility"><img alt="Tested on macOS Tahoe 26" src="https://img.shields.io/badge/tested-macOS%20Tahoe%2026-0a0a0c?style=flat-square&amp;logo=apple&amp;logoColor=white"></a>&nbsp;
+  <a href="#compatibility"><img alt="Tested on macOS Golden Gate 27" src="https://img.shields.io/badge/tested-macOS%20Golden%20Gate%2027-0a0a0c?style=flat-square&amp;logo=apple&amp;logoColor=white"></a>&nbsp;
   <a href="#install"><img alt="Homebrew" src="https://img.shields.io/badge/brew-raulgg%2Ftap%2Fairpods--control-FBB040?style=flat-square&amp;logo=homebrew&amp;logoColor=black"></a>&nbsp;
   <a href="https://formulae.brew.sh/analytics/install/90d/"><img alt="Homebrew install events, last 90 days" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/raulgg/airpods-control/badges/homebrew-installs.json&amp;style=flat-square"></a>&nbsp;
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e5aff?style=flat-square"></a>
@@ -54,7 +54,7 @@ The CLI does not poll in the background or automate the UI.
 
 ## Requirements
 
-- macOS only (developed and tested on Tahoe 26).
+- macOS only.
 - A compatible AirPods or Beats device connected over Bluetooth. Operational
   listening-mode commands can use either the selected private AV output-device
   interface or an eligible mapped Core Audio HAL output endpoint. Conversation
