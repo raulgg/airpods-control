@@ -735,7 +735,25 @@ If every selected device produces only genuine read errors, the same records are
 returned with `"error":"read-error"`, `"result":"error"`, and exit `5`:
 
 ```json
-{ "devices": [{ "conversationAwareness": null, "device": "My AirPods Pro", "errors": { "conversationAwareness": "read-error", "isSelectedAudioInput": "read-error", "isSelectedAudioOutput": "read-error", "listeningMode": "read-error" }, "isSelectedAudioInput": null, "isSelectedAudioOutput": null, "listeningMode": null }], "error": "read-error", "result": "error" }
+{
+  "devices": [
+    {
+      "conversationAwareness": null,
+      "device": "My AirPods Pro",
+      "errors": {
+        "conversationAwareness": "read-error",
+        "isSelectedAudioInput": "read-error",
+        "isSelectedAudioOutput": "read-error",
+        "listeningMode": "read-error"
+      },
+      "isSelectedAudioInput": null,
+      "isSelectedAudioOutput": null,
+      "listeningMode": null
+    }
+  ],
+  "error": "read-error",
+  "result": "error"
+}
 ```
 
 With no compatible device, status JSON is exactly
