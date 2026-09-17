@@ -87,24 +87,30 @@ struct AudioRoutingTests {
       backend: backend
     )
 
-    let devices = controller.selectDevices(named: nil, policy: .allOrExact)
-    #expect(devices?.count == 1,
-          "input and output endpoints mapping to one canonical object form one record")
-    #expect(devices?.first?.name == "Office AirPods",
-          "the output endpoint supplies the deterministic Core Audio display name")
-    #expect(devices?.first?.availableListeningModes() == [],
-          "the status-only adapter does not advertise modes for write commands")
-    #expect(devices?.first?.readListeningModeStatus().value == .transparency,
-          "HAL current mode is preferred over a sparse mapped object")
-    #expect(devices?.first?.readConversationAwarenessStatus().isUnresolved == true,
-          "a sparse mapped object reports unknown Conversation Awareness honestly")
-    #expect(runtime.mappingReads == [101, 202],
-          "each positively gated Core Audio endpoint is mapped exactly once")
-    #expect(backend.audioDeviceReadCount == 1, "the public device inventory is captured once")
-    #expect(
-      controller.selectDevices(named: "office airpods", policy: .allOrExact)?.count == 1,
-      "status exact-name selection uses the Core Audio name case insensitively"
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "input and output endpoints mapping to one canonical object form one record"
     )
+    #expect(devices.count == 1,
+            "input and output endpoints mapping to one canonical object form one record")
+    #expect(devices.first?.name == "Office AirPods",
+            "the output endpoint supplies the deterministic Core Audio display name")
+    #expect(devices.first?.readListeningModeStatus().value == .transparency,
+            "the status-only adapter reports HAL current mode through its status interface")
+    #expect(devices.first?.readConversationAwarenessStatus().isUnresolved == true,
+            "a sparse mapped object reports unknown Conversation Awareness honestly")
+    #expect(runtime.mappingReads == [101, 202],
+            "each positively gated Core Audio endpoint is mapped exactly once")
+    #expect(backend.audioDeviceReadCount == 1, "the public device inventory is captured once")
+    switch controller.resolveDevices(named: "office airpods", policy: .allOrExact) {
+    case let .selected(devices):
+      #expect(
+        devices.count == 1,
+        "status exact-name selection uses the Core Audio name case insensitively"
+      )
+    case .noDevice, .ambiguousDevice:
+      Issue.record("status exact-name selection uses the Core Audio name case insensitively")
+    }
   }
 
   @Test
@@ -148,7 +154,10 @@ struct AudioRoutingTests {
       backend: backend
     )
 
-    let devices = controller.selectDevices(named: nil, policy: .allOrExact)!
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "status keeps the first occurrence order of grouped placement evidence"
+    )
     #expect(
       devices.compactMap(\.name) == [
         "Stable Placement",
@@ -198,10 +207,14 @@ struct AudioRoutingTests {
       readStatusListeningMode: false,
       readStatusInEarPlacement: false
     )
-    let controlDevice = controlController.selectDevices(
-      named: nil,
-      policy: .allOrExact
-    )![0]
+    let controlDevices = try requireSelectedDevices(
+      controlController.resolveDevices(named: nil, policy: .allOrExact),
+      "non-status discovery resolves the control endpoint"
+    )
+    let controlDevice = try #require(
+      controlDevices.first,
+      "non-status discovery resolves one control endpoint"
+    )
     #expect(
       controlDevice.readInEarPlacementStatus().isUnsupported
         && controlBackend.inEarPlacementReads.isEmpty,
@@ -261,14 +274,17 @@ struct AudioRoutingTests {
                             name: .value("Feature Unknown"), appleAudioDevice: .value(true),
                             listeningMode: .failure(-72)),
     ])
-    let devices = controller.selectDevices(named: nil, policy: .allOrExact)
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "only endpoints with a positive HAL Apple-audio signal or exact manufacturer fallback survive"
+    )
     #expect(
-      devices?.map(\.name)
+      devices.map(\.name)
         == ["Valid AirPods", "Other AirPods", "Valid Beats", "Feature Unknown"],
       "only endpoints with a positive HAL Apple-audio signal or exact manufacturer fallback survive"
     )
-    #expect(devices?.last?.readListeningModeStatus().isReadError == true,
-          "a failed advertised HAL current-mode read is retained as a read error")
+    #expect(devices.last?.readListeningModeStatus().isReadError == true,
+            "a failed advertised HAL current-mode read is retained as a read error")
   }
 
   @Test
@@ -283,10 +299,13 @@ struct AudioRoutingTests {
                             inputStreams: .value(true), outputStreams: .value(false),
                             appleAudioDevice: .value(false)),
     ])
-    #expect(
-      appleConflictController.selectDevices(named: nil, policy: .allOrExact) == nil,
-      "conflicting positive and negative HAL Apple-audio evidence rejects the exact group"
-    )
+    if case .noDevice = appleConflictController.resolveDevices(
+      named: nil,
+      policy: .allOrExact
+    ) {
+    } else {
+      Issue.record("conflicting positive and negative HAL Apple-audio evidence rejects the exact group")
+    }
 
     let neutralWrapper = EqualBluetoothObject(identity: 31)
     let positiveWrapper = EqualBluetoothObject(identity: 31)
@@ -305,9 +324,16 @@ struct AudioRoutingTests {
                             appleAudioDevice: .failure(-74),
                             listeningMode: .failure(-75)),
     ])
-    let neutral = neutralController.selectDevices(named: nil, policy: .allOrExact)?[0]
-    #expect(neutral?.readListeningModeStatus().value == .transparency,
-          "positive evidence survives unavailable/read-error siblings and a zero sentinel")
+    let neutralDevices = try requireSelectedDevices(
+      neutralController.resolveDevices(named: nil, policy: .allOrExact),
+      "positive evidence survives unavailable/read-error siblings and a zero sentinel"
+    )
+    let neutral = try #require(
+      neutralDevices.first,
+      "positive evidence retains one compatible device"
+    )
+    #expect(neutral.readListeningModeStatus().value == .transparency,
+            "positive evidence survives unavailable/read-error siblings and a zero sentinel")
 
     let futureMode = NSObject()
     let (futureController, _) = makeBluetoothController(
@@ -318,9 +344,13 @@ struct AudioRoutingTests {
       ],
       featureEntries: [(futureMode, FakeBluetoothEntry(mode: 3))]
     )
-    let future = futureController.selectDevices(named: nil, policy: .allOrExact)![0]
+    let futureDevices = try requireSelectedDevices(
+      futureController.resolveDevices(named: nil, policy: .allOrExact),
+      "a future HAL mode candidate is retained for status"
+    )
+    let future = try #require(futureDevices.first, "the future mode device is selected")
     #expect(future.readListeningModeStatus().isUnresolved,
-          "a nonzero future HAL mode suppresses the lower-priority mapped fallback")
+            "a nonzero future HAL mode suppresses the lower-priority mapped fallback")
 
     let mixedFuture = NSObject()
     let (mixedFutureController, _) = makeBluetoothController(inventory: [
@@ -332,12 +362,16 @@ struct AudioRoutingTests {
                             name: .value("Mixed Future Input"),
                             appleAudioDevice: .value(true), listeningMode: .value(5)),
     ])
-    let mixedFutureDevice = mixedFutureController.selectDevices(
-      named: nil,
-      policy: .allOrExact
-    )![0]
+    let mixedFutureDevices = try requireSelectedDevices(
+      mixedFutureController.resolveDevices(named: nil, policy: .allOrExact),
+      "a mixed future HAL mode candidate is retained for status"
+    )
+    let mixedFutureDevice = try #require(
+      mixedFutureDevices.first,
+      "the mixed future mode device is selected"
+    )
     #expect(mixedFutureDevice.readListeningModeStatus().isUnresolved,
-          "a future HAL mode mixed with a recognized value remains unresolved")
+            "a future HAL mode mixed with a recognized value remains unresolved")
 
     let modeConflict = EqualBluetoothObject(identity: 41)
     let (modeConflictController, _) = makeBluetoothController(
@@ -352,12 +386,90 @@ struct AudioRoutingTests {
       ],
       featureEntries: [(modeConflict, FakeBluetoothEntry(mode: 1))]
     )
-    let conflicted = modeConflictController.selectDevices(
-      named: nil,
-      policy: .allOrExact
-    )![0]
+    let conflictedDevices = try requireSelectedDevices(
+      modeConflictController.resolveDevices(named: nil, policy: .allOrExact),
+      "a recognized HAL mode conflict candidate is retained for status"
+    )
+    let conflicted = try #require(
+      conflictedDevices.first,
+      "the recognized mode conflict device is selected"
+    )
     #expect(conflicted.readListeningModeStatus().isUnresolved,
-          "different recognized HAL modes stay unresolved instead of falling back")
+            "different recognized HAL modes stay unresolved instead of falling back")
+  }
+
+  @Test
+  func coreAudioInventoryPreservesReadOrderAndGateShortCircuits() throws {
+    let aggregate = NSObject()
+    let nonBluetooth = NSObject()
+    let dead = NSObject()
+    let noStreams = NSObject()
+    let valid = NSObject()
+    let readLog = FakeInventoryReadLog()
+    let backend = FakeAudioRoutingBackend()
+    backend.inventoryReadLog = readLog
+
+    let (controller, runtime) = makeBluetoothController(
+      inventory: [
+        FakeInventoryEndpoint(
+          audioDeviceID: 1,
+          bluetoothDevice: aggregate,
+          aggregate: .value(true)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 2,
+          bluetoothDevice: nonBluetooth,
+          transport: .value(kAudioDeviceTransportTypeBuiltIn)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 3,
+          bluetoothDevice: dead,
+          alive: .value(false)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 4,
+          bluetoothDevice: noStreams,
+          inputStreams: .value(false),
+          outputStreams: .value(false)
+        ),
+        FakeInventoryEndpoint(
+          audioDeviceID: 5,
+          bluetoothDevice: valid,
+          manufacturer: .value("Apple Inc."),
+          name: .value("Valid AirPods")
+        ),
+      ],
+      backend: backend,
+      configureRuntime: { $0.inventoryReadLog = readLog }
+    )
+
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "only the fully admitted endpoint becomes a compatible device"
+    )
+    #expect(
+      devices.map(\.name) == ["Valid AirPods"],
+      "only the fully admitted endpoint becomes a compatible device"
+    )
+    #expect(
+      runtime.mappingReads == [5],
+      "mapping is reached only after all preceding admission gates pass"
+    )
+    #expect(
+      readLog.events == [
+        "aggregate:1",
+        "aggregate:2", "transport:2",
+        "aggregate:3", "transport:3", "alive:3",
+        "aggregate:4", "transport:4", "alive:4",
+        "streams:4:input", "streams:4:output",
+        "aggregate:5", "transport:5", "alive:5",
+        "streams:5:input", "streams:5:output",
+        "apple:5", "manufacturer:5", "mapping:5", "name:5",
+        "listening-mode:5", "in-ear:5",
+        "listening-mode-presence:5",
+      ],
+      "inventory reads follow aggregate, transport, alive, streams, admission, mapping, name, optional feature, and control-endpoint order"
+    )
   }
 
   @Test
@@ -370,9 +482,12 @@ struct AudioRoutingTests {
       FakeInventoryEndpoint(audioDeviceID: 1, bluetoothDevice: second,
                             name: .value("Second Seen"), appleAudioDevice: .value(true)),
     ])
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "record order follows first public inventory occurrence, not opaque object IDs"
+    )
     #expect(
-      controller.selectDevices(named: nil, policy: .allOrExact)?.map(\.name)
-        == ["First Seen", "Second Seen"],
+      devices.map(\.name) == ["First Seen", "Second Seen"],
       "record order follows first public inventory occurrence, not opaque object IDs"
     )
   }
@@ -398,11 +513,15 @@ struct AudioRoutingTests {
       inventory: [endpoint],
       backend: inactiveBackend
     )
-    let inactive = inactiveController.selectDevices(named: nil, policy: .allOrExact)![0]
+    let inactiveDevices = try requireSelectedDevices(
+      inactiveController.resolveDevices(named: nil, policy: .allOrExact),
+      "an inventoried but inactive device remains available for status"
+    )
+    let inactive = try #require(inactiveDevices.first, "the inactive device is selected")
     #expect(inactive.readAudioOutputSelectionStatus() == .notSelected,
-          "an inventoried but inactive device reports output no")
+            "an inventoried but inactive device reports output no")
     #expect(inactive.readAudioInputSelectionStatus() == .notSelected,
-          "an inventoried but inactive device reports input no")
+            "an inventoried but inactive device reports input no")
 
     let inputBackend = FakeAudioRoutingBackend()
     inputBackend.outputDefaults = [.value(50), .value(50)]
@@ -412,11 +531,15 @@ struct AudioRoutingTests {
       inventory: [endpoint],
       backend: inputBackend
     )
-    let inputOnly = inputController.selectDevices(named: nil, policy: .allOrExact)![0]
+    let inputDevices = try requireSelectedDevices(
+      inputController.resolveDevices(named: nil, policy: .allOrExact),
+      "an input-only device remains available for status"
+    )
+    let inputOnly = try #require(inputDevices.first, "the input-only device is selected")
     #expect(inputOnly.readAudioOutputSelectionStatus() == .notSelected,
-          "an input-only selected device reports output no")
+            "an input-only selected device reports output no")
     #expect(inputOnly.readAudioInputSelectionStatus() == .selected,
-          "an input-only selected device reports input yes")
+            "an input-only selected device reports input yes")
   }
 
   @Test
@@ -436,20 +559,23 @@ struct AudioRoutingTests {
       runtime.mappings[10] = .value(first)
       runtime.mappings[20] = .value(second)
     }
-    let devices = controller.selectDevices(named: nil, policy: .allOrExact)!
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "the routing snapshot has compatible devices"
+    )
     #expect(backend.outputDefaultReadCount == 0, "inventory does no Core Audio route work")
     #expect(devices[0].readAudioOutputSelectionStatus() == .selected,
-          "the exactly mapped output candidate is selected")
+            "the exactly mapped output candidate is selected")
     #expect(devices[1].readAudioOutputSelectionStatus() == .notSelected,
-          "a different canonical Bluetooth device is not output-selected")
+            "a different canonical Bluetooth device is not output-selected")
     #expect(devices[0].readAudioInputSelectionStatus() == .notSelected,
-          "a different canonical Bluetooth device is not input-selected")
+            "a different canonical Bluetooth device is not input-selected")
     #expect(devices[1].readAudioInputSelectionStatus() == .selected,
-          "the exactly mapped input candidate is selected")
+            "the exactly mapped input candidate is selected")
     #expect(backend.outputDefaultReadCount == 2 && backend.inputDefaultReadCount == 2,
-          "each direction is read before and after its mapping")
+            "each direction is read before and after its mapping")
     #expect(runtime.mappingReads.filter { $0 == 10 || $0 == 20 } == [10, 20],
-          "each direction mapping is captured once and shared by every candidate")
+            "each direction mapping is captured once and shared by every candidate")
   }
 
   @Test
@@ -462,11 +588,15 @@ struct AudioRoutingTests {
       devices: [(device, FakeBluetoothEntry())],
       backend: backend
     ) { $0.mappings[20] = .value(device) }
-    let selected = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "the routing failure fixture has one compatible device"
+    )
+    let selected = try #require(devices.first, "the routing failure fixture selects one device")
     #expect(selected.readAudioOutputSelectionStatus() == .readError,
-          "a required output default read failure is a read error")
+            "a required output default read failure is a read error")
     #expect(selected.readAudioInputSelectionStatus() == .selected,
-          "an output failure does not contaminate the input direction")
+            "an output failure does not contaminate the input direction")
 
     let churnBackend = FakeAudioRoutingBackend()
     churnBackend.outputDefaults = [.value(30), .value(31)]
@@ -478,11 +608,14 @@ struct AudioRoutingTests {
       ],
       backend: churnBackend
     ) { $0.mappings[30] = .value(device) }
-    let churnDevices = churnController.selectDevices(named: nil, policy: .allOrExact)!
+    let churnDevices = try requireSelectedDevices(
+      churnController.resolveDevices(named: nil, policy: .allOrExact),
+      "the route churn fixture has compatible devices"
+    )
     #expect(churnDevices.allSatisfy { $0.readAudioOutputSelectionStatus() == .unresolved },
-          "route churn makes the shared direction snapshot unresolved")
+            "route churn makes the shared direction snapshot unresolved")
     #expect(churnRuntime.mappingReads.filter { $0 == 30 }.count == 1,
-          "route churn still maps at most once")
+            "route churn still maps at most once")
   }
 
   @Test
@@ -532,11 +665,15 @@ struct AudioRoutingTests {
         devices: [(device, FakeBluetoothEntry())],
         backend: backend
       ) { $0.mappings[42] = .value(device) }
-      let selected = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+      let devices = try requireSelectedDevices(
+        controller.resolveDevices(named: nil, policy: .allOrExact),
+        "the transport policy fixture has one compatible device"
+      )
+      let selected = try #require(devices.first, "the transport policy selects one device")
       #expect(selected.readAudioOutputSelectionStatus() == scenario.expected,
-            "\(scenario.label) transport follows the fail-closed policy")
+              "\(scenario.label) transport follows the fail-closed policy")
       #expect(runtime.mappingReads.filter { $0 == 42 }.count == scenario.mappingCalls,
-            "\(scenario.label) invokes the private mapper only when safe")
+              "\(scenario.label) invokes the private mapper only when safe")
     }
   }
 
@@ -575,11 +712,15 @@ struct AudioRoutingTests {
         devices: [(candidate, FakeBluetoothEntry())],
         backend: backend
       ) { $0.mappings[80] = .value(candidate) }
-      let device = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+      let devices = try requireSelectedDevices(
+        controller.resolveDevices(named: nil, policy: .allOrExact),
+        "the required route/class fixture has one compatible device"
+      )
+      let device = try #require(devices.first, "the required route/class selects one device")
       #expect(device.readAudioOutputSelectionStatus() == scenario.expected,
-            "\(scenario.label) has the required observation")
+              "\(scenario.label) has the required observation")
       #expect(runtime.mappingReads.filter { $0 == 80 }.count == scenario.mappingCalls,
-            "\(scenario.label) does not over-read the private mapper")
+              "\(scenario.label) does not over-read the private mapper")
     }
   }
 
@@ -593,9 +734,13 @@ struct AudioRoutingTests {
       devices: [(candidate, FakeBluetoothEntry())],
       backend: backend
     ) { $0.mappings[90] = .value(mappedWrapper) }
-    let device = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "canonical equality fixture has one compatible device"
+    )
+    let device = try #require(devices.first, "canonical equality selects one device")
     #expect(device.readAudioOutputSelectionStatus() == .selected,
-          "canonical IOBluetooth equality joins distinct system wrappers")
+            "canonical IOBluetooth equality joins distinct system wrappers")
   }
 
   @Test
@@ -615,9 +760,13 @@ struct AudioRoutingTests {
         devices: [(candidate, FakeBluetoothEntry())],
         backend: backend
       ) { $0.mappings[55] = mapping }
-      let device = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+      let devices = try requireSelectedDevices(
+        controller.resolveDevices(named: nil, policy: .allOrExact),
+        "mapper fixture has one compatible device"
+      )
+      let device = try #require(devices.first, "the mapper fixture selects one device")
       #expect(device.readAudioOutputSelectionStatus() == expected,
-            "\(label) has the correct selection observation")
+              "\(label) has the correct selection observation")
     }
   }
 
@@ -640,11 +789,15 @@ struct AudioRoutingTests {
       configureRuntime: { $0.mappings[70] = .value(candidate) },
       activeProbe: probe
     )
-    let device = controller.selectDevices(named: nil, policy: .allOrExact)![0]
+    let devices = try requireSelectedDevices(
+      controller.resolveDevices(named: nil, policy: .allOrExact),
+      "active feature fixture has one compatible device"
+    )
+    let device = try #require(devices.first, "the active feature fixture selects one device")
     #expect(device.readListeningModeStatus().value == .transparency,
-          "an exact active join preserves the AV listening-mode read")
+            "an exact active join preserves the AV listening-mode read")
     #expect(device.readConversationAwarenessStatus().value == true,
-          "an exact active join preserves the AV Conversation Awareness read")
+            "an exact active join preserves the AV Conversation Awareness read")
     #expect(probe.captureCount == 1, "active endpoint enrichment is cached")
 
     let wrongProbe = FakeActiveAudioEndpointProbe(
@@ -656,11 +809,18 @@ struct AudioRoutingTests {
       configureRuntime: { $0.mappings[70] = .value(candidate) },
       activeProbe: wrongProbe
     )
-    let wrongDevice = wrongController.selectDevices(named: nil, policy: .allOrExact)![0]
+    let wrongDevices = try requireSelectedDevices(
+      wrongController.resolveDevices(named: nil, policy: .allOrExact),
+      "wrong-device feature fixture has one compatible device"
+    )
+    let wrongDevice = try #require(
+      wrongDevices.first,
+      "the wrong-device feature fixture selects one device"
+    )
     #expect(wrongDevice.readListeningModeStatus().value == .noiseCancellation,
-          "a wrong-device enrichment falls back to exact IOBluetooth mode state")
+            "a wrong-device enrichment falls back to exact IOBluetooth mode state")
     #expect(wrongDevice.readConversationAwarenessStatus().isUnresolved,
-          "a wrong-device enrichment cannot attribute Conversation Awareness")
+            "a wrong-device enrichment cannot attribute Conversation Awareness")
   }
 }
 

@@ -7,6 +7,8 @@ trap 'rm -rf "$PROBE_DIR"' EXIT HUP INT TERM
 
 SWIFTC=${SWIFTC:-swiftc}
 "$SWIFTC" \
+  -swift-version 5 \
+  -warnings-as-errors \
   -module-cache-path "$PROBE_DIR/module-cache" \
   -o "$PROBE_DIR/output-contract" \
   "$ROOT/Sources/AirPodsControl/CLIOutput.swift" \

@@ -35,3 +35,6 @@ jobs:
           swiftformat --version
           rumdl --version
           mise run format-check
+
+      - name: Check Swift lint
+        run: mise run swift-lint

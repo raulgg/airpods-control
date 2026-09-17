@@ -308,7 +308,7 @@ struct ListeningModeCoordinatorAllowOffTests {
     let ordinaryPlan = ListeningModeWritePlan(
       transport: ordinaryHAL,
       availableModes: [.off],
-      allowOffAuthorization: .live(cache: nil, record: nil)
+      offPermission: .authorized(.live(cache: nil, record: nil))
     )
     #expect(
       !ordinaryPlan.canWrite(.off),

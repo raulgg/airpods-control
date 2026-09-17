@@ -2,28 +2,30 @@ struct ListeningModeWritePlan {
   private let transport: any ListeningModeTransport
   private let allowOffTransport: (any ListeningModeAllowOffTransport)?
   private let availableModes: [ListeningMode]
-  private let allowOffAuthorization: ListeningModeAllowOffAuthorization?
-  private let allowsOffProbe: Bool
+  private let offPermission: ListeningModeOffPermission?
   private let allowOffCorrelation: ListeningModeAllowOffCorrelation?
   private let authorizesHALOff: Bool
 
   init(
     transport: any ListeningModeTransport,
     availableModes: [ListeningMode],
-    allowOffAuthorization: ListeningModeAllowOffAuthorization?,
-    allowsOffProbe: Bool = false,
+    offPermission: ListeningModeOffPermission?,
     allowOffCorrelation: ListeningModeAllowOffCorrelation? = nil
   ) {
     let allowOffTransport = transport as? any ListeningModeAllowOffTransport
     self.transport = transport
     self.allowOffTransport = allowOffTransport
     self.availableModes = availableModes
-    self.allowOffAuthorization = allowOffAuthorization
-    self.allowsOffProbe = allowsOffProbe
+    self.offPermission = offPermission
     self.allowOffCorrelation = allowOffCorrelation
+    let permitsOff: Bool
+    switch offPermission {
+    case .authorized, .probe: permitsOff = true
+    case .none: permitsOff = false
+    }
     authorizesHALOff = transport.listeningModeTransportKind == .hal
       && allowOffTransport != nil
-      && (allowOffAuthorization != nil || allowsOffProbe)
+      && permitsOff
   }
 
   func canWrite(_ target: ListeningMode) -> Bool {
@@ -37,7 +39,7 @@ struct ListeningModeWritePlan {
   func execute(_ target: ListeningMode) -> ListeningModeWriteResolution {
     precondition(canWrite(target), "write plan cannot execute an unavailable mode")
     let observation: DeviceWriteObservation<ListeningMode>
-    let isProbe = target == .off && allowsOffProbe && allowOffAuthorization == nil
+    let isProbe = target == .off && isProbePermission
     let observedAt = target == .off
       ? allowOffCorrelation?.captureObservationTime()
       : nil
@@ -67,12 +69,12 @@ struct ListeningModeWritePlan {
       }
     }
     if target == .off,
-      allowOffAuthorization != nil,
-      observation.setterAccepted,
-      let observed = observation.observed,
-      observed != .off
+       case let .authorized(authorization)? = offPermission,
+       observation.setterAccepted,
+       let observed = observation.observed,
+       observed != .off
     {
-      allowOffAuthorization?.invalidate()
+      authorization.invalidate()
     }
     return resolveListeningModeWrite(
       requested: target,
@@ -82,5 +84,12 @@ struct ListeningModeWritePlan {
         && !authorizesHALOff,
       probeDenied: probeDenied
     )
+  }
+
+  private var isProbePermission: Bool {
+    switch offPermission {
+    case .probe: return true
+    case .authorized, .none: return false
+    }
   }
 }

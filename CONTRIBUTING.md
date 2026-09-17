@@ -59,7 +59,10 @@ make test
 `make test` builds both architectures when the installed toolchain supports
 them. It then runs the shell CLI contract tests, the C signal-monitor race test,
 and the Swift unit tests. Tests must not require AirPods or write device
-settings.
+settings. Production Swift is compiled in Swift 5 mode with warnings treated
+as errors. The SwiftPM package remains in Swift 5 mode and applies the same
+warnings-as-errors check to its test targets. Production C and the signal
+monitor race test compile with `-Wall -Wextra -Wpedantic -Werror`.
 
 For runtime-bypass changes, launch the built CLI and confirm the interpose
 reports active. This stays out of `make test` because it depends on the
@@ -104,6 +107,8 @@ device or capability status.
 - `Tests/AirPodsControlTests` mirrors the Swift module's interfaces.
   All Swift tests and their helpers live directly in this folder and use
   Swift Testing.
+- `Tests/CLIOutputTests` compiles a small device-free Swift fixture to check
+  CLI output contracts.
 - `Tests/CLIContractTests` verifies the built executable's output and exit
   codes.
 - `Tests/SignalMonitorTests` verifies cross-thread signal teardown directly in
@@ -120,6 +125,25 @@ The names follow Swift target conventions. The Makefile is the source of
 truth for builds: it compiles architectures the toolchain supports, ad-hoc
 signs both artifacts, and installs them together.
 
+### Contributor ownership
+
+Keep changes with the layer that owns them:
+
+- Runtime adapters and system API calls live in `PrivateAudio.swift`,
+  `IOBluetoothAudio.swift`, `IOBluetoothInventory.swift`,
+  `CoreAudioRoutingBackend.swift`, and `HALListeningModeTransport.swift`.
+- `AudioRouting.swift` owns route contracts and observation.
+- `ListeningModeCoordinator.swift` owns provider selection and session assembly.
+- `BluetoothListeningModeMapping.swift` owns shared numeric values.
+- `CLIOutput.swift` owns serialization.
+- `ListeningModePreflight.swift` owns pure availability and cycle policy.
+- `ListeningModeAllowOffCache.swift` owns the cache facade;
+  `ListeningModeAllowOffCachePolicy.swift` owns evidence decisions; and
+  `ListeningModeAllowOffCacheStorage.swift` owns persistence and file I/O.
+
+Files this list does not name follow the same rule: keep a change in the
+file that already owns its concern.
+
 ### Formatting
 
 `mise install` installs the formatter versions pinned in `mise.toml`.
@@ -127,19 +151,24 @@ signs both artifacts, and installs them together.
 ```sh
 mise run format-check
 mise run format
+mise run swift-lint
 ```
 
 These aggregate tasks check or format Swift and Markdown. SwiftFormat covers
-`Package.swift`, `Sources/AirPodsControl`, and `Tests/AirPodsControlTests`, and
-skips generated files. The rules normalize line endings, ensure a final
-newline, and remove trailing whitespace. They keep two-space indentation.
+`Package.swift`, `Sources/AirPodsControl`, `Tests/AirPodsControlTests`, and
+`Tests/CLIOutputTests`, and skips generated files. The rules normalize line
+endings, ensure a final newline, and remove trailing whitespace. They keep
+two-space indentation.
+`swift-lint` runs SwiftFormat's pinned `unusedArguments` check separately and
+reports unused closure arguments without rewriting protocol or
+Objective-C-facing declarations.
 
 Use `mise run markdown-check` or `mise run markdown-format` when working on
 Markdown only.
 
 Keep formatter upgrades and whitespace cleanup separate from behavior changes.
-Run `make test` after formatting. CI checks formatting on pull requests and
-pushes to `main`.
+Run `make test` after formatting. CI checks formatting and the Swift lint task
+on pull requests and pushes to `main`.
 
 Each local clone needs its own Git hook installation. After cloning the
 repository, run:
@@ -169,6 +198,8 @@ format and check Markdown.
   and `revert` titles appear in those notes. Other types, including `ci`,
   `chore`, `test`, and `docs`, do not. Retitle a GitHub revert pull request
   to `revert:` and say what the wearer loses.
+- Use `chore:` for formatter-only pull requests; `style:` is unsupported by the
+  PR title check.
 - Fill the pull request template. Do not wrap the description to 80 columns.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.

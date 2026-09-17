@@ -38,10 +38,10 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     let deniedAt = denialEvidence[key]
     lock.unlock()
     if let negativeObservedAt,
-      negativeObservedAt >= observedAt ?? .distantPast,
-      let deniedAt,
-      deniedAt >= negativeObservedAt,
-      let evidence = usableEvidence(observedAt: deniedAt)
+       negativeObservedAt >= observedAt ?? .distantPast,
+       let deniedAt,
+       deniedAt >= negativeObservedAt,
+       let evidence = usableEvidence(observedAt: deniedAt)
     {
       return .denied(AllowOffCacheRecord(evidence: evidence, key: key))
     }
@@ -69,7 +69,7 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         return .unchanged
       }
       guard existingNegative ?? .distantPast < observedAt,
-        existingPositive ?? .distantPast < observedAt
+            existingPositive ?? .distantPast < observedAt
       else { return .unchanged }
       negativeEvidence.removeValue(forKey: key)
       positiveEvidence[key] = observedAt
@@ -79,10 +79,10 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
         existingPositive: existingPositive
       )
       guard existingPositive ?? .distantPast <= effectiveObservedAt,
-        existingNegative ?? .distantPast < effectiveObservedAt
+            existingNegative ?? .distantPast < effectiveObservedAt
       else {
         guard existingNegative != nil,
-          denialEvidence[key] ?? .distantPast < effectiveObservedAt
+              denialEvidence[key] ?? .distantPast < effectiveObservedAt
         else {
           return .unchanged
         }
@@ -111,13 +111,13 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       existingPositive: positiveEvidence[key]
     )
     if let deniedAt = denialEvidence[key],
-      usableEvidence(observedAt: deniedAt) != nil,
-      positiveEvidence[key] ?? .distantPast <= deniedAt
+       usableEvidence(observedAt: deniedAt) != nil,
+       positiveEvidence[key] ?? .distantPast <= deniedAt
     {
       return .unchanged
     }
     guard positiveEvidence[key] ?? .distantPast <= effectiveObservedAt,
-      negativeEvidence[key] ?? .distantPast < effectiveObservedAt
+          negativeEvidence[key] ?? .distantPast < effectiveObservedAt
     else { return .unchanged }
     positiveEvidence.removeValue(forKey: key)
     negativeEvidence[key] = effectiveObservedAt
@@ -128,7 +128,7 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     lock.lock()
     defer { lock.unlock() }
     guard let observedAt = positiveEvidence[record.key],
-      observedAt == record.evidence.observedAt
+          observedAt == record.evidence.observedAt
     else { return .unchanged }
     positiveEvidence.removeValue(forKey: record.key)
     return .applied
@@ -141,7 +141,7 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     guard let existingPositive else { return observedAt }
     let current = now()
     guard current.timeIntervalSince1970.isFinite,
-      current >= existingPositive
+          current >= existingPositive
     else {
       return existingPositive
     }
@@ -163,8 +163,8 @@ final class InMemoryListeningModeAllowOffCache: ListeningModeAllowOffCaching {
 
 private func testDigestKey(salt: Data, rawDeviceUID: String) -> String? {
   guard salt.count == testAllowOffCacheSaltByteCount,
-    !rawDeviceUID.isEmpty,
-    rawDeviceUID.utf8.count <= testAllowOffCacheMaximumRawUIDByteCount
+        !rawDeviceUID.isEmpty,
+        rawDeviceUID.utf8.count <= testAllowOffCacheMaximumRawUIDByteCount
   else { return nil }
   var hasher = SHA256()
   hasher.update(data: salt)

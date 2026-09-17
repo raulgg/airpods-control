@@ -23,8 +23,8 @@ Use the matrix below to track compatibility per device and capability.
 | One-earbud discovery and control | Verified | Pending | Pending | Exploratory |
 | `status` | Pending | Pending | Pending | Exploratory |
 | Left/right ear placement | Pending | Pending | Pending | Exploratory |
-| Selected audio output observation | Pending | Pending | Pending | Exploratory |
-| Selected audio input observation | Pending | Pending | Pending | Exploratory |
+| Selected audio output observation | Verified | Pending | Pending | Exploratory |
+| Selected audio input observation | Verified | Pending | Pending | Exploratory |
 | `listening-mode get` | Verified | Verified | Pending | Exploratory |
 | `listening-mode list` | Verified | Verified | Pending | Exploratory |
 | `listening-mode set` | Verified | Verified | Pending | Exploratory |
