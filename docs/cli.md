@@ -1,6 +1,7 @@
 # CLI reference
 
-This is the complete `airpods-control` command-line reference. See the
+AirPods and Beats, controlled from your macOS terminal. This is the complete
+`airpods-control` command-line reference. See the
 [project README](../README.md) for installation and a shorter introduction.
 
 ## Synopsis

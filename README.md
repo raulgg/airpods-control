@@ -4,7 +4,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/airpods-control-banner-dark.png">
     <source media="(prefers-color-scheme: light)" srcset=".github/assets/airpods-control-banner-light.png">
-    <img alt="airpods-control: AirPods controls, straight from your terminal." src=".github/assets/airpods-control-banner-light.png" width="100%">
+    <img alt="pods-control: AirPods and Beats, controlled from your macOS terminal." src=".github/assets/airpods-control-banner-light.png" width="100%">
   </picture>
 </p>
 
@@ -17,8 +17,14 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e5aff?style=flat-square"></a>
 </p>
 
-Control AirPods listening modes and Conversation Awareness from the command line
-without Control Center, a menu bar app, or Accessibility permission.
+`airpods-control` is a command-line tool for **macOS only**. It reads and sets
+listening mode (`off`, `transparency`, `adaptive`, `noise-cancellation`) and
+Conversation Awareness on connected AirPods and Beats headphones from the
+terminal, scripts, hotkeys, Stream Deck, Shortcuts, or `launchd`.
+
+It talks to private macOS audio interfaces. It does not use Control Center, a
+menu bar app, or Accessibility. It does not run on iOS, iPadOS, Windows, Linux,
+or Android.
 
 ```console
 $ airpods-control status
@@ -33,11 +39,10 @@ $ airpods-control listening-mode set noise-cancellation
 ok
 ```
 
-`airpods-control` talks directly to private macOS audio interfaces used by
-AirPods. A successful write means the selected macOS provider reports the
-requested state within a bounded readback window; it is not a direct accessory
-acknowledgement. Each operational command performs one operation and exits
-without polling in the background or automating the UI.
+A successful write means the selected macOS provider reports the requested
+state within a bounded readback window; it is not a direct accessory
+acknowledgement. Each operational command performs one operation and exits.
+The CLI does not poll in the background or automate the UI.
 
 ## Features
 
@@ -55,7 +60,8 @@ without polling in the background or automating the UI.
 
 ## Requirements
 
-- macOS (developed and tested on Tahoe 26).
+- **macOS only** (developed and tested on Tahoe 26). Not iOS, Windows, Linux,
+  or Android.
 - A compatible AirPods or Beats device connected over Bluetooth. Operational
   listening-mode commands can use either the selected private AV output-device
   interface or an eligible mapped Core Audio HAL output endpoint. Conversation
@@ -295,8 +301,9 @@ rules, verdict vocabulary, restoration behavior, and exit codes.
 [NoiseBuddy](https://github.com/insidegui/NoiseBuddy) by Guilherme Rambo
 documented the AVFoundation technique used by this project.
 
-`airpods-control` is an independent tool and is not endorsed by Apple. AirPods
-and AirPods Pro are trademarks of Apple Inc.
+`airpods-control` is an independent macOS tool and is not endorsed by Apple.
+AirPods and AirPods Pro are trademarks of Apple Inc. Beats is a trademark of
+Beats Electronics, LLC.
 
 ## License
 

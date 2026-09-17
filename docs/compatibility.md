@@ -1,8 +1,9 @@
 # Device compatibility
 
-Support can vary by device, firmware, and macOS version. This project uses a
-private Apple API that Apple does not document, so a product name alone cannot
-tell us whether every command will work.
+`airpods-control` is a macOS CLI. Support can vary by device, firmware, and
+macOS version. This project uses a private Apple API that Apple does not
+document, so a product name alone cannot tell us whether every command will
+work. It does not run on iOS, Windows, Linux, or Android.
 
 Use the matrix below to track compatibility per device and capability.
 

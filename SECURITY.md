@@ -1,10 +1,10 @@
 # Security
 
-`airpods-control` uses a small interpose library to make one private entitlement
-appear present inside its own process. This gives the process access to a
-private Apple audio API without granting privileges outside it. The project
-installs by compiling source on the user's Mac, either through Homebrew or
-`make install`.
+`airpods-control` is a macOS CLI. It uses a small interpose library to make one
+private entitlement appear present inside its own process. This gives the
+process access to a private Apple audio API without granting privileges outside
+it. The project installs by compiling source on the user's Mac, either through
+Homebrew or `make install`.
 
 ## What the interpose does
 
