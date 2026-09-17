@@ -156,8 +156,12 @@ func bootstrapAndResolveListeningMode(
       from: outputContext,
       logger: logger
     )
-    avDevices = PrivateAudioController(endpoints: endpoints, logger: logger)
-      .selectDevices(named: nil, policy: .allOrExact) ?? []
+    switch PrivateAudioController(endpoints: endpoints, logger: logger)
+      .resolveDevices(named: nil, policy: .allOrExact)
+    {
+    case let .selected(devices): avDevices = devices
+    case .noDevice, .ambiguousDevice: avDevices = []
+    }
   } else {
     avDevices = []
   }

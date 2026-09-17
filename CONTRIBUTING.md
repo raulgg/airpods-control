@@ -125,6 +125,25 @@ The names follow Swift target conventions. The Makefile is the source of
 truth for builds: it compiles architectures the toolchain supports, ad-hoc
 signs both artifacts, and installs them together.
 
+### Contributor ownership
+
+Keep changes with the layer that owns them:
+
+- Runtime adapters and system API calls live in `PrivateAudio.swift`,
+  `IOBluetoothAudio.swift`, `IOBluetoothInventory.swift`,
+  `CoreAudioRoutingBackend.swift`, and `HALListeningModeTransport.swift`.
+- `AudioRouting.swift` owns route contracts and observation.
+- `ListeningModeCoordinator.swift` owns provider selection and session assembly.
+- `BluetoothListeningModeMapping.swift` owns shared numeric values.
+- `CLIOutput.swift` owns serialization.
+- `ListeningModePreflight.swift` owns pure availability and cycle policy.
+- `ListeningModeAllowOffCache.swift` owns the cache facade;
+  `ListeningModeAllowOffCachePolicy.swift` owns evidence decisions; and
+  `ListeningModeAllowOffCacheStorage.swift` owns persistence and file I/O.
+
+Files this list does not name follow the same rule: keep a change in the
+file that already owns its concern.
+
 ### Formatting
 
 `mise install` installs the formatter versions pinned in `mise.toml`.
@@ -179,6 +198,8 @@ format and check Markdown.
   and `revert` titles appear in those notes. Other types, including `ci`,
   `chore`, `test`, and `docs`, do not. Retitle a GitHub revert pull request
   to `revert:` and say what the wearer loses.
+- Use `chore:` for formatter-only pull requests; `style:` is unsupported by the
+  PR title check.
 - Fill the pull request template. Do not wrap the description to 80 columns.
 - Keep changes focused and explain the user-visible reason for them.
 - Add or update tests for behavior changes.

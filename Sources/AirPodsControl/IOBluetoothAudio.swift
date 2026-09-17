@@ -232,7 +232,7 @@ final class IOBluetoothStatusDevice: AudioDeviceStatusReading {
     }
 
     if case let .value(rawMode) = runtime.listeningMode(object),
-       let mode = bluetoothModeByRawValue[UInt32(rawMode)]
+       let mode = BluetoothListeningModeMapping.modeByRawValue[UInt32(rawMode)]
     {
       return .value(mode)
     }
@@ -420,17 +420,6 @@ final class IOBluetoothStatusController {
         allowOffCorrelation: binding.allowOffCorrelation
       )
     }
-  }
-
-  func selectDevices(
-    named requestedName: String?,
-    policy: DeviceSelectionPolicy
-  ) -> [IOBluetoothStatusDevice]? {
-    guard case let .selected(devices) = resolveDevices(
-      named: requestedName,
-      policy: policy
-    ) else { return nil }
-    return devices
   }
 
   func resolveDevices(
