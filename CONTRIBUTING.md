@@ -124,8 +124,8 @@ device or capability status.
 - `Tests/ResolvePrefixTests` verifies install-prefix path rules.
 - `Tests/InstallFromSourceTests` verifies the source install script.
 - `Tests/VerifyRuntimeTests` verifies the DYLD interpose on a built CLI.
-- Script unit tests sit next to the script as `name.test.sh`. Tests that
-  need a built CLI, extra sources, or fixtures stay under `Tests/`.
+- Script tests live in `scripts/test/`. `Tests/` is the product suite
+  (Swift, C, and the built CLI).
 - `version.txt` is the single source for the CLI and release version. The
   Makefile generates the corresponding Swift constant under `build/`.
 
