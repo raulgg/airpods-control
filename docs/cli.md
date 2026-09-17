@@ -1,7 +1,6 @@
 # CLI reference
 
-AirPods and Beats, controlled from your macOS terminal. This is the complete
-`airpods-control` command-line reference. See the
+This is the complete `airpods-control` command-line reference. See the
 [project README](../README.md) for installation and a shorter introduction.
 
 ## Synopsis
@@ -716,7 +715,7 @@ example, this mixed scan still succeeds:
     {
       "conversationAwareness": null,
       "device": "My AirPods Pro",
-      "errors": {"conversationAwareness": "read-error"},
+      "errors": { "conversationAwareness": "read-error" },
       "isSelectedAudioInput": false,
       "isSelectedAudioOutput": true,
       "listeningMode": "transparency"
@@ -736,7 +735,7 @@ If every selected device produces only genuine read errors, the same records are
 returned with `"error":"read-error"`, `"result":"error"`, and exit `5`:
 
 ```json
-{"devices":[{"conversationAwareness":null,"device":"My AirPods Pro","errors":{"conversationAwareness":"read-error","isSelectedAudioInput":"read-error","isSelectedAudioOutput":"read-error","listeningMode":"read-error"},"isSelectedAudioInput":null,"isSelectedAudioOutput":null,"listeningMode":null}],"error":"read-error","result":"error"}
+{ "devices": [{ "conversationAwareness": null, "device": "My AirPods Pro", "errors": { "conversationAwareness": "read-error", "isSelectedAudioInput": "read-error", "isSelectedAudioOutput": "read-error", "listeningMode": "read-error" }, "isSelectedAudioInput": null, "isSelectedAudioOutput": null, "listeningMode": null }], "error": "read-error", "result": "error" }
 ```
 
 With no compatible device, status JSON is exactly
@@ -813,17 +812,17 @@ cycle target.
 
 Every normal code has one command-independent meaning:
 
-| Code | Terminal reason | Meaning |
-| ---: | --- | --- |
-| `0` | `success` | The command fulfilled its primary contract without violating a safety invariant. |
-| `1` | `no-device` | No target resolved under the command's device contract. |
-| `2` | `bad-args` | Arguments are missing or malformed. |
-| `3` | `no-op` | A setter accepted the request, but the requested feature state was not verified and no required final-state invariant remains unresolved. |
-| `4` | `unsupported` | Affirmative target-specific evidence excludes the requested operation. |
-| `5` | `read-error` | A primary information read failed without producing a usable result. |
-| `6` | `unavailable` | A required provider, prerequisite, capability inventory, or control path cannot currently be established or accessed. |
-| `7` | `state-uncertain` | Side effects occurred and a required final device state cannot be confirmed. |
-| `8` | `ambiguous-device` | Multiple candidates remain for a command that requires one target. |
+| Code | Terminal reason    | Meaning                                                                                                                                   |
+| ---: | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+|  `0` | `success`          | The command fulfilled its primary contract without violating a safety invariant.                                                          |
+|  `1` | `no-device`        | No target resolved under the command's device contract.                                                                                   |
+|  `2` | `bad-args`         | Arguments are missing or malformed.                                                                                                       |
+|  `3` | `no-op`            | A setter accepted the request, but the requested feature state was not verified and no required final-state invariant remains unresolved. |
+|  `4` | `unsupported`      | Affirmative target-specific evidence excludes the requested operation.                                                                    |
+|  `5` | `read-error`       | A primary information read failed without producing a usable result.                                                                      |
+|  `6` | `unavailable`      | A required provider, prerequisite, capability inventory, or control path cannot currently be established or accessed.                     |
+|  `7` | `state-uncertain`  | Side effects occurred and a required final device state cannot be confirmed.                                                              |
+|  `8` | `ambiguous-device` | Multiple candidates remain for a command that requires one target.                                                                        |
 
 Caught Unix signals are typed separately and retain `128 + signal`. The current
 support-report write-test path catches SIGHUP (`129`), SIGINT (`130`), and
@@ -836,15 +835,15 @@ handled contract.
 These are the normal terminal reasons each command can produce after parsing;
 all commands may also produce `bad-args` during parsing.
 
-| Command | Normal terminal reasons after parsing |
-| --- | --- |
-| Help and version | `success` |
-| `listening-mode get`, `list` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error` |
-| `listening-mode set`, `cycle` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable` |
-| `conversation-awareness get` | `success`, `no-device`, `ambiguous-device`, `unsupported`, `unavailable`, `read-error` |
-| `conversation-awareness set` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable` |
-| `status` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error` |
-| `support-report` | `success`, `no-device`, `ambiguous-device`, `unavailable`, `state-uncertain` |
+| Command                       | Normal terminal reasons after parsing                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| Help and version              | `success`                                                                              |
+| `listening-mode get`, `list`  | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error`                |
+| `listening-mode set`, `cycle` | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable`      |
+| `conversation-awareness get`  | `success`, `no-device`, `ambiguous-device`, `unsupported`, `unavailable`, `read-error` |
+| `conversation-awareness set`  | `success`, `no-device`, `ambiguous-device`, `no-op`, `unsupported`, `unavailable`      |
+| `status`                      | `success`, `no-device`, `ambiguous-device`, `unavailable`, `read-error`                |
+| `support-report`              | `success`, `no-device`, `ambiguous-device`, `unavailable`, `state-uncertain`           |
 
 Only `support-report` currently adds caught-signal outcomes while running
 write tests. The table lists the normal terminal reasons reachable after
@@ -855,20 +854,20 @@ parsing.
 This consolidation is a breaking scripting-contract change even though most
 numbers stay fixed:
 
-| Previous outcome | Previous code | Consolidated outcome | Code |
-| --- | ---: | --- | ---: |
-| Successful command | `0` | `success` | `0` |
-| No target | `1` | `no-device` | `1` |
-| Ambiguous target | `1` | `ambiguous-device` | `8` |
-| Chooser declined (`cancelled`) | `1` | `ambiguous-device` | `8` |
-| Unidentified support-report product | `1` | Successful partial report | `0` |
-| Malformed arguments | `2` | `bad-args` | `2` |
-| Accepted, unverified feature write | `3` | `no-op` | `3` |
-| Support-report restoration not verified | `3` | `state-uncertain` | `7` |
-| Proven unsupported operation | `4` | `unsupported` | `4` |
-| Failed primary read | `5` | `read-error` | `5` |
-| Missing provider or control path | `6` | `unavailable` | `6` |
-| Caught signal | `128 + signal` | Caught signal | `128 + signal` |
+| Previous outcome                        |  Previous code | Consolidated outcome      |           Code |
+| --------------------------------------- | -------------: | ------------------------- | -------------: |
+| Successful command                      |            `0` | `success`                 |            `0` |
+| No target                               |            `1` | `no-device`               |            `1` |
+| Ambiguous target                        |            `1` | `ambiguous-device`        |            `8` |
+| Chooser declined (`cancelled`)          |            `1` | `ambiguous-device`        |            `8` |
+| Unidentified support-report product     |            `1` | Successful partial report |            `0` |
+| Malformed arguments                     |            `2` | `bad-args`                |            `2` |
+| Accepted, unverified feature write      |            `3` | `no-op`                   |            `3` |
+| Support-report restoration not verified |            `3` | `state-uncertain`         |            `7` |
+| Proven unsupported operation            |            `4` | `unsupported`             |            `4` |
+| Failed primary read                     |            `5` | `read-error`              |            `5` |
+| Missing provider or control path        |            `6` | `unavailable`             |            `6` |
+| Caught signal                           | `128 + signal` | Caught signal             | `128 + signal` |
 
 Individual-resource plain failures use canonical tokens. `status` retains its
 headed records and detailed failure guidance; `support-report` retains its

@@ -19,11 +19,8 @@
 
 `airpods-control` is a command-line tool for **macOS only**. It reads and sets
 listening mode (`off`, `transparency`, `adaptive`, `noise-cancellation`) and
-Conversation Awareness on connected AirPods and Beats headphones from the
-terminal, scripts, hotkeys, Stream Deck, Shortcuts, or `launchd`.
-
-It talks to private macOS audio interfaces. It does not use Control Center, a
-menu bar app, or Accessibility.
+Conversation Awareness on connected compatible AirPods and Beats headphones from the
+terminal.
 
 ```console
 $ airpods-control status
