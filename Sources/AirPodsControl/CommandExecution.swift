@@ -125,8 +125,10 @@ enum CommandExecution {
       )
 
     case .cycle(let requested):
-      let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
-      let cycleModes = base.filter { session.availableModes.contains($0) }
+      let cycleModes = ListeningModeCyclePolicy.supportedModes(
+        requested: requested,
+        available: session.availableModes
+      )
       guard let writePlan = session.writePlan else {
         return listeningModeFailureOutcome(.unavailable, session: session)
       }
