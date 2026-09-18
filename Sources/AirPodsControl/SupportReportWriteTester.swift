@@ -1,216 +1,26 @@
 // Consented write tests for support-report. Each test uses the same bounded
-// write-and-readback machinery as the operational commands. Listening modes
-// are probed in reverse canonical order so an Off fallback to Transparency
-// cannot precede the Transparency write. Restoration still runs last when
-// the device is not already in the captured initial mode.
+// write-and-readback machinery as the operational commands. Restoration still
+// runs last when the device is not already in the captured initial mode.
 
 import Darwin
 import Foundation
-import SignalMonitor
 
-final class SupportReportTerminationMonitor {
-  private var isDisarmed = false
-  private var disarmedSignal: Int32?
+private final class InterruptionLatch {
+  private var latched: Int32?
 
-  init?() {
-    guard airpods_control_signal_monitor_install() == 0 else { return nil }
-  }
-
-  var caughtSignal: Int32? {
-    let signalNumber = airpods_control_signal_monitor_caught_signal()
-    return signalNumber == 0 ? nil : signalNumber
-  }
-
-  func disarm() -> Int32? {
-    guard !isDisarmed else { return disarmedSignal }
-    let signalNumber = airpods_control_signal_monitor_disarm()
-    disarmedSignal = signalNumber == 0 ? nil : signalNumber
-    isDisarmed = true
-    return disarmedSignal
-  }
-
-  deinit {
-    _ = disarm()
-  }
-}
-
-struct SupportReportWriteTestPlan {
-  let initialListeningMode: ListeningMode?
-  let listeningModes: [ListeningMode]
-  let modeTestsSkippedReason: String?
-  let initialConversationAwareness: Bool?
-  let conversationAwarenessSkippedReason: String?
-
-  var listeningModeTargets: [ListeningMode] {
-    guard modeTestsSkippedReason == nil, let initialListeningMode else { return [] }
-    // The already-current first probe is the captured initial mode; restoration
-    // demonstrates it later. Keep it when it sits later in the sequence so an
-    // Off fallback cannot skip a real Transparency transition.
-    if listeningModes.first == initialListeningMode {
-      return Array(listeningModes.dropFirst())
-    }
-    return listeningModes
-  }
-
-  var willTestListeningModes: Bool {
-    !listeningModeTargets.isEmpty
-  }
-
-  var willTestConversationAwareness: Bool {
-    conversationAwarenessSkippedReason == nil
-  }
-
-  // Preserves the more specific reasons already recorded by planning.
-  func skippingAll(reason: String) -> SupportReportWriteTestPlan {
-    SupportReportWriteTestPlan(
-      initialListeningMode: initialListeningMode,
-      listeningModes: listeningModes,
-      modeTestsSkippedReason: willTestListeningModes
-        ? reason : modeTestsSkippedReason,
-      initialConversationAwareness: initialConversationAwareness,
-      conversationAwarenessSkippedReason: willTestConversationAwareness
-        ? reason : conversationAwarenessSkippedReason
-    )
-  }
-
-  static func make(device: any CompatibleAudioDevice) -> SupportReportWriteTestPlan {
-    let advertised = Set(device.availableListeningModes())
-    // Off may fall back to Transparency. Probe stronger modes first so that
-    // fallback cannot make the Transparency write already-current.
-    let orderedModes = Array(ListeningMode.allCases.reversed()).filter {
-      advertised.contains($0)
-    }
-    let initialMode = device.currentListeningMode()
-
-    let modeSkipReason: String?
-    if !device.canSetListeningMode() {
-      modeSkipReason = "setter not exposed"
-    } else if orderedModes.isEmpty {
-      modeSkipReason = "no recognized advertised modes"
-    } else if initialMode == nil {
-      modeSkipReason = "initial state unreadable, nothing written"
-    } else if let initialMode, !advertised.contains(initialMode) {
-      modeSkipReason = "initial mode is not advertised, nothing written"
-    } else if let initialMode,
-              !orderedModes.contains(where: { $0 != initialMode })
-    {
-      modeSkipReason = "no alternate recognized advertised modes"
-    } else {
-      modeSkipReason = nil
-    }
-
-    let initialCA = device.conversationAwarenessState()
-    let caSkipReason: String?
-    switch device.supportsConversationAwareness() {
-    case .some(false):
-      caSkipReason = "not supported"
-    case .none:
-      caSkipReason = "capability unavailable"
-    case .some(true):
-      if !device.canSetConversationAwareness() {
-        caSkipReason = "setter not exposed"
-      } else if initialCA == nil {
-        caSkipReason = "initial state unreadable, nothing written"
-      } else {
-        caSkipReason = nil
+  // The nil-to-signal transition is unique, so the notice is written exactly
+  // once, before any restoration write that follows.
+  func observe(
+    interruptionSignal: () -> Int32?,
+    announce: (Int32) -> Void
+  ) -> Int32? {
+    if latched == nil {
+      latched = interruptionSignal()
+      if let latched {
+        announce(latched)
       }
     }
-
-    return SupportReportWriteTestPlan(
-      initialListeningMode: initialMode,
-      listeningModes: orderedModes,
-      modeTestsSkippedReason: modeSkipReason,
-      initialConversationAwareness: initialCA,
-      conversationAwarenessSkippedReason: caSkipReason
-    )
-  }
-}
-
-struct WriteAttempt<State: Equatable> {
-  let setterAccepted: Bool
-  let verified: Bool
-  let observed: State?
-}
-
-extension WriteAttempt {
-  init(requested: State, observation: DeviceWriteObservation<State>) {
-    self.init(
-      setterAccepted: observation.setterAccepted,
-      verified: observation.observed == requested,
-      observed: observation.observed
-    )
-  }
-}
-
-enum CapabilityWriteTestOutcome<Run> {
-  case skipped(reason: String)
-  case ran(Run)
-}
-
-enum RestorationOutcome<Attempt> {
-  // No restoration write ran because the device already held the initial
-  // mode. Earlier probes may still have changed state and returned here.
-  case stateNeverChanged
-  case attempted(Attempt)
-}
-
-struct SupportReportWriteTestResults {
-  struct ListeningModeTest {
-    let mode: ListeningMode
-    let write: WriteAttempt<ListeningMode>
-    // The state read immediately before this write already equaled the
-    // target (for example after an earlier write landed on this mode), so a
-    // matching readback demonstrates no transition.
-    let targetAlreadyCurrent: Bool
-    let inferredOffFallback: Bool
-  }
-
-  struct ListeningModeTestRun {
-    let tests: [ListeningModeTest]
-    let stoppedAfterSetterError: Bool
-    // Restoration is skipped when the device already holds the initial mode.
-    // That leaves the initial mode undemonstrated unless an earlier probe
-    // already showed a real transition into it.
-    let restoration: RestorationOutcome<ListeningModeTest>
-    let initialMode: ListeningMode
-    let finalMode: ListeningMode?
-    let restored: Bool
-  }
-
-  struct ConversationAwarenessTestRun {
-    let toggle: WriteAttempt<Bool>
-    let restoration: RestorationOutcome<WriteAttempt<Bool>>
-    let finalState: Bool?
-    let restored: Bool
-  }
-
-  let listeningModes: CapabilityWriteTestOutcome<ListeningModeTestRun>
-  let conversationAwareness: CapabilityWriteTestOutcome<ConversationAwarenessTestRun>
-  let interruptedBySignal: Int32?
-
-  var fullyRestored: Bool {
-    Self.restored(listeningModes, \.restored)
-      && Self.restored(conversationAwareness, \.restored)
-  }
-
-  // A skipped capability wrote nothing, so it cannot fail restoration.
-  private static func restored<Run>(
-    _ outcome: CapabilityWriteTestOutcome<Run>,
-    _ restored: (Run) -> Bool
-  ) -> Bool {
-    switch outcome {
-    case .skipped: return true
-    case let .ran(run): return restored(run)
-    }
-  }
-
-  func recordingLateSignal(_ signalNumber: Int32?) -> SupportReportWriteTestResults {
-    guard interruptedBySignal == nil, let signalNumber else { return self }
-    return SupportReportWriteTestResults(
-      listeningModes: listeningModes,
-      conversationAwareness: conversationAwareness,
-      interruptedBySignal: signalNumber
-    )
+    return latched
   }
 }
 
@@ -260,18 +70,12 @@ enum SupportReportWriteTester {
     writeError: (String) -> Void,
     progress: SupportReportWriteTestProgressReporter
   ) -> SupportReportWriteTestResults {
-    var interruptedBySignal: Int32?
-    // The nil guard makes the nil-to-signal transition unique, so the notice
-    // is written exactly once, before any restoration write that follows.
+    let latch = InterruptionLatch()
     func observeInterruption() -> Int32? {
-      if interruptedBySignal == nil {
-        interruptedBySignal = interruptionSignal()
-        if let interruptedBySignal {
-          progress.interrupted(by: interruptedBySignal)
-          writeError(interruptionNotice)
-        }
+      latch.observe(interruptionSignal: interruptionSignal) { signal in
+        progress.interrupted(by: signal)
+        writeError(interruptionNotice)
       }
-      return interruptedBySignal
     }
 
     let listeningModes = testListeningModes(
@@ -288,11 +92,10 @@ enum SupportReportWriteTester {
     )
     // A signal arriving during the last writes is still latched and
     // announced even though no test remains to observe it.
-    _ = observeInterruption()
     return SupportReportWriteTestResults(
       listeningModes: listeningModes,
       conversationAwareness: conversationAwareness,
-      interruptedBySignal: interruptedBySignal
+      interruptedBySignal: observeInterruption()
     )
   }
 
@@ -398,17 +201,15 @@ enum SupportReportWriteTester {
     let untestedTargets = plan.listeningModeTargets.dropFirst(tests.count)
     progress.skipped(untestedTargets.map { .listeningMode($0) })
 
-    let restoration: RestorationOutcome<SupportReportWriteTestResults.ListeningModeTest>
-    if device.currentListeningMode() != initialMode {
-      progress.started(.listeningModeRestoration)
-      restoration = .attempted(
-        testListeningMode(
-          initialMode, device: device, transparencySupported: transparencySupported
-        )
+    let restoration = restoreIfNeeded(
+      current: device.currentListeningMode(),
+      initial: initialMode,
+      operation: .listeningModeRestoration,
+      progress: progress
+    ) {
+      testListeningMode(
+        initialMode, device: device, transparencySupported: transparencySupported
       )
-    } else {
-      progress.skipped(.listeningModeRestoration)
-      restoration = .stateNeverChanged
     }
     let finalMode = device.currentListeningMode()
     return .ran(
@@ -465,18 +266,16 @@ enum SupportReportWriteTester {
     progress.started(.conversationAwareness)
     let toggled = device.setConversationAwarenessAndReadBack(!initialState)
     _ = observeInterruption()
-    let restoration: RestorationOutcome<WriteAttempt<Bool>>
-    if toggled.observed != initialState {
-      progress.started(.conversationAwarenessRestoration)
-      restoration = .attempted(
-        WriteAttempt(
-          requested: initialState,
-          observation: device.setConversationAwarenessAndReadBack(initialState)
-        )
+    let restoration = restoreIfNeeded(
+      current: toggled.observed,
+      initial: initialState,
+      operation: .conversationAwarenessRestoration,
+      progress: progress
+    ) {
+      WriteAttempt(
+        requested: initialState,
+        observation: device.setConversationAwarenessAndReadBack(initialState)
       )
-    } else {
-      progress.skipped(.conversationAwarenessRestoration)
-      restoration = .stateNeverChanged
     }
     let finalState = device.conversationAwarenessState()
     return .ran(
@@ -487,6 +286,21 @@ enum SupportReportWriteTester {
         restored: finalState == initialState
       )
     )
+  }
+
+  private static func restoreIfNeeded<State: Equatable, Attempt>(
+    current: State?,
+    initial: State,
+    operation: SupportReportWriteTestProgressOperation,
+    progress: SupportReportWriteTestProgressReporter,
+    restore: () -> Attempt
+  ) -> RestorationOutcome<Attempt> {
+    guard current != initial else {
+      progress.skipped(operation)
+      return .stateNeverChanged
+    }
+    progress.started(operation)
+    return .attempted(restore())
   }
 
   private static func testListeningMode(
