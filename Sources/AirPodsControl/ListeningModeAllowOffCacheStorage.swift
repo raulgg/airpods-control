@@ -11,6 +11,7 @@ private let allowOffCacheLockRetryMicroseconds: useconds_t = 10_000
 private let allowOffCacheDenyMarkerPrefix = "allow-off-v1-deny-"
 private let allowOffCacheDenyMarkerSuffix = ".jsonl"
 private let allowOffCacheDenyMarkerMaximumByteCount = 4_096
+private let allowOffCacheReadBufferByteCount = 4_096
 
 private enum AllowOffCacheStorageError: Error {
   case systemFailure
@@ -78,7 +79,7 @@ final class AllowOffCacheFileStorage {
           PersistedAllowOffDenyMarker.self,
           from: Data(line)
         ),
-          marker.observedAt.timeIntervalSince1970.isFinite
+          AllowOffCachePolicy.isFiniteObservationTime(marker.observedAt)
         else { return .invalid }
         if newest == nil || marker.observedAt > newest! {
           newest = marker.observedAt
@@ -110,15 +111,12 @@ final class AllowOffCacheFileStorage {
 
     var value = stat()
     guard fstat(descriptor, &value) == 0,
-          isRegularFile(value),
-          value.st_uid == geteuid(),
-          value.st_nlink == 1,
+          isTrustedOwnedUnsharedRegularFile(value),
           value.st_size >= 0,
           UInt64(value.st_size) + UInt64(line.count)
           <= UInt64(allowOffCacheDenyMarkerMaximumByteCount),
-          fchmod(descriptor, allowOffCacheFilePermissions) == 0,
           writeAll(line, to: descriptor),
-          fsync(descriptor) == 0
+          restrictAndSync(descriptor)
     else { return false }
     do {
       try markExcludedFromBackup(url)
@@ -129,11 +127,34 @@ final class AllowOffCacheFileStorage {
   }
 
   func write(_ document: PersistedAllowOffCache) -> Bool {
+    guard let data = encodedDocument(document),
+          let temporary = openExclusiveTemporaryFile()
+    else { return false }
+
+    var shouldRemoveTemporary = true
+    defer {
+      Darwin.close(temporary.descriptor)
+      if shouldRemoveTemporary { _ = unlinkURL(temporary.url) }
+    }
+
+    guard writeAll(data, to: temporary.descriptor),
+          restrictAndSync(temporary.descriptor)
+    else { return false }
+    return commitTemporaryFile(
+      temporary.url,
+      shouldRemoveTemporary: &shouldRemoveTemporary
+    )
+  }
+
+  private func encodedDocument(_ document: PersistedAllowOffCache) -> Data? {
     guard document.isValid,
           let data = try? AllowOffCacheCodec.makeEncoder().encode(document),
           data.count <= AllowOffCachePolicy.maximumByteCount
-    else { return false }
+    else { return nil }
+    return data
+  }
 
+  private func openExclusiveTemporaryFile() -> (url: URL, descriptor: Int32)? {
     let temporaryURL = directoryURL.appendingPathComponent(
       ".allow-off-v1.\(UUID().uuidString).tmp",
       isDirectory: false
@@ -143,18 +164,14 @@ final class AllowOffCacheFileStorage {
       flags: O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW,
       permissions: allowOffCacheFilePermissions
     )
-    guard descriptor >= 0 else { return false }
+    guard descriptor >= 0 else { return nil }
+    return (temporaryURL, descriptor)
+  }
 
-    var shouldRemoveTemporary = true
-    defer {
-      Darwin.close(descriptor)
-      if shouldRemoveTemporary { _ = unlinkURL(temporaryURL) }
-    }
-
-    guard writeAll(data, to: descriptor),
-          fchmod(descriptor, allowOffCacheFilePermissions) == 0,
-          fsync(descriptor) == 0
-    else { return false }
+  private func commitTemporaryFile(
+    _ temporaryURL: URL,
+    shouldRemoveTemporary: inout Bool
+  ) -> Bool {
     do {
       try markExcludedFromBackup(temporaryURL)
       guard renameURL(temporaryURL, to: fileURL) else { return false }
@@ -239,8 +256,7 @@ final class AllowOffCacheFileStorage {
         attributes: attributes
       )
       guard let status = status(of: directoryURL),
-            isDirectory(status),
-            status.st_uid == geteuid(),
+            isTrustedOwnedDirectory(status),
             chmodURL(directoryURL, permissions: allowOffCacheDirectoryPermissions)
       else { return false }
       try markExcludedFromBackup(directoryURL)
@@ -259,10 +275,8 @@ final class AllowOffCacheFileStorage {
     guard descriptor >= 0 else { return nil }
     var value = stat()
     guard fstat(descriptor, &value) == 0,
-          isRegularFile(value),
-          value.st_uid == geteuid(),
-          value.st_nlink == 1,
-          fchmod(descriptor, allowOffCacheFilePermissions) == 0
+          isTrustedOwnedUnsharedRegularFile(value),
+          restrictAndSync(descriptor)
     else {
       Darwin.close(descriptor)
       return nil
@@ -277,6 +291,12 @@ final class AllowOffCacheFileStorage {
     return descriptor
   }
 
+  private enum PathTrust {
+    case trusted
+    case missing
+    case invalid
+  }
+
   private enum SecureDataRead {
     case value(Data)
     case missing
@@ -284,14 +304,27 @@ final class AllowOffCacheFileStorage {
   }
 
   private func secureRead(_ url: URL) -> SecureDataRead {
+    switch trustedDirectory() {
+    case .missing:
+      return .missing
+    case .invalid:
+      return .invalid
+    case .trusted:
+      return trustedFileContents(url)
+    }
+  }
+
+  private func trustedDirectory() -> PathTrust {
     guard let directoryStatus = status(of: directoryURL) else {
       return errno == ENOENT ? .missing : .invalid
     }
-    guard isDirectory(directoryStatus),
-          directoryStatus.st_uid == geteuid(),
+    guard isTrustedOwnedDirectory(directoryStatus),
           permissionBits(directoryStatus) == allowOffCacheDirectoryPermissions
     else { return .invalid }
+    return .trusted
+  }
 
+  private func trustedFileContents(_ url: URL) -> SecureDataRead {
     let descriptor = openFile(url, flags: O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
     guard descriptor >= 0 else {
       return errno == ENOENT ? .missing : .invalid
@@ -300,17 +333,21 @@ final class AllowOffCacheFileStorage {
 
     var value = stat()
     guard fstat(descriptor, &value) == 0,
-          isRegularFile(value),
-          value.st_uid == geteuid(),
-          value.st_nlink == 1,
+          isTrustedOwnedUnsharedRegularFile(value),
           value.st_size >= 0,
           UInt64(value.st_size) <= UInt64(AllowOffCachePolicy.maximumByteCount),
           permissionBits(value) == allowOffCacheFilePermissions
     else { return .invalid }
+    return boundedContents(from: descriptor, size: value.st_size)
+  }
 
+  private func boundedContents(
+    from descriptor: Int32,
+    size: off_t
+  ) -> SecureDataRead {
     var data = Data()
-    data.reserveCapacity(Int(value.st_size))
-    var buffer = [UInt8](repeating: 0, count: 4_096)
+    data.reserveCapacity(Int(size))
+    var buffer = [UInt8](repeating: 0, count: allowOffCacheReadBufferByteCount)
     while true {
       let count = buffer.withUnsafeMutableBytes { bytes in
         Darwin.read(descriptor, bytes.baseAddress, bytes.count)
@@ -379,6 +416,19 @@ private func isDirectory(_ value: stat) -> Bool {
 
 private func isRegularFile(_ value: stat) -> Bool {
   value.st_mode & S_IFMT == S_IFREG
+}
+
+private func isTrustedOwnedDirectory(_ value: stat) -> Bool {
+  isDirectory(value) && value.st_uid == geteuid()
+}
+
+private func isTrustedOwnedUnsharedRegularFile(_ value: stat) -> Bool {
+  isRegularFile(value) && value.st_uid == geteuid() && value.st_nlink == 1
+}
+
+private func restrictAndSync(_ descriptor: Int32) -> Bool {
+  fchmod(descriptor, allowOffCacheFilePermissions) == 0
+    && fsync(descriptor) == 0
 }
 
 private func permissionBits(_ value: stat) -> mode_t {
