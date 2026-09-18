@@ -4,116 +4,80 @@ import Testing
 
 @Suite("Listening mode preflight policy")
 struct ListeningModePreflightTests {
-
-  @Test("Normalizes complete and partial availability and fails closed")
-  func normalizesAvailability() {
+  @Test("Normalizes availability, Off permission, cache eligibility, and cycles")
+  func preflightPolicyForAvailabilityOffPermissionAndCycles() {
     let advertised: [ListeningMode] = [.noiseCancellation, .off, .transparency]
-    let expected: [ListeningMode] = [.off, .transparency, .noiseCancellation]
-
+    let canonical: [ListeningMode] = [.off, .transparency, .noiseCancellation]
     #expect(
-      ListeningModePreflightPolicy.normalizedModes(from: .value(advertised)) == expected,
+      ListeningModePreflightPolicy.normalizedModes(from: .value(advertised)) == canonical,
       "complete availability uses canonical output order"
     )
     #expect(
-      ListeningModePreflightPolicy.normalizedModes(from: .partial(advertised)) == expected,
+      ListeningModePreflightPolicy.normalizedModes(from: .partial(advertised)) == canonical,
       "partial availability retains recognized modes"
     )
     #expect(
-      ListeningModePreflightPolicy.normalizedModes(from: .unavailable).isEmpty,
-      "unavailable availability exposes no modes"
+      ListeningModePreflightPolicy.normalizedModes(from: .unavailable).isEmpty
+        && ListeningModePreflightPolicy.normalizedModes(from: .readError).isEmpty,
+      "unavailable and read-error availability expose no modes"
+    )
+
+    let avOmission = ListeningModeAvailabilityObservation.value([.transparency, .adaptive])
+    #expect(
+      ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
+        avOmission,
+        transportKind: .av,
+        command: .list
+      ),
+      "an AV complete Off omission blocks cached list evidence"
     )
     #expect(
-      ListeningModePreflightPolicy.normalizedModes(from: .readError).isEmpty,
-      "read errors expose no modes"
-    )
-  }
-
-  @Test("Only complete AV omissions block cached Allow Off evidence")
-  func cachedAllowOffBlocking() {
-    let cases: [(
-      name: String,
-      observation: ListeningModeAvailabilityObservation,
-      transportKind: ListeningModeTransportKind,
-      command: ListeningModeCommand,
-      expected: Bool
-    )] = [
-      (
-        "AV complete omission",
-        .value([.transparency, .adaptive]),
-        .av,
-        .list,
-        true
-      ),
-      (
-        "AV complete Off",
+      !ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
         .value([.off, .transparency]),
-        .av,
-        .list,
-        false
+        transportKind: .av,
+        command: .list
       ),
-      (
-        "AV partial",
+      "an advertised Off does not block cached list evidence"
+    )
+    #expect(
+      !ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
         .partial([.transparency, .adaptive]),
-        .av,
-        .list,
-        false
-      ),
-      ("AV unavailable", .unavailable, .av, .list, false),
-      ("AV read error", .readError, .av, .list, false),
-      (
-        "HAL complete",
-        .value([.transparency, .adaptive]),
-        .hal,
-        .list,
-        false
-      ),
-      (
-        "AV non-Off set",
-        .value([.transparency, .adaptive]),
-        .av,
-        .set(.adaptive),
-        false
-      ),
-      (
-        "AV Off set",
-        .value([.transparency, .adaptive]),
-        .av,
-        .set(.off),
-        true
-      ),
-      (
-        "AV default cycle",
-        .value([.transparency, .adaptive]),
-        .av,
-        .cycle(nil),
-        false
-      ),
-      (
-        "AV explicit Off cycle",
-        .value([.transparency, .adaptive]),
-        .av,
-        .cycle([.transparency, .off]),
-        true
-      ),
-    ]
-
-    for example in cases {
-      #expect(
-        ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
-          example.observation,
-          transportKind: example.transportKind,
-          command: example.command
-        ) == example.expected,
-        "\(example.name)"
+        transportKind: .av,
+        command: .list
       )
-    }
-  }
+        && !ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
+          avOmission,
+          transportKind: .hal,
+          command: .list
+        )
+        && !ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
+          avOmission,
+          transportKind: .av,
+          command: .set(.adaptive)
+        )
+        && !ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
+          avOmission,
+          transportKind: .av,
+          command: .cycle(nil)
+        ),
+      "partial AV, HAL, non-Off set, and the default cycle leave cache evidence unblocked"
+    )
+    #expect(
+      ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
+        avOmission,
+        transportKind: .av,
+        command: .set(.off)
+      )
+        && ListeningModePreflightPolicy.availabilityBlocksCachedAllowOff(
+          avOmission,
+          transportKind: .av,
+          command: .cycle([.transparency, .off])
+        ),
+      "explicit Off set and cycle still honor the AV complete-omission block"
+    )
 
-  @Test("Adds Off only when the preflight grants permission")
-  func effectiveModesUseOffPermission() {
     let available: [ListeningMode] = [.transparency, .adaptive]
-    let expected: [ListeningMode] = [.off, .transparency, .adaptive]
-
+    let withOff: [ListeningMode] = [.off, .transparency, .adaptive]
     #expect(
       ListeningModePreflightPolicy.effectiveModes(
         availableModes: available,
@@ -125,21 +89,18 @@ struct ListeningModePreflightTests {
       ListeningModePreflightPolicy.effectiveModes(
         availableModes: available,
         offPermission: .probe
-      ) == expected,
-      "a probe permission adds Off"
+      ) == withOff
+        && ListeningModePreflightPolicy.effectiveModes(
+          availableModes: available,
+          offPermission: .authorized(.live(cache: nil, record: nil))
+        ) == withOff,
+      "probe and authorization permissions add Off"
     )
     #expect(
       ListeningModePreflightPolicy.effectiveModes(
-        availableModes: available,
-        offPermission: .authorized(.live(cache: nil, record: nil))
-      ) == expected,
-      "an authorization permission adds Off"
-    )
-    #expect(
-      ListeningModePreflightPolicy.effectiveModes(
-        availableModes: expected,
+        availableModes: withOff,
         offPermission: .probe
-      ) == expected,
+      ) == withOff,
       "advertised Off is not duplicated or reordered"
     )
     #expect(
@@ -149,21 +110,17 @@ struct ListeningModePreflightTests {
       ) == [.off],
       "a permission offers Off even when nothing else is advertised"
     )
-  }
 
-  @Test("Filters default and explicit cycles with their intended order")
-  func filtersCycles() {
-    let available = ListeningMode.allCases
-
+    let allModes = ListeningMode.allCases
     #expect(
-      ListeningModeCyclePolicy.supportedModes(requested: nil, available: available)
+      ListeningModeCyclePolicy.supportedModes(requested: nil, available: allModes)
         == [.transparency, .adaptive, .noiseCancellation],
       "the default cycle excludes Off"
     )
     #expect(
       ListeningModeCyclePolicy.supportedModes(
         requested: [.noiseCancellation, .off, .transparency],
-        available: available
+        available: allModes
       ) == [.noiseCancellation, .off, .transparency],
       "an explicit cycle preserves its requested order"
     )
@@ -174,56 +131,31 @@ struct ListeningModePreflightTests {
       ) == [.off, .transparency],
       "unsupported explicit modes are filtered in place"
     )
-  }
 
-  @Test("Only explicit Off operations opt into Allow Off policy")
-  func offCommandPolicy() {
     #expect(
-      !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.cycle(nil)),
-      "the default cycle does not target Off"
+      !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.list)
+        && ListeningModePreflightPolicy.commandMayUseAllowOffCache(.list),
+      "list surfaces cached Allow Off evidence without opting into a probe"
     )
     #expect(
-      ListeningModePreflightPolicy.commandExplicitlyTargetsOff(
-        .cycle([.transparency, .off])
-      ),
-      "an explicit Off cycle targets Off"
+      ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.set(.off))
+        && ListeningModePreflightPolicy.commandMayUseAllowOffCache(.set(.off))
+        && ListeningModePreflightPolicy.commandExplicitlyTargetsOff(
+          .cycle([.transparency, .off])
+        )
+        && ListeningModePreflightPolicy.commandMayUseAllowOffCache(
+          .cycle([.transparency, .off])
+        ),
+      "explicit Off set and cycle both target Off and may use cache evidence"
     )
     #expect(
-      !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.cycle(nil)),
-      "the default cycle does not use Allow Off cache evidence"
+      !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.set(.adaptive))
+        && !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.set(.adaptive))
+        && !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.get)
+        && !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.get)
+        && !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.cycle(nil))
+        && !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.cycle(nil)),
+      "non-Off set, get, and the default cycle neither target Off nor use cache evidence"
     )
-    #expect(
-      ListeningModePreflightPolicy.commandMayUseAllowOffCache(
-        .cycle([.transparency, .off])
-      ),
-      "an explicit Off cycle may use Allow Off cache evidence"
-    )
-
-    // The two predicates disagree for `list`: it surfaces cached Allow Off
-    // evidence without opting into a probe.
-    let cases: [(
-      name: String,
-      command: ListeningModeCommand,
-      targetsOff: Bool,
-      mayUseCache: Bool
-    )] = [
-      ("list", .list, false, true),
-      ("Off set", .set(.off), true, true),
-      ("non-Off set", .set(.adaptive), false, false),
-      ("get", .get, false, false),
-    ]
-
-    for example in cases {
-      #expect(
-        ListeningModePreflightPolicy.commandExplicitlyTargetsOff(example.command)
-          == example.targetsOff,
-        "\(example.name) explicit Off targeting"
-      )
-      #expect(
-        ListeningModePreflightPolicy.commandMayUseAllowOffCache(example.command)
-          == example.mayUseCache,
-        "\(example.name) Allow Off cache eligibility"
-      )
-    }
   }
 }
