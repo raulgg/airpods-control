@@ -433,15 +433,6 @@ final class ListeningModeCoordinator {
     return sessions.first
   }
 
-  private struct SessionAssembly {
-    let availableModes: [ListeningMode]
-    let stateObservation: ListeningModeStateObservation
-    let availabilityObservation: ListeningModeAvailabilityObservation?
-    let canSet: Bool
-    let offPermission: ListeningModeOffPermission?
-    let blocksCachedAllowOff: Bool
-  }
-
   private func session(
     for transport: any ListeningModeTransport,
     command: ListeningModeCommand,
@@ -450,21 +441,13 @@ final class ListeningModeCoordinator {
   ) -> ListeningModeSession {
     switch command {
     case .get:
-      return assemble(
-        getState(for: transport, correlation: correlation),
-        transport: transport,
-        correlation: correlation
-      )
+      return getState(for: transport, correlation: correlation)
     case .list, .set, .cycle:
-      return assemble(
-        availability(
-          for: transport,
-          command: command,
-          correlation: correlation,
-          allowOff: allowOff
-        ),
-        transport: transport,
-        correlation: correlation
+      return availability(
+        for: transport,
+        command: command,
+        correlation: correlation,
+        allowOff: allowOff
       )
     }
   }
@@ -472,7 +455,7 @@ final class ListeningModeCoordinator {
   private func getState(
     for transport: any ListeningModeTransport,
     correlation: ListeningModeAllowOffCorrelation?
-  ) -> SessionAssembly {
+  ) -> ListeningModeSession {
     let currentObservedAt = transport.listeningModeTransportKind == .av
       ? correlation?.captureObservationTime()
       : nil
@@ -480,11 +463,13 @@ final class ListeningModeCoordinator {
     if stateObservation.value == .off, let correlation, let currentObservedAt {
       correlation.observeCurrentOff(observedAt: currentObservedAt)
     }
-    return SessionAssembly(
+    return ListeningModeSession(
+      name: transport.name,
+      transport: transport,
       availableModes: [],
       stateObservation: stateObservation,
       availabilityObservation: nil,
-      canSet: false,
+      writePlan: nil,
       offPermission: nil,
       blocksCachedAllowOff: false
     )
@@ -495,7 +480,7 @@ final class ListeningModeCoordinator {
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
     allowOff: AllowOffHandoff
-  ) -> SessionAssembly {
+  ) -> ListeningModeSession {
     let preflight = availabilityPreflight(
       for: transport,
       command: command,
@@ -509,33 +494,32 @@ final class ListeningModeCoordinator {
     case .list, .get:
       canSet = false
     }
-    return SessionAssembly(
-      availableModes: preflight.facts.availableModes,
-      stateObservation: preflight.facts.stateObservation,
-      availabilityObservation: preflight.facts.availabilityObservation,
+    return assemble(
+      preflight,
       canSet: canSet,
-      offPermission: preflight.offPermission,
-      blocksCachedAllowOff: preflight.blocksCachedAllowOff
+      transport: transport,
+      correlation: correlation
     )
   }
 
   private func assemble(
-    _ assembly: SessionAssembly,
+    _ preflight: ListeningModeAvailabilityPreflight,
+    canSet: Bool,
     transport: any ListeningModeTransport,
     correlation: ListeningModeAllowOffCorrelation?
   ) -> ListeningModeSession {
     let effectiveModes = ListeningModePreflightPolicy.effectiveModes(
-      availableModes: assembly.availableModes,
-      offPermission: assembly.offPermission
+      availableModes: preflight.facts.availableModes,
+      offPermission: preflight.offPermission
     )
 
     let stateIsSafe = transport.listeningModeTransportKind == .av
-      || assembly.stateObservation.value != nil
-    let writePlan = assembly.canSet && stateIsSafe
+      || preflight.facts.stateObservation.value != nil
+    let writePlan = canSet && stateIsSafe
       ? ListeningModeWritePlan(
         transport: transport,
         availableModes: effectiveModes,
-        offPermission: assembly.offPermission,
+        offPermission: preflight.offPermission,
         allowOffCorrelation: correlation
       )
       : nil
@@ -544,11 +528,11 @@ final class ListeningModeCoordinator {
       name: transport.name,
       transport: transport,
       availableModes: effectiveModes,
-      stateObservation: assembly.stateObservation,
-      availabilityObservation: assembly.availabilityObservation,
+      stateObservation: preflight.facts.stateObservation,
+      availabilityObservation: preflight.facts.availabilityObservation,
       writePlan: writePlan,
-      offPermission: assembly.offPermission,
-      blocksCachedAllowOff: assembly.blocksCachedAllowOff
+      offPermission: preflight.offPermission,
+      blocksCachedAllowOff: preflight.blocksCachedAllowOff
     )
   }
 
