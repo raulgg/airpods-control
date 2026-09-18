@@ -220,10 +220,16 @@ final class IOBluetoothStatusDevice: AudioDeviceStatusReading {
   }
 
   func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
-    avStringListeningModeStatus()
+    if let status = avStringListeningModeStatus()
       ?? coreAudioObservationListeningModeStatus()
       ?? ioBluetoothUInt8ListeningModeStatus()
-      ?? coreAudioListeningModeReadFailure()
+    {
+      return status
+    }
+    if case .readFailure = coreAudioListeningMode {
+      return .readError
+    }
+    return .unresolved
   }
 
   private func avStringListeningModeStatus() -> DeviceStatusField<ListeningMode>? {
@@ -255,15 +261,6 @@ final class IOBluetoothStatusDevice: AudioDeviceStatusReading {
           let mode = BluetoothListeningModeMapping.modeByRawValue[UInt32(rawMode)]
     else { return nil }
     return .value(mode)
-  }
-
-  private func coreAudioListeningModeReadFailure()
-    -> DeviceStatusField<ListeningMode>
-  {
-    if case .readFailure = coreAudioListeningMode {
-      return .readError
-    }
-    return .unresolved
   }
 
   func readConversationAwarenessStatus() -> DeviceStatusField<Bool> {
