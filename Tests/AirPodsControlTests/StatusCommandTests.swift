@@ -327,6 +327,22 @@ struct StatusCommandTests {
       (readError.payload["devices"] as? [[String: Any]])?.isEmpty == true,
       "status discovery read errors return an empty device array"
     )
+
+    let unavailable = CommandExecution.execute(
+      invocation,
+      resolveDevices: { _, _, _ in .failed(.unavailable) }
+    )
+    #expect(unavailable.exitCode == 6, "status discovery unavailability exits six")
+    #expect(
+      unavailable.plain == "Compatible device discovery is unavailable.",
+      "status discovery failures keep their established sentence"
+    )
+    #expect(
+      (unavailable.payload["devices"] as? [[String: Any]])?.isEmpty == true,
+      "unavailable status returns an empty device array"
+    )
+    #expect(unavailable.payload["error"] as? String == "unavailable", "unavailable JSON has its error")
+    #expect(unavailable.payload["result"] as? String == "error", "unavailable JSON is an error")
   }
 }
 
