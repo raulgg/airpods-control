@@ -659,3 +659,91 @@ struct ListeningModeCoordinatorAllowOffTests {
     )
   }
 }
+
+@Suite("Allow Off correlation")
+struct ListeningModeAllowOffCorrelationTests {
+  @Test
+  func correlationAbortsWhenAnyCollisionUIDReadFails() {
+    let backend = FakeHALRoutingBackend()
+    backend.deviceUIDs[42] = .value("uid-42")
+    backend.deviceUIDs[43] = .unavailable
+    let cache = InMemoryListeningModeAllowOffCache(
+      salt: Data(repeating: 0xA5, count: 32)
+    )!
+    let correlation = ListeningModeAllowOffCorrelation(
+      targetAudioDeviceID: 42,
+      collisionAudioDeviceIDs: [42, 43],
+      backend: backend,
+      cache: cache,
+      logger: DebugLogger(enabled: false)
+    )
+
+    correlation.observeCurrentOff(observedAt: Date(timeIntervalSince1970: 2_000_000_000))
+
+    #expect(
+      cache.lookup(rawDeviceUID: "uid-42") == .miss,
+      "a failed sibling UID read does not persist target evidence"
+    )
+    #expect(
+      backend.deviceUIDReads.contains(43),
+      "correlation reads every collision UID before aborting"
+    )
+  }
+
+  @Test
+  func correlationAuthorizesLiveWhenUIDCannotBeResolved() {
+    let backend = FakeHALRoutingBackend()
+    let cache = InMemoryListeningModeAllowOffCache(
+      salt: Data(repeating: 0xA5, count: 32)
+    )!
+    let correlation = ListeningModeAllowOffCorrelation(
+      targetAudioDeviceID: 42,
+      collisionAudioDeviceIDs: [42],
+      backend: backend,
+      cache: cache,
+      logger: DebugLogger(enabled: false)
+    )
+
+    let authorization = correlation.observeAvailability(
+      .value(ListeningMode.allCases),
+      observedAt: Date(timeIntervalSince1970: 2_000_000_000)
+    )
+
+    #expect(authorization != nil, "missing UID still authorizes live AV Off evidence")
+    #expect(
+      authorization?.cachedEvidence == nil,
+      "uncorrelated live evidence is not cached"
+    )
+    #expect(
+      cache.lookup(rawDeviceUID: "uid-42") == .miss,
+      "a missing UID does not write the cache"
+    )
+  }
+
+  @Test
+  func correlationRejectsOversizedRawDeviceUID() {
+    let backend = FakeHALRoutingBackend()
+    backend.deviceUIDs[42] = .value(String(repeating: "x", count: 4_097))
+    let cache = InMemoryListeningModeAllowOffCache(
+      salt: Data(repeating: 0xA5, count: 32)
+    )!
+    let correlation = ListeningModeAllowOffCorrelation(
+      targetAudioDeviceID: 42,
+      collisionAudioDeviceIDs: [42],
+      backend: backend,
+      cache: cache,
+      logger: DebugLogger(enabled: false)
+    )
+
+    correlation.observeDenial(observedAt: Date(timeIntervalSince1970: 2_000_000_000))
+
+    #expect(
+      cache.lookup(rawDeviceUID: String(repeating: "x", count: 4_097)) == .miss,
+      "an oversized raw UID aborts correlation instead of writing denial"
+    )
+    #expect(
+      correlation.hasCachedDenial() == false,
+      "an oversized raw UID cannot be treated as cached denial"
+    )
+  }
+}
