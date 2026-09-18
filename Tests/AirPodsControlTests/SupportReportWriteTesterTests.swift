@@ -10,6 +10,27 @@ private func supportWriteTestSignalHandler(_: Int32) {}
 // These tests share process-wide signal handlers and the C monitor singleton.
 @Suite("Support report write tester", .serialized)
 struct SupportReportWriteTesterTests {
+  @Test("Drops only an already-current first probe from listening-mode targets")
+  func listeningModeTargetsDropFirstOnlyWhenInitialIsFirst() {
+    let cases: [(ListeningMode, [ListeningMode])] = [
+      (.noiseCancellation, [.adaptive, .transparency, .off]),
+      (.transparency, [.noiseCancellation, .adaptive, .transparency, .off]),
+    ]
+    for (initial, expected) in cases {
+      let plan = SupportReportWriteTestPlan.make(
+        device: FakeCompatibleAudioDevice(
+          listeningModes: Array(ListeningMode.allCases),
+          listeningMode: initial,
+          conversationAwarenessSupported: false
+        )
+      )
+      #expect(
+        plan.listeningModeTargets == expected,
+        "initial \(initial.rawValue) keeps later probes, including Transparency"
+      )
+    }
+  }
+
   @Test("Verifies and restores all supported capabilities")
   func writeTesterVerifiesAndRestores() {
     let device = FakeCompatibleAudioDevice(
