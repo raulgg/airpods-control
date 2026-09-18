@@ -291,12 +291,6 @@ final class AllowOffCacheFileStorage {
     return descriptor
   }
 
-  private enum PathTrust {
-    case trusted
-    case missing
-    case invalid
-  }
-
   private enum SecureDataRead {
     case value(Data)
     case missing
@@ -304,24 +298,20 @@ final class AllowOffCacheFileStorage {
   }
 
   private func secureRead(_ url: URL) -> SecureDataRead {
-    switch trustedDirectory() {
-    case .missing:
-      return .missing
-    case .invalid:
-      return .invalid
-    case .trusted:
-      return trustedFileContents(url)
+    if let failure = trustedDirectory() {
+      return failure
     }
+    return trustedFileContents(url)
   }
 
-  private func trustedDirectory() -> PathTrust {
+  private func trustedDirectory() -> SecureDataRead? {
     guard let directoryStatus = status(of: directoryURL) else {
       return errno == ENOENT ? .missing : .invalid
     }
     guard isTrustedOwnedDirectory(directoryStatus),
           permissionBits(directoryStatus) == allowOffCacheDirectoryPermissions
     else { return .invalid }
-    return .trusted
+    return nil
   }
 
   private func trustedFileContents(_ url: URL) -> SecureDataRead {
