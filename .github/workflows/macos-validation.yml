@@ -120,8 +120,24 @@ jobs:
           if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             git fetch --depth=1 origin "$BASE_SHA"
           fi
+          classifier=scripts/runtime-ci-needed.sh
+          if ! git cat-file -e "$BASE_SHA:$classifier" 2>/dev/null; then
+            echo "needed=true" >>"$GITHUB_OUTPUT"
+            echo "No classifier at $BASE_SHA; running runtime jobs"
+            git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"
+            exit 0
+          fi
+          base_file="$RUNNER_TEMP/runtime-ci-needed.base.sh"
+          git show "$BASE_SHA:$classifier" >"$base_file"
           needed=$(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" |
-            ./scripts/runtime-ci-needed.sh)
+            sh "$base_file")
+          case "$needed" in
+            true|false) ;;
+            *)
+              echo "error: base classifier printed '$needed'" >&2
+              exit 1
+              ;;
+          esac
           echo "needed=$needed" >>"$GITHUB_OUTPUT"
           echo "Runtime jobs needed: $needed"
           git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"
