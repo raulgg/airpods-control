@@ -1,6 +1,6 @@
 .TH AIRPODS-CONTROL 1 "" "airpods-control" "User Commands"
 .SH NAME
-airpods-control \- control AirPods listening mode and Conversation Awareness
+airpods-control \- macOS CLI for AirPods and Beats
 .SH SYNOPSIS
 .B airpods-control
 .B status
@@ -61,7 +61,7 @@ airpods-control \- control AirPods listening mode and Conversation Awareness
 .RB [ --help | -h ]
 .SH DESCRIPTION
 .B airpods-control
-reads and sets the AirPods listening mode and Conversation Awareness through
+reads and sets listening mode and Conversation Awareness on connected AirPods and Beats headphones through
 private macOS audio interfaces, including the private
 .B AVOutputDevice
 control object in
@@ -530,7 +530,7 @@ accepted but unreadable, unknown, or timed-out final state is
 .B no-op
 and records no denial. The command does not retry through AV or choose another cycle target.
 .PP
-This relies on a private API and targets macOS Tahoe (26); Apple may change it in any update. A missing provider is
+This relies on a private API. Apple may change it in any update. A missing provider is
 .BR unavailable ;
 affirmative target-specific negative evidence is
 .BR unsupported .
@@ -541,4 +541,4 @@ CLI reference: https://github.com/raulgg/airpods-control/blob/main/docs/cli.md
 .PP
 Device compatibility: https://github.com/raulgg/airpods-control/blob/main/docs/compatibility.md
 .SH AUTHOR
-Raul. Not affiliated with Apple. AirPods is a trademark of Apple Inc.
+Raul. Not affiliated with Apple. AirPods is a trademark of Apple Inc. Beats is a trademark of Beats Electronics, LLC.
