@@ -37,7 +37,7 @@ struct AppleAudioProductsTests {
   }
 
   @Test(
-    "Names both AirPods 5 CoreTypes product IDs until a SKU mapping exists",
+    "Names both AirPods 5 CoreTypes product IDs",
     arguments: [8240, 8246]
   )
   func namesAirPods5(_ productID: Int) throws {

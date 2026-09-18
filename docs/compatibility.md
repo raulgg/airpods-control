@@ -94,26 +94,19 @@ whether macOS exposes the controls through the same private API.
 
 ### AirPods
 
-Apple gives some AirPods hardware variants different model identifiers. The
-table tracks them separately in case macOS exposes them differently.
+Apple assigns different model identifiers to some charging-case and cable
+variants. Those identifiers share a row when the documented listening-mode and
+Conversation Awareness features are the same.
 
 | Model | Model identifiers | Bluetooth product ID | Documented capabilities | Status |
 | --- | --- | --- | --- | --- |
 | AirPods 4 (ANC) | A3056, A3055, A3057 | 0x201B | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
-| AirPods 5 | A3531, A3532, A3533 | 0x2030 or 0x2036 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
-| AirPods 5 with Wireless Charging Case | A3439, A3440, A3441 | 0x2030 or 0x2036 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
+| AirPods 5 | A3531, A3532, A3533, A3439, A3440, A3441 | 0x2030, 0x2036 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
 | AirPods Pro 1 | A2084, A2083 | 0x200E | ANC, Transparency | Pending |
-| AirPods Pro 2 (Lightning) | A2931, A2699, A2698 | 0x2014 | ANC, Transparency, Adaptive Audio, Conversation Awareness | [Partially verified](https://github.com/raulgg/airpods-control/issues/34) |
-| AirPods Pro 2 (USB-C) | A3047, A3048, A3049 | 0x2024 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
+| AirPods Pro 2 | A2931, A2699, A2698, A3047, A3048, A3049 | 0x2014, 0x2024 | ANC, Transparency, Adaptive Audio, Conversation Awareness | [Partially verified](https://github.com/raulgg/airpods-control/issues/34) |
 | AirPods Pro 3 | A3063, A3064, A3065 | 0x2027 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Verified baseline |
-| AirPods Max 1 (Lightning) | A2096 | 0x200A | ANC, Transparency | Pending |
-| AirPods Max 1 (USB-C) | A3184 | 0x201F | ANC, Transparency | Pending |
+| AirPods Max 1 | A2096, A3184 | 0x200A, 0x201F | ANC, Transparency | Pending |
 | AirPods Max 2 | A3454 | 0x202D | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
-
-macOS 27 publishes Bluetooth product IDs 0x2030 and 0x2036 for
-`com.apple.airpods-gen5`. Apple documents the same listening-mode and
-Conversation Awareness features for both AirPods 5 SKUs. A hardware report is
-still needed to map each product ID to a SKU.
 
 The model identifiers in the table come from Apple's
 [AirPods identification guide](https://support.apple.com/en-in/109525). Its
