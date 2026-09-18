@@ -125,9 +125,7 @@ struct SystemActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
           outputContext.responds(to: activeAssociatedDeviceIDSelector),
           let rawAssociatedID = outputContext.perform(activeAssociatedDeviceIDSelector)?
           .takeUnretainedValue(),
-          let associatedUID = rawAssociatedID as? String,
-          !associatedUID.isEmpty,
-          associatedUID.utf8.count <= maximumActiveRouteIdentifierLength,
+          let associatedUID = usableActiveRouteIdentifier(rawAssociatedID as? String),
           let after = endpointAndIdentifier()
     else { return .unavailable }
     guard before.identifier == after.identifier else { return .routeChanged }
@@ -149,12 +147,20 @@ struct SystemActiveAudioEndpointProbe: ActiveAudioEndpointProbing {
           let endpoint = outputContext.perform(activeOutputDeviceSelector)?
           .takeUnretainedValue(),
           endpoint.responds(to: statusAVDeviceIDSelector),
-          let identifier = endpoint.perform(statusAVDeviceIDSelector)?
-          .takeUnretainedValue() as? String,
+          let identifier = usableActiveRouteIdentifier(
+            endpoint.perform(statusAVDeviceIDSelector)?
+              .takeUnretainedValue() as? String
+          )
+    else { return nil }
+    return (endpoint, identifier)
+  }
+
+  private func usableActiveRouteIdentifier(_ identifier: String?) -> String? {
+    guard let identifier,
           !identifier.isEmpty,
           identifier.utf8.count <= maximumActiveRouteIdentifierLength
     else { return nil }
-    return (endpoint, identifier)
+    return identifier
   }
 
   private func translateDeviceUID(
@@ -214,28 +220,46 @@ final class IOBluetoothStatusDevice: AudioDeviceStatusReading {
   }
 
   func readListeningModeStatus() -> DeviceStatusField<ListeningMode> {
-    if let endpoint = routingObserver.activeFeatureEndpoint(for: object),
-       endpoint.responds(to: statusAVCurrentModeSelector),
-       let rawMode = endpoint.perform(statusAVCurrentModeSelector)?
-       .takeUnretainedValue() as? String
-    {
-      guard let mode = statusListeningModesByRawValue[rawMode] else {
-        return .unresolved
-      }
-      return .value(mode)
-    }
+    avStringListeningModeStatus()
+      ?? coreAudioObservationListeningModeStatus()
+      ?? ioBluetoothUInt8ListeningModeStatus()
+      ?? coreAudioListeningModeReadFailure()
+  }
 
+  private func avStringListeningModeStatus() -> DeviceStatusField<ListeningMode>? {
+    guard let endpoint = routingObserver.activeFeatureEndpoint(for: object),
+          endpoint.responds(to: statusAVCurrentModeSelector),
+          let rawMode = endpoint.perform(statusAVCurrentModeSelector)?
+          .takeUnretainedValue() as? String
+    else { return nil }
+    guard let mode = statusListeningModesByRawValue[rawMode] else {
+      return .unresolved
+    }
+    return .value(mode)
+  }
+
+  private func coreAudioObservationListeningModeStatus()
+    -> DeviceStatusField<ListeningMode>?
+  {
     switch coreAudioListeningMode {
     case let .value(mode): return .value(mode)
     case .unrecognized, .conflict: return .unresolved
-    case .unavailable, .readFailure: break
+    case .unavailable, .readFailure: return nil
     }
+  }
 
-    if case let .value(rawMode) = runtime.listeningMode(object),
-       let mode = BluetoothListeningModeMapping.modeByRawValue[UInt32(rawMode)]
-    {
-      return .value(mode)
-    }
+  private func ioBluetoothUInt8ListeningModeStatus()
+    -> DeviceStatusField<ListeningMode>?
+  {
+    guard case let .value(rawMode) = runtime.listeningMode(object),
+          let mode = BluetoothListeningModeMapping.modeByRawValue[UInt32(rawMode)]
+    else { return nil }
+    return .value(mode)
+  }
+
+  private func coreAudioListeningModeReadFailure()
+    -> DeviceStatusField<ListeningMode>
+  {
     if case .readFailure = coreAudioListeningMode {
       return .readError
     }
@@ -402,14 +426,7 @@ final class IOBluetoothStatusController {
         for: binding.bluetoothDevice
       )
 
-      let names = [transport.name, avTransport?.name]
-        .compactMap { $0 }
-        .reduce(into: [String]()) { result, name in
-          guard !result.contains(where: {
-            $0.localizedCaseInsensitiveCompare(name) == .orderedSame
-          }) else { return }
-          result.append(name)
-        }
+      let names = uniqueCaseInsensitiveNames([transport.name, avTransport?.name])
       return ListeningModeCandidate(
         displayName: transport.name ?? "Compatible device",
         selectableNames: names,
@@ -427,19 +444,7 @@ final class IOBluetoothStatusController {
     policy: DeviceSelectionPolicy
   ) -> DeviceSelection<IOBluetoothStatusDevice> {
     if let requestedName {
-      let matches = devices.filter {
-        $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
-      }
-      guard let selected = matches.first else {
-        logger.warning("device_selection", "no-exact-name-match")
-        return .noDevice
-      }
-      guard matches.count == 1 else {
-        logger.warning("device_selection", "ambiguous-device-name")
-        return .ambiguousDevice
-      }
-      logger.info("selected_device", selected.name)
-      return .selected([selected])
+      return devices(namedExactly: requestedName)
     }
 
     guard !devices.isEmpty else {
@@ -457,6 +462,33 @@ final class IOBluetoothStatusController {
     case .allOrExact:
       logger.info("selected_device_count", devices.count)
       return .selected(devices)
+    }
+  }
+
+  private func devices(
+    namedExactly requestedName: String
+  ) -> DeviceSelection<IOBluetoothStatusDevice> {
+    let matches = self.devices.filter {
+      $0.name?.localizedCaseInsensitiveCompare(requestedName) == .orderedSame
+    }
+    guard let selected = matches.first else {
+      logger.warning("device_selection", "no-exact-name-match")
+      return .noDevice
+    }
+    guard matches.count == 1 else {
+      logger.warning("device_selection", "ambiguous-device-name")
+      return .ambiguousDevice
+    }
+    logger.info("selected_device", selected.name)
+    return .selected([selected])
+  }
+
+  private func uniqueCaseInsensitiveNames(_ names: [String?]) -> [String] {
+    names.compactMap { $0 }.reduce(into: [String]()) { result, name in
+      guard !result.contains(where: {
+        $0.localizedCaseInsensitiveCompare(name) == .orderedSame
+      }) else { return }
+      result.append(name)
     }
   }
 }
