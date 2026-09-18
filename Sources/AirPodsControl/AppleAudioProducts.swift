@@ -46,8 +46,6 @@ enum AppleAudioProducts {
       0x2024: (.airPods, "AirPods Pro 2 (USB-C)"),
       0x2027: (.airPods, "AirPods Pro 3"),
       0x202D: (.airPods, "AirPods Max 2"),
-      // macOS files both AirPods 5 SKUs under com.apple.airpods-gen5. Both
-      // have ANC, so they share this name.
       0x2030: (.airPods, "AirPods 5"),
       0x2036: (.airPods, "AirPods 5"),
       0x2003: (.beats, "Powerbeats3"),
