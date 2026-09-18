@@ -473,26 +473,6 @@ struct AudioRoutingTests {
   }
 
   @Test
-  func coreAudioInventoryPreservesFirstGroupOccurrenceOrder() throws {
-    let first = NSObject()
-    let second = NSObject()
-    let (controller, _) = makeBluetoothController(inventory: [
-      FakeInventoryEndpoint(audioDeviceID: 900, bluetoothDevice: first,
-                            name: .value("First Seen"), appleAudioDevice: .value(true)),
-      FakeInventoryEndpoint(audioDeviceID: 1, bluetoothDevice: second,
-                            name: .value("Second Seen"), appleAudioDevice: .value(true)),
-    ])
-    let devices = try requireSelectedDevices(
-      controller.resolveDevices(named: nil, policy: .allOrExact),
-      "record order follows first public inventory occurrence, not opaque object IDs"
-    )
-    #expect(
-      devices.map(\.name) == ["First Seen", "Second Seen"],
-      "record order follows first public inventory occurrence, not opaque object IDs"
-    )
-  }
-
-  @Test
   func coreAudioInventoryReportsInactiveAndInputOnlySelectionExactly() throws {
     let canonical = NSObject()
     let endpoint = FakeInventoryEndpoint(

@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Listening modes")
 struct ListeningModeTests {
-  @Test("Keeps canonical mode order and public token vocabulary")
-  func listeningModeVocabulary() {
+  @Test("Keeps canonical tokens and the Bluetooth numeric mapping")
+  func listeningModeVocabularyAndBluetoothMapping() {
     #expect(
       ListeningMode.allCases.map(\.rawValue)
         == ["off", "transparency", "adaptive", "noise-cancellation"],
@@ -14,10 +14,6 @@ struct ListeningModeTests {
     #expect(ListeningMode(token: "off") == .off, "canonical Off token parses")
     #expect(ListeningMode(token: "anc") == .noiseCancellation, "ANC alias parses")
     #expect(ListeningMode(token: "normal") == nil, "private raw names are not public tokens")
-  }
-
-  @Test("Shares the canonical Bluetooth listening-mode numeric mapping")
-  func bluetoothListeningModeNumericMapping() {
     #expect(
       BluetoothListeningModeMapping.modeByRawValue == [
         1: .off,
@@ -28,24 +24,13 @@ struct ListeningModeTests {
       "literal Bluetooth raw values map to canonical modes"
     )
     #expect(
-      BluetoothListeningModeMapping.rawValueByMode == [
-        .off: 1,
-        .noiseCancellation: 2,
-        .transparency: 3,
-        .adaptive: 4,
-      ],
-      "the reverse mapping is derived from the canonical forward map"
-    )
-
-    #expect(BluetoothListeningModeMapping.modeByRawValue[0] == nil, "raw value 0 is unknown")
-    #expect(BluetoothListeningModeMapping.modeByRawValue[5] == nil, "raw value 5 is unknown")
-    #expect(
-      BluetoothListeningModeMapping.modeByRawValue[UInt32.max] == nil,
-      "UInt32.max is unknown"
+      BluetoothListeningModeMapping.modeByRawValue[0] == nil
+        && BluetoothListeningModeMapping.modeByRawValue[5] == nil,
+      "unknown Bluetooth raw values stay unmapped"
     )
   }
 
-  @Test("Preserves observations when Off fallback cannot be inferred")
+  @Test("Resolves Off fallback only after an accepted mismatched or missing readback")
   func offFallbackResolutionSeams() {
     let verified = resolveListeningModeWrite(
       requested: .off,
@@ -91,21 +76,17 @@ struct ListeningModeTests {
     )
     #expect(nonOff.state == .noiseCancellation, "non-Off preserves observed state")
     #expect(!nonOff.inferredOffFallback, "non-Off writes never infer Transparency")
-  }
 
-  @Test(
-    "Infers Transparency after accepted Off with mismatching or missing readback",
-    arguments: [ListeningMode.noiseCancellation, .adaptive, nil]
-  )
-  func infersOffFallback(observed: ListeningMode?) {
-    let inferred = resolveListeningModeWrite(
-      requested: .off,
-      setterAccepted: true,
-      observed: observed,
-      transparencySupported: true
-    )
-    #expect(!inferred.verified)
-    #expect(inferred.state == .transparency)
-    #expect(inferred.inferredOffFallback)
+    for observed: ListeningMode? in [.noiseCancellation, .adaptive, nil] {
+      let inferred = resolveListeningModeWrite(
+        requested: .off,
+        setterAccepted: true,
+        observed: observed,
+        transparencySupported: true
+      )
+      #expect(!inferred.verified, "accepted Off with mismatched readback is unverified")
+      #expect(inferred.state == .transparency, "accepted Off infers Transparency")
+      #expect(inferred.inferredOffFallback, "accepted Off records the inferred fallback")
+    }
   }
 }

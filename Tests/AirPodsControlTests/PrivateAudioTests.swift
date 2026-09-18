@@ -6,7 +6,7 @@ import Testing
 @Suite("Private audio")
 struct PrivateAudioTests {
   @Test
-  func privateListeningModeTranslation() throws {
+  func privateListeningModeTranslationAndStatusClassification() throws {
     let rawDevice = FakeRawDevice(
       name: "Translation AirPods",
       modes: [
@@ -25,11 +25,25 @@ struct PrivateAudioTests {
       device.currentListeningMode() == .noiseCancellation,
       "private adapter translates the current mode"
     )
+    if case .value(.noiseCancellation) = device.readListeningModeStatus() {
+    } else {
+      Issue.record("status maps a known private listening mode")
+    }
 
-    let unknown = scriptedPrivateAudioDevice(
+    let future = scriptedPrivateAudioDevice(
       reads: ["AVOutputDeviceBluetoothListeningModeFuture"]
     )
-    #expect(unknown.currentListeningMode() == nil, "private adapter does not invent unknown modes")
+    #expect(future.currentListeningMode() == nil, "private adapter does not invent unknown modes")
+    if case .unresolved = future.readListeningModeStatus() {
+    } else {
+      Issue.record("an answered but unknown mode is unresolved")
+    }
+
+    let failed = scriptedPrivateAudioDevice(reads: [nil])
+    if case .readError = failed.readListeningModeStatus() {
+    } else {
+      Issue.record("a missing required mode response is a status read error")
+    }
 
     let emptyRaw = FakeRawDevice(name: "Empty Inventory AirPods", modes: [])
     let emptyDevices = try requireSelectedDevices(PrivateAudioController(
@@ -41,29 +55,6 @@ struct PrivateAudioTests {
       #expect(modes.isEmpty, "an answered empty AV inventory is typed evidence")
     } else {
       Issue.record("an answered empty AV inventory is typed evidence")
-    }
-  }
-
-  @Test
-  func privateStatusReadClassification() throws {
-    let known = privateAudioDevice(FakeRawDevice(name: "Known Status AirPods"))
-    if case .value(.transparency) = known.readListeningModeStatus() {
-    } else {
-      Issue.record("status maps a known private listening mode")
-    }
-
-    let future = scriptedPrivateAudioDevice(
-      reads: ["AVOutputDeviceBluetoothListeningModeFuture"]
-    )
-    if case .unresolved = future.readListeningModeStatus() {
-    } else {
-      Issue.record("an answered but unknown mode is unresolved")
-    }
-
-    let failed = scriptedPrivateAudioDevice(reads: [nil])
-    if case .readError = failed.readListeningModeStatus() {
-    } else {
-      Issue.record("a missing required mode response is a status read error")
     }
 
     let unsupportedCA = privateAudioDevice(
@@ -232,78 +223,56 @@ struct PrivateAudioTests {
   }
 
   @Test
-  func listeningModeReadbackWaitsForDelayedTarget() throws {
+  func listeningModeReadbackWaitsSettlesAndPreservesUnknown() throws {
     let off = rawListeningModeValues[.off]!
-    let device = scriptedPrivateAudioDevice(
+    let delayed = scriptedPrivateAudioDevice(
       reads: [
         rawListeningModeValues[.noiseCancellation]!,
         rawListeningModeValues[.noiseCancellation]!,
         off,
       ]
     )
-
-    let observation = device.setListeningModeAndReadBack(.off, wait: { _ in })
-
     #expect(
-      observation.observed == .off,
+      delayed.setListeningModeAndReadBack(.off, wait: { _ in }).observed == .off,
       "listening-mode readback waits for a delayed target"
     )
-  }
 
-  @Test
-  func listeningModeReadbackReturnsImmediatelyForObservedTarget() throws {
     let adaptive = rawListeningModeValues[.adaptive]!
-    let device = scriptedPrivateAudioDevice(
+    var waitCount = 0
+    let immediate = scriptedPrivateAudioDevice(
       reads: [adaptive],
       setterAccepted: false
-    )
-    var waitCount = 0
-
-    let observation = device.setListeningModeAndReadBack(.adaptive) { _ in waitCount += 1 }
-
+    ).setListeningModeAndReadBack(.adaptive) { _ in waitCount += 1 }
     #expect(
-      observation.observed == .adaptive,
+      immediate.observed == .adaptive,
       "observed target is authoritative when the setter rejects"
     )
-    #expect(!observation.setterAccepted, "readback preserves setter rejection")
+    #expect(!immediate.setterAccepted, "readback preserves setter rejection")
     #expect(waitCount == 0, "observed target returns without waiting")
-  }
 
-  @Test
-  func listeningModeReadbackReturnsFinalFallback() throws {
     let noiseCancellation = rawListeningModeValues[.noiseCancellation]!
     let transparency = rawListeningModeValues[.transparency]!
-    let device = scriptedPrivateAudioDevice(
+    waitCount = 0
+    let fallback = scriptedPrivateAudioDevice(
       reads: [noiseCancellation, transparency]
         + Array(repeating: noiseCancellation, count: 18)
         + [transparency]
-    )
-    var waitCount = 0
-
-    let observation = device.setListeningModeAndReadBack(.off) { _ in waitCount += 1 }
+    ).setListeningModeAndReadBack(.off) { _ in waitCount += 1 }
+    #expect(fallback.observed == .transparency, "Off returns the settled fallback mode")
+    #expect(fallback.setterAccepted, "readback preserves setter acceptance")
+    #expect(waitCount > 0, "Off readback waits for the fallback to settle")
 
     #expect(
-      observation.observed == .transparency,
-      "Off returns the settled fallback mode"
+      scriptedPrivateAudioDevice(
+        reads: [noiseCancellation, "AVOutputDeviceBluetoothListeningModeFuture"]
+      ).setListeningModeAndReadBack(.off, wait: { _ in }).observed == nil,
+      "unknown final readback becomes null state"
     )
-    #expect(observation.setterAccepted, "readback preserves setter acceptance")
-    #expect(waitCount > 0, "Off readback waits for the fallback to settle")
-  }
-
-  @Test
-  func listeningModeReadbackReturnsUnknownOrMissingFinalState() throws {
-    let noiseCancellation = rawListeningModeValues[.noiseCancellation]!
-    let unknown = "AVOutputDeviceBluetoothListeningModeFuture"
-
-    let unknownObserved = scriptedPrivateAudioDevice(reads: [noiseCancellation, unknown])
-      .setListeningModeAndReadBack(.off, wait: { _ in })
-      .observed
-    #expect(unknownObserved == nil, "unknown final readback becomes null state")
-
-    let missingObserved = scriptedPrivateAudioDevice(reads: [noiseCancellation, nil])
-      .setListeningModeAndReadBack(.off, wait: { _ in })
-      .observed
-    #expect(missingObserved == nil, "missing final readback becomes null state")
+    #expect(
+      scriptedPrivateAudioDevice(reads: [noiseCancellation, nil])
+        .setListeningModeAndReadBack(.off, wait: { _ in }).observed == nil,
+      "missing final readback becomes null state"
+    )
   }
 
   @Test(.serialized, arguments: [
@@ -580,6 +549,4 @@ struct PrivateAudioTests {
       "an unmapped current mode is distinguished in the report"
     )
   }
-
-
 }

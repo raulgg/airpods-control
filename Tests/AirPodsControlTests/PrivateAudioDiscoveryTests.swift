@@ -6,7 +6,7 @@ import Testing
 @Suite("Private audio discovery")
 struct PrivateAudioDiscoveryTests {
   @Test
-  func privateContextSelectorDiscovery() throws {
+  func privateContextSelectorDiscoveryPreservesEndpointOrder() throws {
     let logger = DebugLogger(enabled: false)
     let modern = FakeContext(devices: [])
     let legacy = FakeContext(devices: [])
@@ -47,19 +47,13 @@ struct PrivateAudioDiscoveryTests {
       PrivateAudioDiscovery.outputDevice(from: context, logger: logger) === device,
       "singular outputDevice is discovered independently"
     )
-  }
 
-  @Test
-  func contextEndpointsPreservePluralOrderAndMultiplicity() throws {
     let first = FakeRawDevice(name: "First AirPods")
     let second = FakeRawDevice(name: "Second AirPods")
-    let context = FakeContext(devices: [first, second, first], currentDevice: second)
-
     let endpoints = PrivateAudioDiscovery.contextEndpoints(
-      from: context,
-      logger: DebugLogger(enabled: false)
+      from: FakeContext(devices: [first, second, first], currentDevice: second),
+      logger: logger
     )
-
     #expect(endpoints.plural.count == 3, "plural endpoint multiplicity is preserved")
     #expect(
       endpoints.plural[0] === first
@@ -71,7 +65,7 @@ struct PrivateAudioDiscoveryTests {
   }
 
   @Test
-  func sameIdentifierSingularAuthorityRejectsWithdrawnMode() throws {
+  func singularCurrentWrapperGovernsEligibilityAndNeverFallsBackToPlural() throws {
     let identifier = "current-wrapper-policy-endpoint"
     let plural = FakeRawDevice(
       name: "Policy AirPods",
@@ -97,51 +91,51 @@ struct PrivateAudioDiscoveryTests {
       selected.availableListeningModes() == [.transparency],
       "the singular current endpoint governs advertised eligibility"
     )
-    let outcome = CommandExecution.execute(try parseInvocation(["lm", "set", "anc"])) {
+    let withdrawn = CommandExecution.execute(try parseInvocation(["lm", "set", "anc"])) {
       _, _ in selected
     }
     #expect(
-      outcome.plain == "unsupported",
+      withdrawn.plain == "unsupported",
       "a mode withdrawn by the singular endpoint is unsupported"
     )
     #expect(
       singular.listeningModeSetCount == 0 && plural.listeningModeSetCount == 0,
       "a withdrawn mode reaches neither singular nor stale plural setter"
     )
-  }
 
-  @Test
-  func readOnlySingularNeverFallsBackToPluralSetter() throws {
-    let identifier = "read-only-current-endpoint"
-    let plural = FakeRawDevice(name: "Stale AirPods", deviceIdentifier: identifier)
-    let singular = FakeReadOnlyRawDevice(
+    let stalePlural = FakeRawDevice(
+      name: "Stale AirPods",
+      deviceIdentifier: "read-only-current-endpoint"
+    )
+    let readOnlySingular = FakeReadOnlyRawDevice(
       name: "Current AirPods",
-      deviceIdentifier: identifier
+      deviceIdentifier: "read-only-current-endpoint"
     )
-    let endpoints = PrivateAudioDiscovery.contextEndpoints(
-      from: FakeContext(devices: [plural], currentDevice: singular),
-      logger: DebugLogger(enabled: false)
-    )
-    let devices = try requireSelectedDevices(PrivateAudioController(
-      endpoints: endpoints,
+    let readOnlyDevices = try requireSelectedDevices(PrivateAudioController(
+      endpoints: PrivateAudioDiscovery.contextEndpoints(
+        from: FakeContext(devices: [stalePlural], currentDevice: readOnlySingular),
+        logger: DebugLogger(enabled: false)
+      ),
       logger: DebugLogger(enabled: false)
     ).resolveDevices(named: nil, policy: .singleOrExact))
-    let selected = try #require(devices.first, "the read-only singular endpoint resolves for status")
-
-    #expect(selected.name == "Current AirPods", "the read-only singular wrapper stays authoritative")
+    let readOnly = try #require(
+      readOnlyDevices.first,
+      "the read-only singular endpoint resolves for status"
+    )
+    #expect(readOnly.name == "Current AirPods", "the read-only singular wrapper stays authoritative")
     #expect(
-      selected.canSetListeningMode() == false,
+      readOnly.canSetListeningMode() == false,
       "the singular wrapper's missing setter is honored"
     )
-    let outcome = CommandExecution.execute(try parseInvocation(["lm", "set", "adaptive"])) {
-      _, _ in selected
+    let unavailable = CommandExecution.execute(try parseInvocation(["lm", "set", "adaptive"])) {
+      _, _ in readOnly
     }
-    #expect(outcome.plain == "unavailable", "a read-only singular endpoint reports unavailable")
-    #expect(plural.listeningModeSetCount == 0, "the stale plural setter is never used as fallback")
+    #expect(unavailable.plain == "unavailable", "a read-only singular endpoint reports unavailable")
+    #expect(stalePlural.listeningModeSetCount == 0, "the stale plural setter is never used as fallback")
   }
 
   @Test
-  func supportReportContextDiscoveryIsPluralOnlyAndPrivate() throws {
+  func supportReportDiscoveryStaysPluralOnlyPrivateAndUnique() throws {
     let plural = FakeRawDevice(
       name: "Private Plural AirPods",
       deviceIdentifier: "AA:BB:CC:DD:EE:FF"
@@ -176,115 +170,110 @@ struct PrivateAudioDiscoveryTests {
       plural.deviceIDReadCount == 0 && singular.deviceIDReadCount == 0,
       "support-report reads no private endpoint identifiers"
     )
-  }
 
-  @Test
-  func supportReportPluralMultiplicityRequiresUniqueness() throws {
     let repeated = FakeRawDevice(
       name: "Repeated AirPods",
       deviceIdentifier: "AA:BB:CC:DD:EE:FF"
     )
-    let singular = FakeRawDevice(name: "Ignored Singular AirPods")
-    let context = FakeContext(devices: [repeated, repeated], currentDevice: singular)
-    let rawDevices = PrivateAudioDiscovery.outputDevices(
-      from: context,
+    let ignoredSingular = FakeRawDevice(name: "Ignored Singular AirPods")
+    let repeatedContext = FakeContext(devices: [repeated, repeated], currentDevice: ignoredSingular)
+    let repeatedDevices = PrivateAudioDiscovery.outputDevices(
+      from: repeatedContext,
       logger: DebugLogger(enabled: false)
     ) ?? []
     let resolution = PrivateAudioController(
-      rawDevices: rawDevices,
+      rawDevices: repeatedDevices,
       logger: DebugLogger(enabled: false),
       includeDeviceNames: false
     ).resolveDevices(named: nil, policy: .singleOrExact)
-
     if case .ambiguousDevice = resolution {
     } else {
       Issue.record("support-report requires one unique compatible plural endpoint")
     }
-    #expect(context.outputDeviceReadCount == 0, "plural uniqueness does not enter singular discovery")
+    #expect(
+      repeatedContext.outputDeviceReadCount == 0,
+      "plural uniqueness does not enter singular discovery"
+    )
     #expect(
       repeated.nameReadCount == 0 && repeated.deviceIDReadCount == 0,
       "plural uniqueness remains name- and identifier-free"
     )
     #expect(
-      singular.nameReadCount == 0 && singular.deviceIDReadCount == 0,
+      ignoredSingular.nameReadCount == 0 && ignoredSingular.deviceIDReadCount == 0,
       "the unused singular endpoint remains completely unread"
     )
   }
 
   @Test
-  func incompatibleUnidentifiedPluralDoesNotBlockValidSingular() throws {
-    let singular = FakeRawDevice(
+  func unidentifiedPluralYieldsToSingularAuthorityAndFailsClosed() throws {
+    let writableSingular = FakeRawDevice(
       name: "Current AirPods",
       deviceIdentifier: ""
     )
-    let endpoints = PrivateAudioContextEndpoints(
-      plural: [FakeIncompleteRawDevice()],
-      singular: singular
-    )
-    let devices = try requireSelectedDevices(PrivateAudioController(
-      endpoints: endpoints,
-      logger: DebugLogger(enabled: false)
-    ).resolveDevices(named: nil, policy: .singleOrExact))
-    let selected = try #require(
-      devices.first,
-      "a filtered no-ID plural does not hide the valid singular endpoint"
-    )
-
-    let observation = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
-    #expect(observation.observed == .adaptive, "the valid no-ID singular endpoint remains writable")
-    #expect(singular.listeningModeSetCount == 1, "the write reaches the singular endpoint")
-    #expect(
-      singular.deviceIDReadCount == 0,
-      "a filtered plural requires no speculative singular identifier read"
-    )
-  }
-
-  @Test
-  func compatibleUnidentifiedPluralIsSuppressedBySingularAuthority() throws {
-    let firstPlural = FakeRawDevice(name: "First stale AirPods", deviceIdentifier: "")
-    let secondPlural = FakeRawDevice(name: "Second stale AirPods", deviceIdentifier: "")
-    let singular = FakeRawDevice(name: "Current AirPods", deviceIdentifier: "")
-    let controller = PrivateAudioController(
+    let filteredDevices = try requireSelectedDevices(PrivateAudioController(
       endpoints: PrivateAudioContextEndpoints(
-        plural: [firstPlural, secondPlural],
-        singular: singular
+        plural: [FakeIncompleteRawDevice()],
+        singular: writableSingular
       ),
       logger: DebugLogger(enabled: false)
+    ).resolveDevices(named: nil, policy: .singleOrExact))
+    let filtered = try #require(
+      filteredDevices.first,
+      "a filtered no-ID plural does not hide the valid singular endpoint"
     )
-    let devices = try requireSelectedDevices(
-      controller.resolveDevices(named: nil, policy: .allOrExact),
+    #expect(
+      filtered.setListeningModeAndReadBack(.adaptive, wait: { _ in }).observed == .adaptive,
+      "the valid no-ID singular endpoint remains writable"
+    )
+    #expect(writableSingular.listeningModeSetCount == 1, "the write reaches the singular endpoint")
+    #expect(
+      writableSingular.deviceIDReadCount == 0,
+      "a filtered plural requires no speculative singular identifier read"
+    )
+
+    let firstPlural = FakeRawDevice(name: "First stale AirPods", deviceIdentifier: "")
+    let secondPlural = FakeRawDevice(name: "Second stale AirPods", deviceIdentifier: "")
+    let statusSingular = FakeRawDevice(name: "Current AirPods", deviceIdentifier: "")
+    let statusDevices = try requireSelectedDevices(
+      PrivateAudioController(
+        endpoints: PrivateAudioContextEndpoints(
+          plural: [firstPlural, secondPlural],
+          singular: statusSingular
+        ),
+        logger: DebugLogger(enabled: false)
+      ).resolveDevices(named: nil, policy: .allOrExact),
       "unresolved plural aliases produce one current status record"
     )
-    let selected = try #require(devices.first, "the singular endpoint is the current status record")
-
-    #expect(devices.count == 1, "unresolved plural aliases produce one current status record")
-    #expect(selected.name == "Current AirPods", "the singular endpoint wins unresolved alias risk")
-    let observation = selected.setListeningModeAndReadBack(.adaptive, wait: { _ in })
-    #expect(observation.observed == .adaptive, "the authoritative singular endpoint is writable")
+    let statusSelected = try #require(
+      statusDevices.first,
+      "the singular endpoint is the current status record"
+    )
+    #expect(statusDevices.count == 1, "unresolved plural aliases produce one current status record")
+    #expect(statusSelected.name == "Current AirPods", "the singular endpoint wins unresolved alias risk")
     #expect(
-      singular.listeningModeSetCount == 1
+      statusSelected.setListeningModeAndReadBack(.adaptive, wait: { _ in }).observed == .adaptive,
+      "the authoritative singular endpoint is writable"
+    )
+    #expect(
+      statusSingular.listeningModeSetCount == 1
         && firstPlural.listeningModeSetCount == 0
         && secondPlural.listeningModeSetCount == 0,
       "unidentified plural wrappers never receive the write"
     )
-  }
 
-  @Test
-  func unidentifiedPluralIsNotUsedWhenSingularIsIncompatible() throws {
-    let plural = FakeRawDevice(name: "Stale AirPods", deviceIdentifier: "")
+    let stalePlural = FakeRawDevice(name: "Stale AirPods", deviceIdentifier: "")
     let resolution = PrivateAudioController(
       endpoints: PrivateAudioContextEndpoints(
-        plural: [plural],
+        plural: [stalePlural],
         singular: FakeIncompleteRawDevice()
       ),
       logger: DebugLogger(enabled: false)
     ).resolveDevices(named: nil, policy: .singleOrExact)
-
     if case .noDevice = resolution {
     } else {
       Issue.record("unresolved plural identity fails closed without a valid singular")
     }
-    #expect(plural.listeningModeSetCount == 0, "a stale unidentified plural receives no write")
+    #expect(stalePlural.listeningModeSetCount == 0, "a stale unidentified plural receives no write")
   }
 
   @Test
@@ -428,7 +417,7 @@ struct PrivateAudioDiscoveryTests {
   }
 
   @Test
-  func catalogedPluralOnlyEmptyModesIsRejected() throws {
+  func catalogMembershipDoesNotProveControlOrShadowALiveSingular() throws {
     let catalogedPlural = FakeReadOnlyRawDevice(
       name: "Cataloged stale AirPods",
       modes: [],
@@ -438,15 +427,11 @@ struct PrivateAudioDiscoveryTests {
       rawDevices: [catalogedPlural],
       logger: DebugLogger(enabled: false)
     ).resolveDevices(named: nil, policy: .singleOrExact)
-
     if case .noDevice = resolution {
     } else {
       Issue.record("product catalog membership never proves runtime control capability")
     }
-  }
 
-  @Test
-  func catalogedEmptyPluralDoesNotBlockControllableEmptyModeSingular() throws {
     let plural = FakeReadOnlyRawDevice(
       name: "Cataloged stale AirPods",
       modes: [],
@@ -463,15 +448,14 @@ struct PrivateAudioDiscoveryTests {
       logger: DebugLogger(enabled: false)
     ).resolveDevices(named: nil, policy: .singleOrExact))
     let selected = try #require(devices.first, "the controllable singular endpoint is selected")
-
     #expect(selected.object === singular, "the controllable singular endpoint is selected")
-    let observation = selected.setConversationAwarenessAndReadBack(true, wait: { _ in })
-    #expect(observation.observed == true, "the empty-mode singular keeps direct CA control")
+    #expect(
+      selected.setConversationAwarenessAndReadBack(true, wait: { _ in }).observed == true,
+      "the empty-mode singular keeps direct CA control"
+    )
     #expect(
       singular.conversationAwarenessSetCount == 1,
       "the cataloged non-controllable plural never shadows the singular setter"
     )
   }
-
-
 }
