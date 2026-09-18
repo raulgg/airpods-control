@@ -83,6 +83,32 @@ func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
   )
 }
 
+func accessPolicy(for command: CLICommand) -> PrivateAudioAccessPolicy {
+  switch command {
+  case .status:
+    return .status
+  case .supportReport:
+    return .supportReport
+  case .version, .listeningModeGet, .listeningModeList, .listeningModeSet,
+       .listeningModeCycle, .conversationAwarenessGet, .conversationAwarenessSet:
+    return .operational
+  }
+}
+
+func commandDeviceResolution<Device>(
+  from selection: DeviceSelection<Device>,
+  selected: ([Device]) -> CommandDeviceResolution
+) -> CommandDeviceResolution {
+  switch selection {
+  case let .selected(devices):
+    return selected(devices)
+  case .noDevice:
+    return .failed(.noDevice)
+  case .ambiguousDevice:
+    return .failed(.ambiguousDevice)
+  }
+}
+
 func bootstrapAndResolveAudioDevices(
   named requestedName: String?,
   policy: DeviceSelectionPolicy,
@@ -96,12 +122,11 @@ func bootstrapAndResolveAudioDevices(
     guard let endpoints = PrivateAudioDiscovery.systemOperationalEndpoints(
       logger: logger
     ) else { return .failed(.unavailable) }
-    switch PrivateAudioController(endpoints: endpoints, logger: logger)
-      .resolveDevices(named: requestedName, policy: policy)
-    {
-    case let .selected(devices): return .devices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
+    return commandDeviceResolution(
+      from: PrivateAudioController(endpoints: endpoints, logger: logger)
+        .resolveDevices(named: requestedName, policy: policy)
+    ) { devices in
+      .devices(devices.map { $0 })
     }
 
   case .status:
@@ -118,10 +143,10 @@ func bootstrapAndResolveAudioDevices(
     case .unavailable: return .failed(.unavailable)
     case .readError: return .failed(.readError)
     }
-    switch controller.resolveDevices(named: requestedName, policy: policy) {
-    case let .selected(devices): return .statusDevices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
+    return commandDeviceResolution(
+      from: controller.resolveDevices(named: requestedName, policy: policy)
+    ) { devices in
+      .statusDevices(devices.map { $0 })
     }
 
   case .supportReport:
@@ -130,14 +155,14 @@ func bootstrapAndResolveAudioDevices(
     guard let devices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
       return .failed(.unavailable)
     }
-    switch PrivateAudioController(
-      rawDevices: devices,
-      logger: logger,
-      includeDeviceNames: false
-    ).resolveDevices(named: requestedName, policy: policy) {
-    case let .selected(devices): return .devices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
+    return commandDeviceResolution(
+      from: PrivateAudioController(
+        rawDevices: devices,
+        logger: logger,
+        includeDeviceNames: false
+      ).resolveDevices(named: requestedName, policy: policy)
+    ) { devices in
+      .devices(devices.map { $0 })
     }
   }
 }
@@ -172,17 +197,13 @@ func bootstrapAndResolveListeningMode(
     avDevices: avDevices,
     logger: logger,
     chooseAmbiguous: { names in
-      let inputIsTerminal = isatty(STDIN_FILENO) == 1
-      let errorIsTerminal = isatty(STDERR_FILENO) == 1
-      guard inputIsTerminal, errorIsTerminal, !invocation.jsonOutput else {
-        return .unavailable
-      }
-
+      // Ineligible prompts and explicit declines both map to unavailable, which
+      // resolve reports as ambiguous-device.
       let outcome = InteractiveDeviceChooser.choose(
         deviceNames: names,
         eligibility: .init(
-          inputIsTerminal: inputIsTerminal,
-          errorIsTerminal: errorIsTerminal,
+          inputIsTerminal: isatty(STDIN_FILENO) == 1,
+          errorIsTerminal: isatty(STDERR_FILENO) == 1,
           jsonOutput: invocation.jsonOutput
         ),
         readResponse: { readLine() },
@@ -212,82 +233,81 @@ func bootstrapAndResolveListeningMode(
 
 let rawArgs = Array(CommandLine.arguments.dropFirst())
 
-if rawArgs.isEmpty {
-  finish(plain: globalHelp, jsonOutput: false)
-}
-
-if let help = helpText(for: rawArgs) {
-  finish(plain: help, jsonOutput: false)
-}
-
-let preliminaryJSON = rawArgs.contains("--json")
-let preliminaryDebug = rawArgs.contains("--debug")
-let preliminaryLogger = DebugLogger(enabled: preliminaryDebug)
-
-let invocation: CLIInvocation
-do {
-  invocation = try parseInvocation(rawArgs)
-} catch {
-  preliminaryLogger.warning("cli.parse", "bad-args")
-  finish(
-    plain: "bad-args",
-    terminalReason: .badArgs,
-    jsonOutput: preliminaryJSON
-  )
-}
-
-let supportReport = SupportReportCommand(
-  requestWriteTestConsent: { plan in
-    SupportReportInteraction.requestWriteTestConsent(plan: plan)
-  },
-  runWriteTests: { plan, device in
-    let progress = SupportReportProgressDisplay(
-      plan: plan,
-      debugEnabled: invocation.debugEnabled
-    )
-    return SupportReportWriteTester.runInterruptibly(
-      plan: plan,
-      device: device,
-      progress: { progress?.receive($0) }
-    )
-  }
-)
-
 let outcome: CommandOutcome
-if ListeningModeCommand(invocation.command) != nil {
-  outcome = CommandExecution.executeListeningMode(
-    invocation,
-    resolveSession: { command, _, logger in
-      bootstrapAndResolveListeningMode(
-        command: command,
-        invocation: invocation,
-        logger: logger
+let jsonOutput: Bool
+let presentSupportReport: Bool
+if rawArgs.isEmpty {
+  outcome = CommandOutcome(plain: globalHelp)
+  jsonOutput = false
+  presentSupportReport = false
+} else if let help = helpText(for: rawArgs) {
+  outcome = CommandOutcome(plain: help)
+  jsonOutput = false
+  presentSupportReport = false
+} else {
+  let preliminaryJSON = rawArgs.contains("--json")
+  let preliminaryDebug = rawArgs.contains("--debug")
+  let preliminaryLogger = DebugLogger(enabled: preliminaryDebug)
+
+  do {
+    let invocation = try parseInvocation(rawArgs)
+    let supportReport = SupportReportCommand(
+      requestWriteTestConsent: { plan in
+        SupportReportInteraction.requestWriteTestConsent(plan: plan)
+      },
+      runWriteTests: { plan, device in
+        let progress = SupportReportProgressDisplay(
+          plan: plan,
+          debugEnabled: invocation.debugEnabled
+        )
+        return SupportReportWriteTester.runInterruptibly(
+          plan: plan,
+          device: device,
+          progress: { progress?.receive($0) }
+        )
+      }
+    )
+
+    if ListeningModeCommand(invocation.command) != nil {
+      outcome = CommandExecution.executeListeningMode(
+        invocation,
+        resolveSession: { command, _, logger in
+          bootstrapAndResolveListeningMode(
+            command: command,
+            invocation: invocation,
+            logger: logger
+          )
+        }
+      )
+    } else {
+      outcome = CommandExecution.execute(
+        invocation,
+        resolveDevices: { requestedName, policy, logger in
+          bootstrapAndResolveAudioDevices(
+            named: requestedName,
+            policy: policy,
+            logger: logger,
+            accessPolicy: accessPolicy(for: invocation.command)
+          )
+        },
+        supportReport: supportReport
       )
     }
-  )
-} else {
-  outcome = CommandExecution.execute(
-    invocation,
-    resolveDevices: { requestedName, policy, logger in
-      let accessPolicy: PrivateAudioAccessPolicy
-      if case .supportReport = invocation.command {
-        accessPolicy = .supportReport
-      } else if case .status = invocation.command {
-        accessPolicy = .status
-      } else {
-        accessPolicy = .operational
-      }
-      return bootstrapAndResolveAudioDevices(
-        named: requestedName,
-        policy: policy,
-        logger: logger,
-        accessPolicy: accessPolicy
-      )
-    },
-    supportReport: supportReport
-  )
+    jsonOutput = invocation.jsonOutput
+    if case .supportReport = invocation.command {
+      presentSupportReport = true
+    } else {
+      presentSupportReport = false
+    }
+  } catch {
+    preliminaryLogger.warning("cli.parse", "bad-args")
+    outcome = CommandOutcome(plain: "bad-args", terminalReason: .badArgs)
+    jsonOutput = preliminaryJSON
+    presentSupportReport = false
+  }
 }
-if case .supportReport = invocation.command {
+
+if presentSupportReport {
   exit(SupportReportInteraction.present(outcome: outcome).exitCode)
 }
-finish(outcome, jsonOutput: invocation.jsonOutput)
+finish(outcome, jsonOutput: jsonOutput)
