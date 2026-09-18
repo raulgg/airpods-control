@@ -9,6 +9,8 @@ struct AppleAudioProductsTests {
     arguments: [
       ("BTHeadphones76,8231", SupportReportDeviceFamily.airPods),
       ("btheadphones76,8231", .airPods),
+      ("BTHeadphones76,8240", .airPods),
+      ("BTHeadphones76,8246", .airPods),
       ("BTHeadphones76,8210", .beats),
       ("BTHeadphones76,60000", .unknownApple),
       ("AirPodsTest1,1", .airPods),
@@ -32,6 +34,19 @@ struct AppleAudioProductsTests {
   func rejectsInvalidIdentifier(_ modelIdentifier: String?) {
     #expect(AppleAudioProducts.family(for: modelIdentifier) == nil)
     #expect(AppleAudioProducts.product(for: modelIdentifier) == nil)
+  }
+
+  @Test(
+    "Names both AirPods 5 CoreTypes product IDs",
+    arguments: [8240, 8246]
+  )
+  func namesAirPods5(_ productID: Int) throws {
+    let product = try #require(
+      AppleAudioProducts.product(for: "BTHeadphones76,\(productID)")
+    )
+    #expect(product.family == .airPods)
+    #expect(product.modelName == "AirPods 5")
+    #expect(product.bluetoothProductID == productID)
   }
 
   @Test("Keeps unknown Apple product IDs available for exploratory reports")
