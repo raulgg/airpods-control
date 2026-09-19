@@ -18,6 +18,9 @@ here and avoid them.
 - Leave `verify-runtime` and `verify-catalog` out of `make test`.
 - Do not add tests that need AirPods or write device settings.
 - Do not rename `Build, test, and verify install` or turn it into a matrix.
+- Do not rename `Build, test, and verify runtime (macOS 26)` or
+  `Build, test, and verify runtime (Intel)`. Those names belong to the
+  gate jobs that always report the required checks.
 
 ## Markdown
 
