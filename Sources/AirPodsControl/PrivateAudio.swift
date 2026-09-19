@@ -276,15 +276,10 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     }
 
     if modes.isEmpty {
-      guard sources.contains(.contextSingular),
-            singularEndpointHasControlSignal(object)
-      else {
+      guard acceptsEmptyAvailableModes(object: object, sources: sources) else {
         logger.debug("device.\(index).compatible", false)
         return nil
       }
-      // Only the singular current endpoint may survive an empty capability
-      // list, and only while it still answers a control-plane query. Product
-      // metadata is never runtime capability evidence.
       logger.debug("device.\(index).transient_empty_modes", true)
     }
 
@@ -296,6 +291,16 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       name: name,
       logger: logger
     )
+  }
+
+  // Only the singular current endpoint may survive an empty capability list,
+  // and only while it still answers a control-plane query. Product metadata
+  // is never runtime capability evidence.
+  private static func acceptsEmptyAvailableModes(
+    object: AnyObject,
+    sources: Set<PrivateAudioDiscoverySource>
+  ) -> Bool {
+    sources.contains(.contextSingular) && singularEndpointHasControlSignal(object)
   }
 
   private static func singularEndpointHasControlSignal(_ object: AnyObject) -> Bool {
@@ -426,17 +431,15 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
       : standardWriteReadbackAttempts
 
     let setterAccepted = setRawListeningMode(rawTarget) == true
-    var observedRawMode = currentRawListeningMode()
-    logger.debug("verify.listening_mode.attempt", 0)
-
-    if observedRawMode != rawTarget || settleThroughDeadline {
-      for attempt in 1...attemptLimit {
-        wait(privateAudioReadbackDelay)
-        observedRawMode = currentRawListeningMode()
-        logger.debug("verify.listening_mode.attempt", attempt)
-        if observedRawMode == rawTarget, !settleThroughDeadline { break }
-      }
-    }
+    let observedRawMode = pollObserved(
+      attemptLimit: attemptLimit,
+      logKey: "verify.listening_mode.attempt",
+      shouldStop: { observed in
+        observed == rawTarget && !settleThroughDeadline
+      },
+      wait: wait,
+      read: currentRawListeningMode
+    )
 
     return DeviceWriteObservation(
       setterAccepted: setterAccepted,
@@ -523,23 +526,45 @@ final class PrivateAudioDevice: CompatibleAudioDevice {
     wait: (useconds_t) -> Void
   ) -> DeviceWriteObservation<Bool> {
     let setterAccepted = setConversationAwareness(target) == true
-    var observed = conversationAwarenessState()
-    logger.debug("verify.conversation_awareness.attempt", 0)
-
-    if observed != target {
-      for attempt in 1...standardWriteReadbackAttempts {
-        wait(privateAudioReadbackDelay)
-        observed = conversationAwarenessState()
-        logger.debug("verify.conversation_awareness.attempt", attempt)
-        if observed == target { break }
-      }
-    }
+    let observed = pollObserved(
+      attemptLimit: standardWriteReadbackAttempts,
+      logKey: "verify.conversation_awareness.attempt",
+      shouldStop: { $0 == target },
+      wait: wait,
+      read: conversationAwarenessState
+    )
 
     return DeviceWriteObservation(
       setterAccepted: setterAccepted,
       observed: observed
     )
   }
+
+  private func pollObserved<Value>(
+    attemptLimit: Int,
+    logKey: String,
+    shouldStop: (Value) -> Bool,
+    wait: (useconds_t) -> Void,
+    read: () -> Value
+  ) -> Value {
+    var observed = read()
+    logger.debug(logKey, 0)
+    guard !shouldStop(observed) else { return observed }
+    for attempt in 1...attemptLimit {
+      wait(privateAudioReadbackDelay)
+      observed = read()
+      logger.debug(logKey, attempt)
+      if shouldStop(observed) { break }
+    }
+    return observed
+  }
+}
+
+private enum SingularAliasRelation {
+  case sameObject
+  case matchingIdentifier
+  case unidentified
+  case distinct
 }
 
 final class PrivateAudioController {
@@ -614,6 +639,24 @@ final class PrivateAudioController {
     )
   }
 
+  private static func aliasRelation(
+    plural: PrivateAudioDevice,
+    singularObject: AnyObject,
+    singularIdentifier: String?
+  ) -> SingularAliasRelation {
+    if plural.object === singularObject {
+      return .sameObject
+    }
+    guard let singularIdentifier,
+          let pluralIdentifier = PrivateAudioDiscovery.deviceIdentifier(
+            for: plural.object
+          )
+    else {
+      return .unidentified
+    }
+    return pluralIdentifier == singularIdentifier ? .matchingIdentifier : .distinct
+  }
+
   private static func resolveOperationalDevices(
     plural: [PrivateAudioDevice],
     singularObject: AnyObject?,
@@ -629,30 +672,21 @@ final class PrivateAudioController {
     var insertedSingular = false
 
     for pluralDevice in plural {
-      let isAlias: Bool?
-      if pluralDevice.object === singularObject {
-        isAlias = true
-      } else if let singularIdentifier,
-                let pluralIdentifier = PrivateAudioDiscovery.deviceIdentifier(
-                  for: pluralDevice.object
-                )
-      {
-        isAlias = pluralIdentifier == singularIdentifier
-      } else {
-        isAlias = nil
-      }
-
-      if isAlias == false {
+      switch aliasRelation(
+        plural: pluralDevice,
+        singularObject: singularObject,
+        singularIdentifier: singularIdentifier
+      ) {
+      case .distinct:
         resolved.append(pluralDevice)
-        continue
-      }
-
-      if isAlias == true {
+      case .sameObject, .matchingIdentifier:
         singularDevice?.sources.insert(.contextPlural)
-      }
-      if !insertedSingular, let singularDevice {
-        resolved.append(singularDevice)
-        insertedSingular = true
+        fallthrough
+      case .unidentified:
+        if !insertedSingular, let singularDevice {
+          resolved.append(singularDevice)
+          insertedSingular = true
+        }
       }
     }
 
@@ -666,33 +700,44 @@ final class PrivateAudioController {
     named requestedName: String?,
     policy: DeviceSelectionPolicy
   ) -> DeviceSelection<PrivateAudioDevice> {
-    guard let requestedName else {
-      guard !devices.isEmpty else {
-        logger.warning("device_selection", "no-compatible-device")
-        return .noDevice
+    if let requestedName {
+      return selectExactName(requestedName)
+    }
+    return selectUnnamed(policy: policy)
+  }
+
+  private func selectUnnamed(
+    policy: DeviceSelectionPolicy
+  ) -> DeviceSelection<PrivateAudioDevice> {
+    guard !devices.isEmpty else {
+      logger.warning("device_selection", "no-compatible-device")
+      return .noDevice
+    }
+    switch policy {
+    case .singleOrExact:
+      guard devices.count == 1, let selected = devices.first else {
+        logger.warning("device_selection", "ambiguous-device")
+        return .ambiguousDevice
       }
-      switch policy {
-      case .singleOrExact:
+      logger.info("selected_device", selected.name ?? "name-not-read")
+      return .selected([selected])
+    case .allOrExact:
+      guard includesDeviceNames else {
         guard devices.count == 1, let selected = devices.first else {
           logger.warning("device_selection", "ambiguous-device")
           return .ambiguousDevice
         }
-        logger.info("selected_device", selected.name ?? "name-not-read")
+        logger.info("selected_device", "name-not-read")
         return .selected([selected])
-      case .allOrExact:
-        guard includesDeviceNames else {
-          guard devices.count == 1, let selected = devices.first else {
-            logger.warning("device_selection", "ambiguous-device")
-            return .ambiguousDevice
-          }
-          logger.info("selected_device", "name-not-read")
-          return .selected([selected])
-        }
-        logger.info("selected_device_count", devices.count)
-        return .selected(devices)
       }
+      logger.info("selected_device_count", devices.count)
+      return .selected(devices)
     }
+  }
 
+  private func selectExactName(
+    _ requestedName: String
+  ) -> DeviceSelection<PrivateAudioDevice> {
     guard includesDeviceNames else {
       logger.warning("device_selection", "name-selection-disabled")
       return .noDevice
