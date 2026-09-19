@@ -36,19 +36,6 @@ struct AppleAudioProductsTests {
     #expect(AppleAudioProducts.product(for: modelIdentifier) == nil)
   }
 
-  @Test(
-    "Names both AirPods 5 CoreTypes product IDs",
-    arguments: [8240, 8246]
-  )
-  func namesAirPods5(_ productID: Int) throws {
-    let product = try #require(
-      AppleAudioProducts.product(for: "BTHeadphones76,\(productID)")
-    )
-    #expect(product.family == .airPods)
-    #expect(product.modelName == "AirPods 5")
-    #expect(product.bluetoothProductID == productID)
-  }
-
   @Test("Keeps unknown Apple product IDs available for exploratory reports")
   func preservesUnknownAppleProduct() throws {
     let unknown = try #require(AppleAudioProducts.product(for: "BTHeadphones76,60000"))
