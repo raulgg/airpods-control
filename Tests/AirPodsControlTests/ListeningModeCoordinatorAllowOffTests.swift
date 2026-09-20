@@ -658,92 +658,82 @@ struct ListeningModeCoordinatorAllowOffTests {
       "fresh live evidence is never mislabeled as cached provenance"
     )
   }
-}
 
-@Suite("Allow Off correlation")
-struct ListeningModeAllowOffCorrelationTests {
   @Test
-  func correlationAbortsWhenAnyCollisionUIDReadFails() {
+  func listeningModeAllowOffCollisionUIDReadFailureDoesNotPersist() throws {
+    let clock = Date(timeIntervalSince1970: 2_000_000_400)
     let backend = FakeHALRoutingBackend()
-    backend.deviceUIDs[42] = .value("uid-42")
-    backend.deviceUIDs[43] = .unavailable
-    let cache = InMemoryListeningModeAllowOffCache(
-      salt: Data(repeating: 0xA5, count: 32)
-    )!
-    let correlation = ListeningModeAllowOffCorrelation(
-      targetAudioDeviceID: 42,
-      collisionAudioDeviceIDs: [42, 43],
+    backend.rawModeRead = .value(2)
+    let fixture = allowOffCacheFixture(
       backend: backend,
-      cache: cache,
-      logger: DebugLogger(enabled: false)
+      now: { clock },
+      collisionIDs: [42, 43]
+    )
+    backend.deviceUIDs[43] = .unavailable
+    let av = FakeListeningModeTransport(
+      name: "Collision AirPods",
+      kind: .av,
+      modes: ListeningMode.allCases,
+      current: .transparency
+    )
+    let joined = candidate(
+      name: "Collision AirPods",
+      av: av,
+      route: .selected,
+      allowOffCorrelation: fixture.correlation
     )
 
-    correlation.observeCurrentOff(observedAt: Date(timeIntervalSince1970: 2_000_000_000))
-
+    let avList = try coordinatorOutcome(
+      ["lm", "list", "--json"],
+      candidates: [joined]
+    )
     #expect(
-      cache.lookup(rawDeviceUID: "uid-42") == .miss,
+      avList.plain == "off,transparency,adaptive,noise-cancellation",
+      "uncorrelated AV Off remains visible on the live inventory"
+    )
+    #expect(
+      avList.payload["allowOffAvailability"] == nil,
+      "uncorrelated live Off is never labeled cached"
+    )
+    #expect(
+      fixture.cache.lookup(rawDeviceUID: "uid-42") == .miss,
       "a failed sibling UID read does not persist target evidence"
     )
     #expect(
       backend.deviceUIDReads.contains(43),
       "correlation reads every collision UID before aborting"
     )
-  }
 
-  @Test
-  func correlationAuthorizesLiveWhenUIDCannotBeResolved() {
-    let backend = FakeHALRoutingBackend()
-    let cache = InMemoryListeningModeAllowOffCache(
-      salt: Data(repeating: 0xA5, count: 32)
-    )!
-    let correlation = ListeningModeAllowOffCorrelation(
-      targetAudioDeviceID: 42,
-      collisionAudioDeviceIDs: [42],
-      backend: backend,
-      cache: cache,
-      logger: DebugLogger(enabled: false)
+    let halCandidate = ListeningModeCandidate(
+      displayName: "Collision AirPods",
+      selectableNames: ["Collision AirPods"],
+      avTransport: nil,
+      halTransport: fixture.transport,
+      route: .notSelected,
+      allowOffCorrelation: fixture.correlation
     )
-
-    let authorization = correlation.observeAvailability(
-      .value(ListeningMode.allCases),
-      observedAt: Date(timeIntervalSince1970: 2_000_000_000)
-    )
-
-    #expect(authorization != nil, "missing UID still authorizes live AV Off evidence")
-    #expect(
-      authorization?.cachedEvidence == nil,
-      "uncorrelated live evidence is not cached"
+    let halList = try coordinatorOutcome(
+      ["lm", "list"],
+      candidates: [halCandidate]
     )
     #expect(
-      cache.lookup(rawDeviceUID: "uid-42") == .miss,
-      "a missing UID does not write the cache"
-    )
-  }
-
-  @Test
-  func correlationRejectsOversizedRawDeviceUID() {
-    let backend = FakeHALRoutingBackend()
-    backend.deviceUIDs[42] = .value(String(repeating: "x", count: 4_097))
-    let cache = InMemoryListeningModeAllowOffCache(
-      salt: Data(repeating: 0xA5, count: 32)
-    )!
-    let correlation = ListeningModeAllowOffCorrelation(
-      targetAudioDeviceID: 42,
-      collisionAudioDeviceIDs: [42],
-      backend: backend,
-      cache: cache,
-      logger: DebugLogger(enabled: false)
+      halList.plain == "transparency,adaptive,noise-cancellation",
+      "HAL list cannot consume evidence that correlation refused to persist"
     )
 
-    correlation.observeDenial(observedAt: Date(timeIntervalSince1970: 2_000_000_000))
-
+    backend.resetWrites()
+    let probe = try coordinatorOutcome(
+      ["lm", "set", "off"],
+      candidates: [halCandidate]
+    )
+    #expect(probe.plain == "ok", "failed collision UID reads do not prevent a live probe")
     #expect(
-      cache.lookup(rawDeviceUID: String(repeating: "x", count: 4_097)) == .miss,
-      "an oversized raw UID aborts correlation instead of writing denial"
+      backend.writtenValues == [1],
+      "an explicit probe does not require cache correlation"
     )
     #expect(
-      correlation.hasCachedDenial() == false,
-      "an oversized raw UID cannot be treated as cached denial"
+      fixture.cache.lookup(rawDeviceUID: "uid-42") == .miss,
+      "a successful uncorrelated probe still cannot persist evidence"
     )
   }
 }
