@@ -1,10 +1,15 @@
 name: Quality Checks
 
 on:
-  pull_request:
   push:
     branches:
       - main
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - stacked
 
 permissions:
   contents: read
@@ -14,8 +19,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Stacked PRs run this workflow on every layer as if it targeted main.
+  # Skip the macOS job on mid-stack layers; remaining bottom and top still
+  # run. A skipped job reports Success for required checks.
+  gate:
+    name: Stack CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should-run: ${{ steps.gate.outputs.should-run }}
+    steps:
+      - name: Stack CI Gate
+        id: gate
+        uses: raulgg/stack-ci-gate@v1.0.1
+
   formatting:
     name: Check formatting
+    needs: gate
+    if: needs.gate.outputs.should-run == 'true'
     runs-on: macos-14
     timeout-minutes: 5
 
