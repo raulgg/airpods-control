@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Stack CI Gate
         id: gate
-        uses: raulgg/stack-ci-gate@v1.0.1
+        uses: raulgg/stack-ci-gate@a0eedc1fcdb0de363849885126a562c4d46285dc # v1.0.1
 
   build:
     name: Build, test, and verify install
