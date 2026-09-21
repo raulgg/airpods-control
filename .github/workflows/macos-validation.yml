@@ -35,9 +35,6 @@ jobs:
       - name: Stack CI Gate
         id: gate
         uses: raulgg/stack-ci-gate@v1.0.1
-        with:
-          bottom-n: 1
-          run-top: true
 
   build:
     name: Build, test, and verify install
