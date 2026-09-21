@@ -18,6 +18,9 @@ here and avoid them.
 - Leave `verify-runtime` and `verify-catalog` out of `make test`.
 - Do not add tests that need AirPods or write device settings.
 - Do not rename `Build, test, and verify install` or turn it into a matrix.
+- macos-validation skips mid-stack layers with `raulgg/stack-ci-gate`. Keep
+  the `stacked` pull_request type. Do not add `edited`; title edits would
+  re-run the macOS jobs. Do not add the gate job to required checks.
 
 ## Markdown
 

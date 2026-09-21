@@ -5,6 +5,11 @@ on:
     branches:
       - main
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - stacked
 
 permissions:
   contents: read
@@ -14,8 +19,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Stacked PRs run this workflow on every layer as if it targeted main.
+  # Skip the macOS jobs on mid-stack layers; remaining bottom and top still
+  # run. A skipped job reports Success for required checks.
+  gate:
+    name: Stack CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should-run: ${{ steps.gate.outputs.should-run }}
+    steps:
+      - name: Stack CI Gate
+        id: gate
+        uses: raulgg/stack-ci-gate@v1.0.1
+        with:
+          bottom-n: 1
+          run-top: true
+
   build:
     name: Build, test, and verify install
+    needs: gate
+    if: needs.gate.outputs.should-run == 'true'
     # macos-14 defaults to Swift 5.10, which cannot run Swift Testing.
     # Use the runner's default toolchain with a Swift 6 minimum.
     runs-on: macos-15
@@ -93,6 +120,8 @@ jobs:
 
   macos-26:
     name: Build, test, and verify runtime (macOS 26)
+    needs: gate
+    if: needs.gate.outputs.should-run == 'true'
     runs-on: macos-26
     timeout-minutes: 20
 
@@ -128,6 +157,8 @@ jobs:
 
   intel:
     name: Build, test, and verify runtime (Intel)
+    needs: gate
+    if: needs.gate.outputs.should-run == 'true'
     runs-on: macos-15-intel
     timeout-minutes: 20
 
