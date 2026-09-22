@@ -2,147 +2,6 @@ import Darwin
 import Dispatch
 import Foundation
 
-enum SupportReportWriteTestProgressOperation: Equatable {
-  case listeningMode(ListeningMode)
-  case listeningModeRestoration
-  case conversationAwareness
-  case conversationAwarenessRestoration
-
-  var activeLabel: String {
-    switch self {
-    case let .listeningMode(mode):
-      return "Testing listening mode: \(mode.displayName)…"
-    case .listeningModeRestoration:
-      return "Restoring listening mode…"
-    case .conversationAwareness:
-      return "Testing Conversation Awareness…"
-    case .conversationAwarenessRestoration:
-      return "Restoring Conversation Awareness…"
-    }
-  }
-
-  var skippedLabel: String {
-    switch self {
-    case let .listeningMode(mode):
-      return "Skipping listening mode: \(mode.displayName)…"
-    case .listeningModeRestoration:
-      return "Skipping listening mode restoration…"
-    case .conversationAwareness:
-      return "Skipping Conversation Awareness…"
-    case .conversationAwarenessRestoration:
-      return "Skipping Conversation Awareness restoration…"
-    }
-  }
-}
-
-struct SupportReportWriteTestProgressPlan {
-  let operations: [SupportReportWriteTestProgressOperation]
-
-  init(_ plan: SupportReportWriteTestPlan) {
-    var operations: [SupportReportWriteTestProgressOperation] = []
-    if plan.willTestListeningModes {
-      operations.append(contentsOf: plan.listeningModeTargets.map {
-        .listeningMode($0)
-      })
-      operations.append(.listeningModeRestoration)
-    }
-    if plan.willTestConversationAwareness {
-      operations.append(contentsOf: [
-        .conversationAwareness,
-        .conversationAwarenessRestoration,
-      ])
-    }
-    self.operations = operations
-  }
-}
-
-enum SupportReportWriteTestProgressEvent: Equatable {
-  case preparing
-  case operationStarted(
-    SupportReportWriteTestProgressOperation,
-    step: Int,
-    total: Int
-  )
-  case operationSkipped(
-    SupportReportWriteTestProgressOperation,
-    step: Int,
-    total: Int
-  )
-  case interrupted(signal: Int32)
-  case restorationFailed
-  case finished
-}
-
-struct SupportReportWriteTestProgressReporter {
-  private let plan: SupportReportWriteTestProgressPlan
-  private let report: (SupportReportWriteTestProgressEvent) -> Void
-
-  init(
-    plan: SupportReportWriteTestPlan,
-    report: @escaping (SupportReportWriteTestProgressEvent) -> Void
-  ) {
-    self.plan = SupportReportWriteTestProgressPlan(plan)
-    self.report = report
-  }
-
-  func preparing() {
-    report(.preparing)
-  }
-
-  func started(_ operation: SupportReportWriteTestProgressOperation) {
-    let position = position(of: operation)
-    report(.operationStarted(operation, step: position.step, total: position.total))
-  }
-
-  func skipped(_ operation: SupportReportWriteTestProgressOperation) {
-    let position = position(of: operation)
-    report(.operationSkipped(operation, step: position.step, total: position.total))
-  }
-
-  func skipped(_ operations: [SupportReportWriteTestProgressOperation]) {
-    operations.forEach(skipped)
-  }
-
-  func skippedListeningModes() {
-    skipped(plan.operations.filter { operation in
-      switch operation {
-      case .listeningMode, .listeningModeRestoration: return true
-      case .conversationAwareness, .conversationAwarenessRestoration: return false
-      }
-    })
-  }
-
-  func skippedConversationAwareness() {
-    skipped(plan.operations.filter { operation in
-      switch operation {
-      case .listeningMode, .listeningModeRestoration: return false
-      case .conversationAwareness, .conversationAwarenessRestoration: return true
-      }
-    })
-  }
-
-  func interrupted(by signal: Int32) {
-    report(.interrupted(signal: signal))
-  }
-
-  func restorationFailed() {
-    report(.restorationFailed)
-  }
-
-  func finished() {
-    report(.finished)
-  }
-
-  private func position(
-    of operation: SupportReportWriteTestProgressOperation
-  ) -> (step: Int, total: Int) {
-    guard let index = plan.operations.firstIndex(of: operation) else {
-      preconditionFailure("Progress operation is not part of the write-test plan")
-    }
-    return (index + 1, plan.operations.count)
-  }
-}
-
 enum SupportReportProgressLineRenderer {
   static let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -193,6 +52,12 @@ final class SupportReportProgressDisplay {
     "Warning: initial settings were not fully restored; see the report below.\n"
 
   private static let clearLine = "\r\u{001B}[2K"
+
+  private enum RenderAction {
+    case frame
+    case clear
+    case restorationWarning
+  }
 
   private let queue = DispatchQueue(label: "airpods-control.support-report-progress")
   private let timer: DispatchSourceTimer
@@ -273,30 +138,45 @@ final class SupportReportProgressDisplay {
 
   func receive(_ event: SupportReportWriteTestProgressEvent) {
     queue.sync {
-      switch event {
-      case .preparing, .operationStarted:
-        currentEvent = event
-        renderNextFrame()
-      case .operationSkipped:
-        currentEvent = interrupted ? nil : event
-        if interrupted {
-          clearProgressLine()
-        } else {
-          renderNextFrame()
-        }
-      case .interrupted:
-        interrupted = true
+      render(apply(event))
+    }
+  }
+
+  private func apply(_ event: SupportReportWriteTestProgressEvent) -> RenderAction {
+    switch event {
+    case .preparing, .operationStarted:
+      currentEvent = event
+      return .frame
+    case .operationSkipped:
+      if interrupted {
         currentEvent = nil
-        clearProgressLine()
-      case .restorationFailed:
-        currentEvent = nil
-        clearProgressLine()
-        writeError(Self.restorationWarning)
-      case .finished:
-        currentEvent = nil
-        clearProgressLine()
-        timer.cancel()
+        return .clear
       }
+      currentEvent = event
+      return .frame
+    case .interrupted:
+      interrupted = true
+      currentEvent = nil
+      return .clear
+    case .restorationFailed:
+      currentEvent = nil
+      return .restorationWarning
+    case .finished:
+      currentEvent = nil
+      timer.cancel()
+      return .clear
+    }
+  }
+
+  private func render(_ action: RenderAction) {
+    switch action {
+    case .frame:
+      renderNextFrame()
+    case .clear:
+      clearProgressLine()
+    case .restorationWarning:
+      clearProgressLine()
+      writeError(Self.restorationWarning)
     }
   }
 
