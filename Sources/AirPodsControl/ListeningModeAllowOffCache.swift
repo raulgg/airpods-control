@@ -66,7 +66,11 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
           let observation = document.observations[key]
     else { return .miss }
     switch storage.readDenyMarker(for: key) {
-    case let .value(deniedAt) where deniedAt >= observation.observedAt:
+    case let .value(deniedAt)
+      where AllowOffCachePolicy.denyMarkerOutranksObservation(
+        deniedAt: deniedAt,
+        observedAt: observation.observedAt
+      ):
       guard let deniedEvidence = AllowOffCachePolicy.usableEvidence(
         observedAt: deniedAt,
         ttl: ttl,
@@ -123,121 +127,232 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   ) -> AllowOffCacheMutation {
     guard AllowOffCachePolicy.isValidTTL(ttl),
           AllowOffCachePolicy.isValidRawDeviceUID(rawDeviceUID),
-          observedAt.timeIntervalSince1970.isFinite
+          AllowOffCachePolicy.isFiniteObservationTime(observedAt)
     else { return .unavailable }
     return storage.withExclusiveMutationLock(
       body: {
-        let document: PersistedAllowOffCache
-        switch storage.readPersistedCache() {
-        case .value(let value):
-          document = value
-        case .missing:
-          guard let created = storage.makeEmptyCache() else { return .unavailable }
-          document = created
-        case .invalid:
-          guard storage.purgeCacheFile() else { return .unavailable }
-          guard let created = storage.makeEmptyCache() else { return .unavailable }
-          document = created
-        }
-
-        guard let key = AllowOffCachePolicy.digestKey(
-          salt: document.salt,
-          rawDeviceUID: rawDeviceUID
-        )
-        else { return .unavailable }
-
-        let candidate = AllowOffObservation(
+        applyLockedObservation(
+          rawDeviceUID: rawDeviceUID,
           allowsOff: allowsOff,
-          observedAt: observedAt
+          observedAt: observedAt,
+          recordsDenial: recordsDenial
         )
-        var observations = document.observations
-        let effectiveCandidate = AllowOffCachePolicy.effectiveObservation(
-          candidate,
-          existing: observations[key],
-          now: now
-        )
-        if !recordsDenial, !allowsOff {
-          switch storage.readDenyMarker(for: key) {
-          case .missing:
-            break
-          case .invalid:
-            return .unavailable
-          case .value(let deniedAt):
-            guard AllowOffCachePolicy.usableEvidence(
-              observedAt: deniedAt,
-              ttl: ttl,
-              now: now
-            ) == nil else {
-              guard let existing = observations[key],
-                    existing.allowsOff,
-                    existing.observedAt > deniedAt
-              else {
-                return .unchanged
-              }
-              break
-            }
-          }
-        }
-        if effectiveCandidate.allowsOff {
-          switch storage.readDenyMarker(for: key) {
-          case .missing:
-            break
-          case .invalid:
-            return .unavailable
-          case .value(let deniedAt):
-            guard effectiveCandidate.observedAt > deniedAt else {
-              return .unchanged
-            }
-          }
-        }
-        guard AllowOffCachePolicy.shouldReplaceObservation(
-          existing: observations[key],
-          with: effectiveCandidate
-        ) else {
-          guard recordsDenial, !effectiveCandidate.allowsOff,
-                observations[key]?.allowsOff == false
-          else {
-            return .unchanged
-          }
-          switch storage.readDenyMarker(for: key) {
-          case .value(let deniedAt) where deniedAt >= effectiveCandidate.observedAt:
-            return .unchanged
-          case .missing, .value:
-            return storage.appendDenyMarker(
-              for: key,
-              observedAt: effectiveCandidate.observedAt
-            ) ? .applied : .unavailable
-          case .invalid:
-            return .unavailable
-          }
-        }
-        observations[key] = effectiveCandidate
-        let updated = PersistedAllowOffCache(
-          schemaVersion: document.schemaVersion,
-          salt: document.salt,
-          observations: observations
-        )
-        guard storage.write(updated) else {
-          guard !effectiveCandidate.allowsOff else { return .unavailable }
-          return storage.purgeCacheFile() ? .applied : .unavailable
-        }
-        if recordsDenial {
-          guard !allowsOff,
-                storage.appendDenyMarker(
-                  for: key,
-                  observedAt: effectiveCandidate.observedAt
-                )
-          else { return .unavailable }
-        }
-        return .applied
       },
       onLockUnavailable: {
-        guard recordsDenial, !allowsOff else { return .unavailable }
-        return persistDenyMarker(
+        lockTimeoutDenyMarkerFallback(
           rawDeviceUID: rawDeviceUID,
+          allowsOff: allowsOff,
+          recordsDenial: recordsDenial,
           observedAt: observedAt
         )
       }
+    )
+  }
+
+  private func applyLockedObservation(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date,
+    recordsDenial: Bool
+  ) -> AllowOffCacheMutation {
+    guard let document = loadOrRecreateDocument() else { return .unavailable }
+    guard let prepared = preparedCandidate(
+      from: document,
+      rawDeviceUID: rawDeviceUID,
+      allowsOff: allowsOff,
+      observedAt: observedAt
+    ) else { return .unavailable }
+
+    if let omission = omissionVersusDenial(
+      key: prepared.key,
+      observations: prepared.observations,
+      recordsDenial: recordsDenial,
+      allowsOff: allowsOff
+    ) {
+      return omission
+    }
+    if let positive = positiveVersusDenial(
+      key: prepared.key,
+      candidate: prepared.candidate
+    ) {
+      return positive
+    }
+    guard AllowOffCachePolicy.shouldReplaceObservation(
+      existing: prepared.observations[prepared.key],
+      with: prepared.candidate
+    ) else {
+      return appendUnchangedObservationDenial(
+        key: prepared.key,
+        candidate: prepared.candidate,
+        existing: prepared.observations[prepared.key],
+        recordsDenial: recordsDenial
+      )
+    }
+    return persistObservation(
+      document: document,
+      key: prepared.key,
+      observations: prepared.observations,
+      candidate: prepared.candidate,
+      allowsOff: allowsOff,
+      recordsDenial: recordsDenial
+    )
+  }
+
+  private func loadOrRecreateDocument() -> PersistedAllowOffCache? {
+    switch storage.readPersistedCache() {
+    case .value(let value):
+      return value
+    case .missing:
+      return storage.makeEmptyCache()
+    case .invalid:
+      guard storage.purgeCacheFile() else { return nil }
+      return storage.makeEmptyCache()
+    }
+  }
+
+  private func preparedCandidate(
+    from document: PersistedAllowOffCache,
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    observedAt: Date
+  ) -> (
+    key: String,
+    candidate: AllowOffObservation,
+    observations: [String: AllowOffObservation]
+  )? {
+    guard let key = AllowOffCachePolicy.digestKey(
+      salt: document.salt,
+      rawDeviceUID: rawDeviceUID
+    ) else { return nil }
+    let observations = document.observations
+    let candidate = AllowOffCachePolicy.effectiveObservation(
+      AllowOffObservation(allowsOff: allowsOff, observedAt: observedAt),
+      existing: observations[key],
+      now: now
+    )
+    return (key, candidate, observations)
+  }
+
+  private func omissionVersusDenial(
+    key: String,
+    observations: [String: AllowOffObservation],
+    recordsDenial: Bool,
+    allowsOff: Bool
+  ) -> AllowOffCacheMutation? {
+    guard !recordsDenial, !allowsOff else { return nil }
+    switch storage.readDenyMarker(for: key) {
+    case .missing:
+      return nil
+    case .invalid:
+      return .unavailable
+    case .value(let deniedAt):
+      guard AllowOffCachePolicy.usableEvidence(
+        observedAt: deniedAt,
+        ttl: ttl,
+        now: now
+      ) != nil else { return nil }
+      guard let existing = observations[key],
+            existing.allowsOff,
+            AllowOffCachePolicy.observationOutranksDenyMarker(
+              observedAt: existing.observedAt,
+              deniedAt: deniedAt
+            )
+      else {
+        return .unchanged
+      }
+      return nil
+    }
+  }
+
+  private func positiveVersusDenial(
+    key: String,
+    candidate: AllowOffObservation
+  ) -> AllowOffCacheMutation? {
+    guard candidate.allowsOff else { return nil }
+    switch storage.readDenyMarker(for: key) {
+    case .missing:
+      return nil
+    case .invalid:
+      return .unavailable
+    case .value(let deniedAt):
+      guard AllowOffCachePolicy.observationOutranksDenyMarker(
+        observedAt: candidate.observedAt,
+        deniedAt: deniedAt
+      ) else {
+        return .unchanged
+      }
+      return nil
+    }
+  }
+
+  private func appendUnchangedObservationDenial(
+    key: String,
+    candidate: AllowOffObservation,
+    existing: AllowOffObservation?,
+    recordsDenial: Bool
+  ) -> AllowOffCacheMutation {
+    guard recordsDenial, !candidate.allowsOff,
+          existing?.allowsOff == false
+    else {
+      return .unchanged
+    }
+    switch storage.readDenyMarker(for: key) {
+    case .value(let deniedAt)
+      where AllowOffCachePolicy.denyMarkerOutranksObservation(
+        deniedAt: deniedAt,
+        observedAt: candidate.observedAt
+      ):
+      return .unchanged
+    case .missing, .value:
+      return storage.appendDenyMarker(
+        for: key,
+        observedAt: candidate.observedAt
+      ) ? .applied : .unavailable
+    case .invalid:
+      return .unavailable
+    }
+  }
+
+  private func persistObservation(
+    document: PersistedAllowOffCache,
+    key: String,
+    observations: [String: AllowOffObservation],
+    candidate: AllowOffObservation,
+    allowsOff: Bool,
+    recordsDenial: Bool
+  ) -> AllowOffCacheMutation {
+    var observations = observations
+    observations[key] = candidate
+    let updated = PersistedAllowOffCache(
+      schemaVersion: document.schemaVersion,
+      salt: document.salt,
+      observations: observations
+    )
+    guard storage.write(updated) else {
+      guard !candidate.allowsOff else { return .unavailable }
+      return storage.purgeCacheFile() ? .applied : .unavailable
+    }
+    if recordsDenial {
+      guard !allowsOff,
+            storage.appendDenyMarker(
+              for: key,
+              observedAt: candidate.observedAt
+            )
+      else { return .unavailable }
+    }
+    return .applied
+  }
+
+  private func lockTimeoutDenyMarkerFallback(
+    rawDeviceUID: String,
+    allowsOff: Bool,
+    recordsDenial: Bool,
+    observedAt: Date
+  ) -> AllowOffCacheMutation {
+    guard recordsDenial, !allowsOff else { return .unavailable }
+    return persistDenyMarker(
+      rawDeviceUID: rawDeviceUID,
+      observedAt: observedAt
     )
   }
 
@@ -272,7 +387,11 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     switch storage.readDenyMarker(for: key) {
     case .invalid:
       return .unchanged
-    case .value(let existing) where existing >= candidate.observedAt:
+    case .value(let existing)
+      where AllowOffCachePolicy.denyMarkerOutranksObservation(
+        deniedAt: existing,
+        observedAt: candidate.observedAt
+      ):
       return .unchanged
     case .missing, .value:
       return storage.appendDenyMarker(for: key, observedAt: candidate.observedAt)

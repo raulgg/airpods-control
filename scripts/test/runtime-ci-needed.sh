@@ -33,6 +33,9 @@ printf '%s\n' \
 printf '%s\n' 'Sources/AirPodsControl/CLI.swift' |
   expect true "Sources change"
 
+printf '%s\n' '"Sources/AirPodsControl/caf\303\251.swift"' |
+  expect false "quoted git path is not a raw Sources path"
+
 printf '%s\n' 'Sources/AVBypass/bypass.c' |
   expect true "interpose source"
 

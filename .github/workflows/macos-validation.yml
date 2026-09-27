@@ -5,6 +5,11 @@ on:
     branches:
       - main
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - stacked
 
 permissions:
   contents: read
@@ -14,8 +19,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Stacked PRs run this workflow on every layer as if it targeted main.
+  # Skip the macOS jobs on mid-stack layers; remaining bottom and top still
+  # run. A skipped job reports Success for required checks.
+  gate:
+    name: Stack CI Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      should-run: ${{ steps.gate.outputs.should-run }}
+    steps:
+      - name: Stack CI Gate
+        id: gate
+        uses: raulgg/stack-ci-gate@a0eedc1fcdb0de363849885126a562c4d46285dc # v1.0.1
+
   build:
     name: Build, test, and verify install
+    needs: gate
+    if: needs.gate.outputs.should-run == 'true'
     # macos-14 defaults to Swift 5.10, which cannot run Swift Testing.
     # Use the runner's default toolchain with a Swift 6 minimum.
     runs-on: macos-15
@@ -121,16 +145,19 @@ jobs:
             git fetch --depth=1 origin "$BASE_SHA"
           fi
           classifier=scripts/runtime-ci-needed.sh
+          diff_names() {
+            git -c core.quotePath=false diff --name-only --no-renames \
+              "$BASE_SHA" "$HEAD_SHA"
+          }
           if ! git cat-file -e "$BASE_SHA:$classifier" 2>/dev/null; then
             echo "needed=true" >>"$GITHUB_OUTPUT"
             echo "No classifier at $BASE_SHA; running runtime jobs"
-            git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"
+            diff_names
             exit 0
           fi
           base_file="$RUNNER_TEMP/runtime-ci-needed.base.sh"
           git show "$BASE_SHA:$classifier" >"$base_file"
-          needed=$(git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" |
-            sh "$base_file")
+          needed=$(diff_names | sh "$base_file")
           case "$needed" in
             true|false) ;;
             *)
@@ -140,12 +167,15 @@ jobs:
           esac
           echo "needed=$needed" >>"$GITHUB_OUTPUT"
           echo "Runtime jobs needed: $needed"
-          git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA"
+          diff_names
 
   macos-26:
     name: Runtime (macOS 26)
-    needs: runtime-needed
+    needs:
+      - gate
+      - runtime-needed
     if: >-
+      needs.gate.outputs.should-run == 'true' &&
       needs.runtime-needed.result == 'success' &&
       needs.runtime-needed.outputs.needed == 'true'
     runs-on: macos-26
@@ -186,6 +216,7 @@ jobs:
   macos-26-gate:
     name: Build, test, and verify runtime (macOS 26)
     needs:
+      - gate
       - runtime-needed
       - macos-26
     if: always()
@@ -195,10 +226,15 @@ jobs:
     steps:
       - name: Reflect macOS 26 runtime
         env:
+          SHOULD_RUN: ${{ needs.gate.outputs.should-run }}
           DECIDE: ${{ needs.runtime-needed.result }}
           NEEDED: ${{ needs.runtime-needed.outputs.needed }}
           RESULT: ${{ needs.macos-26.result }}
         run: |
+          if [ "$SHOULD_RUN" != "true" ]; then
+            echo "Skipping macOS 26 runtime; mid-stack layer."
+            exit 0
+          fi
           if [ "$DECIDE" != "success" ]; then
             echo "runtime-needed job result: $DECIDE"
             exit 1
@@ -218,8 +254,11 @@ jobs:
 
   intel:
     name: Runtime (Intel)
-    needs: runtime-needed
+    needs:
+      - gate
+      - runtime-needed
     if: >-
+      needs.gate.outputs.should-run == 'true' &&
       needs.runtime-needed.result == 'success' &&
       needs.runtime-needed.outputs.needed == 'true'
     runs-on: macos-15-intel
@@ -260,6 +299,7 @@ jobs:
   intel-gate:
     name: Build, test, and verify runtime (Intel)
     needs:
+      - gate
       - runtime-needed
       - intel
     if: always()
@@ -269,10 +309,15 @@ jobs:
     steps:
       - name: Reflect Intel runtime
         env:
+          SHOULD_RUN: ${{ needs.gate.outputs.should-run }}
           DECIDE: ${{ needs.runtime-needed.result }}
           NEEDED: ${{ needs.runtime-needed.outputs.needed }}
           RESULT: ${{ needs.intel.result }}
         run: |
+          if [ "$SHOULD_RUN" != "true" ]; then
+            echo "Skipping Intel runtime; mid-stack layer."
+            exit 0
+          fi
           if [ "$DECIDE" != "success" ]; then
             echo "runtime-needed job result: $DECIDE"
             exit 1

@@ -50,15 +50,32 @@ enum AllowOffCachePolicy {
     ttl.isFinite && ttl > 0
   }
 
+  static func isFiniteObservationTime(_ value: Date) -> Bool {
+    value.timeIntervalSince1970.isFinite
+  }
+
+  static func denyMarkerOutranksObservation(
+    deniedAt: Date,
+    observedAt: Date
+  ) -> Bool {
+    deniedAt >= observedAt
+  }
+
+  static func observationOutranksDenyMarker(
+    observedAt: Date,
+    deniedAt: Date
+  ) -> Bool {
+    observedAt > deniedAt
+  }
+
   static func usableEvidence(
     observedAt: Date,
     ttl: TimeInterval,
     now: () -> Date
   ) -> CachedAllowOffEvidence? {
-    let observedSeconds = observedAt.timeIntervalSince1970
     let current = now()
     let currentSeconds = current.timeIntervalSince1970
-    guard observedSeconds.isFinite, currentSeconds.isFinite,
+    guard isFiniteObservationTime(observedAt), currentSeconds.isFinite,
           current >= observedAt
     else { return nil }
     let expiresAt = observedAt.addingTimeInterval(ttl)
@@ -201,10 +218,10 @@ struct PersistedAllowOffCache: Codable {
     }
     return positiveEvidence.allSatisfy { key, entry in
       AllowOffCachePolicy.isDigestKey(key)
-        && entry.observedAt.timeIntervalSince1970.isFinite
+        && AllowOffCachePolicy.isFiniteObservationTime(entry.observedAt)
     } && negativeEvidence.allSatisfy { key, entry in
       AllowOffCachePolicy.isDigestKey(key)
-        && entry.observedAt.timeIntervalSince1970.isFinite
+        && AllowOffCachePolicy.isFiniteObservationTime(entry.observedAt)
     }
   }
 }

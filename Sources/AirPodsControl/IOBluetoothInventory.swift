@@ -44,6 +44,18 @@ private struct CoreAudioBluetoothEndpoint {
 private struct CoreAudioBluetoothDeviceGroup {
   let equalityAnchor: AnyObject
   var endpoints: [CoreAudioBluetoothEndpoint]
+
+  var hasNegativeAppleAudioAdmission: Bool {
+    endpoints.contains(where: { $0.appleAudioAdmission == .negative })
+  }
+
+  var positiveEndpoints: [CoreAudioBluetoothEndpoint] {
+    endpoints.filter { $0.appleAudioAdmission == .positive }
+  }
+
+  var positiveOutputEndpoints: [CoreAudioBluetoothEndpoint] {
+    positiveEndpoints.filter(\.hasOutput)
+  }
 }
 
 struct IOBluetoothListeningModeBinding {
@@ -138,24 +150,11 @@ struct IOBluetoothInventory {
       return nil
     }
 
-    let transportRead = routingBackend.readTransportType(for: audioDeviceID)
-    let isClassicBluetooth: Bool
-    switch transportRead {
-    case .value(kAudioDeviceTransportTypeBluetooth):
-      isClassicBluetooth = true
-      logger.debug("\(prefix).transport", "classic-bluetooth")
-    case .value:
-      isClassicBluetooth = false
-      logger.debug("\(prefix).transport", "other")
-    case .unavailable:
-      isClassicBluetooth = false
-      logger.debug("\(prefix).transport", "unavailable")
-    case let .failure(status):
-      isClassicBluetooth = false
-      logger.debug("\(prefix).transport", "read-error")
-      logger.debug("\(prefix).transport_error", status)
-    }
-    guard isClassicBluetooth else {
+    guard isClassicBluetoothTransport(
+      routingBackend.readTransportType(for: audioDeviceID),
+      prefix: prefix,
+      logger: logger
+    ) else {
       logger.debug("\(prefix).eligible", false)
       return nil
     }
@@ -184,38 +183,12 @@ struct IOBluetoothInventory {
       return nil
     }
 
-    let appleAudioAdmission: AppleAudioAdmission
-    switch routingBackend.readIsAppleAudioDevice(audioDeviceID) {
-    case .value(true):
-      appleAudioAdmission = .positive
-      logger.debug("\(prefix).apple_audio_property", true)
-    case .value(false):
-      appleAudioAdmission = .negative
-      logger.debug("\(prefix).apple_audio_property", false)
-    case .unavailable:
-      logger.debug("\(prefix).apple_audio_property", "unavailable")
-      let manufacturerRead = routingBackend.readManufacturer(for: audioDeviceID)
-      if case let .value(.some(manufacturer)) = manufacturerRead {
-        let recognized = recognizedAppleAudioManufacturers.contains(manufacturer)
-        appleAudioAdmission = recognized ? .positive : .unavailable
-        logger.debug("\(prefix).apple_manufacturer", recognized)
-      } else {
-        appleAudioAdmission = .unavailable
-        switch manufacturerRead {
-        case .value:
-          logger.debug("\(prefix).manufacturer", "available")
-        case .unavailable:
-          logger.debug("\(prefix).manufacturer", "unavailable")
-        case let .failure(status):
-          logger.debug("\(prefix).manufacturer", "read-error")
-          logger.debug("\(prefix).manufacturer_error", status)
-        }
-      }
-    case let .failure(status):
-      appleAudioAdmission = .unavailable
-      logger.debug("\(prefix).apple_audio_property", "read-error")
-      logger.debug("\(prefix).apple_audio_property_error", status)
-    }
+    let appleAudioAdmission = readAppleAudioAdmission(
+      audioDeviceID,
+      routingBackend: routingBackend,
+      prefix: prefix,
+      logger: logger
+    )
 
     let bluetoothDevice: AnyObject
     switch runtime.bluetoothDevice(for: audioDeviceID) {
@@ -286,15 +259,11 @@ struct IOBluetoothInventory {
     logger: DebugLogger
   ) -> [IOBluetoothStatusDevice] {
     groups.compactMap { group in
-      guard !group.endpoints.contains(where: {
-        $0.appleAudioAdmission == .negative
-      }) else {
+      guard !group.hasNegativeAppleAudioAdmission else {
         logger.debug("bluetooth.apple_audio_consistency", "conflict")
         return nil
       }
-      let positiveEndpoints = group.endpoints.filter {
-        $0.appleAudioAdmission == .positive
-      }
+      let positiveEndpoints = group.positiveEndpoints
       let endpoints = positiveEndpoints.filter(\.hasOutput)
         + positiveEndpoints.filter { !$0.hasOutput }
       guard let primary = endpoints.first,
@@ -322,12 +291,8 @@ struct IOBluetoothInventory {
     from groups: [CoreAudioBluetoothDeviceGroup]
   ) -> [AudioDeviceID] {
     groups.flatMap { group -> [AudioDeviceID] in
-      guard !group.endpoints.contains(where: {
-        $0.appleAudioAdmission == .negative
-      }) else { return [] }
-      return group.endpoints.filter {
-        $0.appleAudioAdmission == .positive && $0.hasOutput
-      }.map(\.audioDeviceID)
+      guard !group.hasNegativeAppleAudioAdmission else { return [] }
+      return group.positiveOutputEndpoints.map(\.audioDeviceID)
     }
   }
 
@@ -339,35 +304,13 @@ struct IOBluetoothInventory {
     logger: DebugLogger
   ) -> [IOBluetoothListeningModeBinding] {
     groups.compactMap { group in
-      guard !group.endpoints.contains(where: {
-        $0.appleAudioAdmission == .negative
-      }) else { return nil }
-      let outputEndpoints = group.endpoints.filter {
-        $0.appleAudioAdmission == .positive && $0.hasOutput
-      }
-      let controlEndpoints = outputEndpoints.filter {
-        routingBackend.hasBluetoothListeningMode(for: $0.audioDeviceID)
-      }
-      guard let namedEndpoint = outputEndpoints.first(where: { $0.name != nil }),
-            let outputEndpoint =
-            controlEndpoints.first(where: { $0.name != nil })
-              ?? controlEndpoints.first,
-              let name = namedEndpoint.name
-      else { return nil }
-      return IOBluetoothListeningModeBinding(
-        name: name,
-        audioDeviceID: outputEndpoint.audioDeviceID,
-        bluetoothDevice: outputEndpoint.bluetoothDevice,
-        allowOffCorrelation: {
-          guard outputEndpoints.count == 1, let allowOffCache else { return nil }
-          return ListeningModeAllowOffCorrelation(
-            targetAudioDeviceID: outputEndpoint.audioDeviceID,
-            collisionAudioDeviceIDs: cacheCollisionAudioDeviceIDs,
-            backend: routingBackend,
-            cache: allowOffCache,
-            logger: logger
-          )
-        }()
+      guard !group.hasNegativeAppleAudioAdmission else { return nil }
+      return halControlBinding(
+        outputEndpoints: group.positiveOutputEndpoints,
+        cacheCollisionAudioDeviceIDs: cacheCollisionAudioDeviceIDs,
+        routingBackend: routingBackend,
+        allowOffCache: allowOffCache,
+        logger: logger
       )
     }
   }
@@ -399,6 +342,99 @@ struct IOBluetoothInventory {
       logger.debug(key, "read-error")
       logger.debug("\(key)_error", status)
     }
+  }
+
+  private static func isClassicBluetoothTransport(
+    _ transportRead: AudioRoutingRead<UInt32>,
+    prefix: String,
+    logger: DebugLogger
+  ) -> Bool {
+    switch transportRead {
+    case .value(kAudioDeviceTransportTypeBluetooth):
+      logger.debug("\(prefix).transport", "classic-bluetooth")
+      return true
+    case .value:
+      logger.debug("\(prefix).transport", "other")
+      return false
+    case .unavailable:
+      logger.debug("\(prefix).transport", "unavailable")
+      return false
+    case let .failure(status):
+      logger.debug("\(prefix).transport", "read-error")
+      logger.debug("\(prefix).transport_error", status)
+      return false
+    }
+  }
+
+  private static func readAppleAudioAdmission(
+    _ audioDeviceID: AudioDeviceID,
+    routingBackend: any AudioRoutingBackend,
+    prefix: String,
+    logger: DebugLogger
+  ) -> AppleAudioAdmission {
+    switch routingBackend.readIsAppleAudioDevice(audioDeviceID) {
+    case .value(true):
+      logger.debug("\(prefix).apple_audio_property", true)
+      return .positive
+    case .value(false):
+      logger.debug("\(prefix).apple_audio_property", false)
+      return .negative
+    case .unavailable:
+      logger.debug("\(prefix).apple_audio_property", "unavailable")
+      let manufacturerRead = routingBackend.readManufacturer(for: audioDeviceID)
+      if case let .value(.some(manufacturer)) = manufacturerRead {
+        let recognized = recognizedAppleAudioManufacturers.contains(manufacturer)
+        logger.debug("\(prefix).apple_manufacturer", recognized)
+        return recognized ? .positive : .unavailable
+      }
+      switch manufacturerRead {
+      case .value:
+        logger.debug("\(prefix).manufacturer", "available")
+      case .unavailable:
+        logger.debug("\(prefix).manufacturer", "unavailable")
+      case let .failure(status):
+        logger.debug("\(prefix).manufacturer", "read-error")
+        logger.debug("\(prefix).manufacturer_error", status)
+      }
+      return .unavailable
+    case let .failure(status):
+      logger.debug("\(prefix).apple_audio_property", "read-error")
+      logger.debug("\(prefix).apple_audio_property_error", status)
+      return .unavailable
+    }
+  }
+
+  private static func halControlBinding(
+    outputEndpoints: [CoreAudioBluetoothEndpoint],
+    cacheCollisionAudioDeviceIDs: [AudioDeviceID],
+    routingBackend: any AudioRoutingBackend,
+    allowOffCache: (any ListeningModeAllowOffCaching)?,
+    logger: DebugLogger
+  ) -> IOBluetoothListeningModeBinding? {
+    let controlEndpoints = outputEndpoints.filter {
+      routingBackend.hasBluetoothListeningMode(for: $0.audioDeviceID)
+    }
+    guard let namedEndpoint = outputEndpoints.first(where: { $0.name != nil }),
+          let outputEndpoint =
+          controlEndpoints.first(where: { $0.name != nil })
+            ?? controlEndpoints.first,
+            let name = namedEndpoint.name
+    else { return nil }
+    return IOBluetoothListeningModeBinding(
+      name: name,
+      audioDeviceID: outputEndpoint.audioDeviceID,
+      bluetoothDevice: outputEndpoint.bluetoothDevice,
+      allowOffCorrelation: {
+        guard outputEndpoints.count == 1, let allowOffCache else { return nil }
+        return ListeningModeAllowOffCorrelation(
+          targetAudioDeviceID: outputEndpoint.audioDeviceID,
+          collisionAudioDeviceIDs: cacheCollisionAudioDeviceIDs,
+          backend: routingBackend,
+          cache: allowOffCache,
+          logger: logger
+        )
+      }()
+    )
   }
 
   private static func resolveListeningMode(

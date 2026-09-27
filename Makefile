@@ -103,31 +103,17 @@ _build: $(VERSION_SOURCE)
 			-mmacosx-version-min="$(DEPLOYMENT_TARGET)" -c \
 			-I"$(BYPASS_PROBE_INCLUDE_DIR)" \
 			-o "$$tmp/bypass-probe.$$arch.o" "$(BYPASS_PROBE_SOURCE)" && \
-		mkdir -p "$(SWIFT_MODULE_CACHE)/$$arch" && \
 		"$(SWIFTC)" -O $(SWIFT_PRODUCTION_FLAGS) \
 			-target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" -I"$(BYPASS_PROBE_INCLUDE_DIR)" \
-			-module-cache-path "$(SWIFT_MODULE_CACHE)/$$arch" \
+			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
 			-o "$$tmp/airpods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
 			"$$tmp/signal-monitor.$$arch.o" "$$tmp/bypass-probe.$$arch.o" \
 			-Xlinker -framework -Xlinker Security; \
 	}; \
-	for arch in $(ARCHS); do \
-		( \
-			set +e; \
-			build_arch "$$arch" >"$$tmp/build.$$arch.log" 2>&1; \
-			echo $$? >"$$tmp/build.$$arch.status"; \
-		) & \
-	done; \
-	wait || true; \
 	succeeded=""; failed=""; \
 	for arch in $(ARCHS); do \
-		if [ ! -f "$$tmp/build.$$arch.status" ]; then \
-			status=1; \
-		else \
-			status=$$(cat "$$tmp/build.$$arch.status"); \
-		fi; \
-		if [ "$$status" -eq 0 ]; then \
+		if build_arch "$$arch" >"$$tmp/build.$$arch.log" 2>&1; then \
 			succeeded="$$succeeded $$arch"; \
 		else \
 			failed="$$failed $$arch"; \
