@@ -14,6 +14,15 @@ run = "make"
 description = "Build and run tests"
 run = "make test"
 
+[tasks.test-scripts]
+description = "Run tests under scripts/test"
+run = """
+set -eu
+for t in scripts/test/*.sh; do
+  "$t"
+done
+"""
+
 [tasks.verify-runtime]
 description = "Verify the DYLD interpose runtime"
 run = "make verify-runtime"
