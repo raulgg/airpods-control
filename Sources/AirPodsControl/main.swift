@@ -83,6 +83,18 @@ func finish(_ outcome: CommandOutcome, jsonOutput: Bool) -> Never {
   )
 }
 
+func accessPolicy(for command: CLICommand) -> PrivateAudioAccessPolicy {
+  switch command {
+  case .status:
+    return .status
+  case .supportReport:
+    return .supportReport
+  case .version, .listeningModeGet, .listeningModeList, .listeningModeSet,
+       .listeningModeCycle, .conversationAwarenessGet, .conversationAwarenessSet:
+    return .operational
+  }
+}
+
 func bootstrapAndResolveAudioDevices(
   named requestedName: String?,
   policy: DeviceSelectionPolicy,
@@ -96,13 +108,10 @@ func bootstrapAndResolveAudioDevices(
     guard let endpoints = PrivateAudioDiscovery.systemOperationalEndpoints(
       logger: logger
     ) else { return .failed(.unavailable) }
-    switch PrivateAudioController(endpoints: endpoints, logger: logger)
-      .resolveDevices(named: requestedName, policy: policy)
-    {
-    case let .selected(devices): return .devices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
-    }
+    return .devices(
+      from: PrivateAudioController(endpoints: endpoints, logger: logger)
+        .resolveDevices(named: requestedName, policy: policy)
+    )
 
   case .status:
     let activeOutputContext = PrivateAudioDiscovery.systemStatusOutputContext(
@@ -118,11 +127,9 @@ func bootstrapAndResolveAudioDevices(
     case .unavailable: return .failed(.unavailable)
     case .readError: return .failed(.readError)
     }
-    switch controller.resolveDevices(named: requestedName, policy: policy) {
-    case let .selected(devices): return .statusDevices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
-    }
+    return .statusDevices(
+      from: controller.resolveDevices(named: requestedName, policy: policy)
+    )
 
   case .supportReport:
     // Preserve the name-free, plural-only support-report discovery contract.
@@ -130,15 +137,13 @@ func bootstrapAndResolveAudioDevices(
     guard let devices = PrivateAudioDiscovery.systemOutputDevices(logger: logger) else {
       return .failed(.unavailable)
     }
-    switch PrivateAudioController(
-      rawDevices: devices,
-      logger: logger,
-      includeDeviceNames: false
-    ).resolveDevices(named: requestedName, policy: policy) {
-    case let .selected(devices): return .devices(devices.map { $0 })
-    case .noDevice: return .failed(.noDevice)
-    case .ambiguousDevice: return .failed(.ambiguousDevice)
-    }
+    return .devices(
+      from: PrivateAudioController(
+        rawDevices: devices,
+        logger: logger,
+        includeDeviceNames: false
+      ).resolveDevices(named: requestedName, policy: policy)
+    )
   }
 }
 
@@ -172,17 +177,13 @@ func bootstrapAndResolveListeningMode(
     avDevices: avDevices,
     logger: logger,
     chooseAmbiguous: { names in
-      let inputIsTerminal = isatty(STDIN_FILENO) == 1
-      let errorIsTerminal = isatty(STDERR_FILENO) == 1
-      guard inputIsTerminal, errorIsTerminal, !invocation.jsonOutput else {
-        return .unavailable
-      }
-
+      // Ineligible prompts and explicit declines both map to unavailable, which
+      // resolve reports as ambiguous-device.
       let outcome = InteractiveDeviceChooser.choose(
         deviceNames: names,
         eligibility: .init(
-          inputIsTerminal: inputIsTerminal,
-          errorIsTerminal: errorIsTerminal,
+          inputIsTerminal: isatty(STDIN_FILENO) == 1,
+          errorIsTerminal: isatty(STDERR_FILENO) == 1,
           jsonOutput: invocation.jsonOutput
         ),
         readResponse: { readLine() },
@@ -215,7 +216,6 @@ let rawArgs = Array(CommandLine.arguments.dropFirst())
 if rawArgs.isEmpty {
   finish(plain: globalHelp, jsonOutput: false)
 }
-
 if let help = helpText(for: rawArgs) {
   finish(plain: help, jsonOutput: false)
 }
@@ -229,11 +229,7 @@ do {
   invocation = try parseInvocation(rawArgs)
 } catch {
   preliminaryLogger.warning("cli.parse", "bad-args")
-  finish(
-    plain: "bad-args",
-    terminalReason: .badArgs,
-    jsonOutput: preliminaryJSON
-  )
+  finish(plain: "bad-args", terminalReason: .badArgs, jsonOutput: preliminaryJSON)
 }
 
 let supportReport = SupportReportCommand(
@@ -269,19 +265,11 @@ if ListeningModeCommand(invocation.command) != nil {
   outcome = CommandExecution.execute(
     invocation,
     resolveDevices: { requestedName, policy, logger in
-      let accessPolicy: PrivateAudioAccessPolicy
-      if case .supportReport = invocation.command {
-        accessPolicy = .supportReport
-      } else if case .status = invocation.command {
-        accessPolicy = .status
-      } else {
-        accessPolicy = .operational
-      }
-      return bootstrapAndResolveAudioDevices(
+      bootstrapAndResolveAudioDevices(
         named: requestedName,
         policy: policy,
         logger: logger,
-        accessPolicy: accessPolicy
+        accessPolicy: accessPolicy(for: invocation.command)
       )
     },
     supportReport: supportReport

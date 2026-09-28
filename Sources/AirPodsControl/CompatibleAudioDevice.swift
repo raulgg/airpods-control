@@ -46,6 +46,32 @@ enum CommandDeviceResolution {
   case devices([any CompatibleAudioDevice])
   case statusDevices([any AudioDeviceStatusReading])
   case failed(TerminalReason)
+
+  static func devices<Device: CompatibleAudioDevice>(
+    from selection: DeviceSelection<Device>
+  ) -> CommandDeviceResolution {
+    switch selection {
+    case let .selected(devices):
+      return .devices(devices.map { $0 })
+    case .noDevice:
+      return .failed(.noDevice)
+    case .ambiguousDevice:
+      return .failed(.ambiguousDevice)
+    }
+  }
+
+  static func statusDevices<Device: AudioDeviceStatusReading>(
+    from selection: DeviceSelection<Device>
+  ) -> CommandDeviceResolution {
+    switch selection {
+    case let .selected(devices):
+      return .statusDevices(devices.map { $0 })
+    case .noDevice:
+      return .failed(.noDevice)
+    case .ambiguousDevice:
+      return .failed(.ambiguousDevice)
+    }
+  }
 }
 
 protocol AudioDeviceStatusReading {
