@@ -74,55 +74,103 @@ enum CommandExecution {
   ) -> CommandOutcome {
     let logger = debugLog(invocation)
 
-    if case .version = invocation.command {
+    switch invocation.command {
+    case .version:
       return CommandOutcome(
         plain: BuildVersion.current,
         data: ["version": .string(BuildVersion.current)]
       )
-    }
 
-    let selectionPolicy: DeviceSelectionPolicy
-    if case .status = invocation.command {
-      selectionPolicy = .allOrExact
-    } else {
-      selectionPolicy = .singleOrExact
-    }
+    case .status:
+      return statusOutcome(
+        from: resolveDevices(
+          invocation.requestedDeviceName,
+          .allOrExact,
+          logger
+        )
+      )
 
-    let resolution = resolveDevices(
-      invocation.requestedDeviceName,
-      selectionPolicy,
-      logger
-    )
-
-    if case .status = invocation.command {
-      return statusOutcome(from: resolution)
-    }
-
-    switch singleCompatibleDevice(from: resolution, command: invocation.command) {
-    case let .selected(device):
-      switch invocation.command {
-      case .version:
-        preconditionFailure("version handled before device resolution")
-
-      case .status:
-        preconditionFailure("status handled after device resolution")
-
-      case let .supportReport(writeTestsPreference):
-        return supportReport.outcome(writeTests: writeTestsPreference, device: device)
-
-      case .listeningModeGet, .listeningModeList,
-           .listeningModeSet, .listeningModeCycle:
-        preconditionFailure("listening-mode commands use executeListeningMode")
-
-      case .conversationAwarenessGet:
-        return conversationAwarenessGet(device: device)
-
-      case let .conversationAwarenessSet(target):
-        return conversationAwarenessSet(target, device: device)
+    case let .supportReport(writeTestsPreference):
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .devices(resolved):
+        precondition(
+          !resolved.isEmpty,
+          "successful device resolution must not be empty"
+        )
+        return supportReport.outcome(
+          writeTests: writeTestsPreference,
+          device: resolved[0]
+        )
+      case .statusDevices:
+        preconditionFailure("status device resolution used for a non-status command")
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
       }
 
-    case let .failed(outcome):
-      return outcome
+    case .listeningModeGet, .listeningModeList,
+         .listeningModeSet, .listeningModeCycle:
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
+      case .devices, .statusDevices:
+        preconditionFailure("listening-mode commands use executeListeningMode")
+      }
+
+    case .conversationAwarenessGet:
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .devices(resolved):
+        precondition(
+          !resolved.isEmpty,
+          "successful device resolution must not be empty"
+        )
+        return conversationAwarenessGet(device: resolved[0])
+      case .statusDevices:
+        preconditionFailure("status device resolution used for a non-status command")
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
+      }
+
+    case let .conversationAwarenessSet(target):
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .devices(resolved):
+        precondition(
+          !resolved.isEmpty,
+          "successful device resolution must not be empty"
+        )
+        return conversationAwarenessSet(target, device: resolved[0])
+      case .statusDevices:
+        preconditionFailure("status device resolution used for a non-status command")
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
+      }
     }
   }
 
@@ -185,7 +233,7 @@ enum CommandExecution {
   ) -> CommandOutcome {
     switch listeningModeMutationEligibility(
       session: session,
-      canMutate: { $0.canWrite(target) }
+      eligible: session.writePlan?.canWrite(target) == true
     ) {
     case let .ineligible(reason):
       return listeningModeFailureOutcome(reason, session: session)
@@ -221,7 +269,7 @@ enum CommandExecution {
     )
     switch listeningModeMutationEligibility(
       session: session,
-      canMutate: { _ in cycleModes.count >= 2 }
+      eligible: cycleModes.count >= 2
     ) {
     case let .ineligible(reason):
       return listeningModeFailureOutcome(reason, session: session)
@@ -243,12 +291,12 @@ enum CommandExecution {
   // treats unknown as a successful read.
   private static func listeningModeMutationEligibility(
     session: ListeningModeSession,
-    canMutate: (ListeningModeWritePlan) -> Bool
+    eligible: Bool
   ) -> ListeningModeMutationEligibility {
     guard let writePlan = session.writePlan else {
       return .ineligible(.unavailable)
     }
-    guard canMutate(writePlan) else {
+    guard eligible else {
       switch session.availabilityObservation {
       case .value: return .ineligible(.unsupported)
       case .partial, .unavailable, .readError, .none: return .ineligible(.unavailable)
@@ -273,21 +321,6 @@ enum CommandExecution {
       )
     case let .failed(reason):
       return deviceResolutionFailureOutcome(for: .status, reason: reason)
-    }
-  }
-
-  private static func singleCompatibleDevice(
-    from resolution: CommandDeviceResolution,
-    command: CLICommand
-  ) -> SingleCompatibleDevice {
-    switch resolution {
-    case let .devices(resolved):
-      precondition(!resolved.isEmpty, "successful device resolution must not be empty")
-      return .selected(resolved[0])
-    case .statusDevices:
-      preconditionFailure("status device resolution used for a non-status command")
-    case let .failed(reason):
-      return .failed(deviceResolutionFailureOutcome(for: command, reason: reason))
     }
   }
 
@@ -506,10 +539,5 @@ enum CommandExecution {
   private enum ListeningModeMutationEligibility {
     case eligible(ListeningModeWritePlan)
     case ineligible(TerminalReason)
-  }
-
-  private enum SingleCompatibleDevice {
-    case selected(any CompatibleAudioDevice)
-    case failed(CommandOutcome)
   }
 }
