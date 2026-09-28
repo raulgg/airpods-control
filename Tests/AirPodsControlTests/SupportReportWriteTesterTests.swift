@@ -10,6 +10,65 @@ private func supportWriteTestSignalHandler(_: Int32) {}
 // These tests share process-wide signal handlers and the C monitor singleton.
 @Suite("Support report write tester", .serialized)
 struct SupportReportWriteTesterTests {
+  @Test("Drops only an already-current first probe from listening-mode targets")
+  func listeningModeTargetsDropFirstOnlyWhenInitialIsFirst() {
+    let cases: [(ListeningMode, [ListeningMode])] = [
+      (.noiseCancellation, [.adaptive, .transparency, .off]),
+      (.transparency, [.noiseCancellation, .adaptive, .transparency, .off]),
+    ]
+    for (initial, expected) in cases {
+      let plan = SupportReportWriteTestPlan.make(
+        device: FakeCompatibleAudioDevice(
+          listeningModes: Array(ListeningMode.allCases),
+          listeningMode: initial,
+          conversationAwarenessSupported: false
+        )
+      )
+      #expect(
+        plan.listeningModeTargets == expected,
+        "initial \(initial.rawValue) keeps later probes, including Transparency"
+      )
+      guard case .willTest = plan.listeningModes else {
+        Issue.record("advertised modes with a setter plan as willTest")
+        return
+      }
+    }
+  }
+
+  @Test
+  func writeTestPlanEncodesSkipVersusTest() {
+    let both = SupportReportWriteTestPlan.make(
+      device: FakeCompatibleAudioDevice(
+        listeningModes: Array(ListeningMode.allCases),
+        listeningMode: .noiseCancellation,
+        conversationAwarenessSupported: true,
+        conversationAwarenessEnabled: false
+      )
+    )
+    guard case .willTest = both.listeningModes else {
+      Issue.record("full capabilities plan listening-mode tests")
+      return
+    }
+    guard case .willTest = both.conversationAwareness else {
+      Issue.record("supported Awareness plans a toggle")
+      return
+    }
+
+    let noAwareness = SupportReportWriteTestPlan.make(
+      device: FakeCompatibleAudioDevice(
+        listeningModes: Array(ListeningMode.allCases),
+        listeningMode: .transparency,
+        conversationAwarenessSupported: false
+      )
+    )
+    switch noAwareness.conversationAwareness {
+    case let .skipped(reason):
+      #expect(reason == "not supported", "unsupported Awareness is a skipped plan")
+    case .willTest:
+      Issue.record("unsupported Awareness must not plan a toggle")
+    }
+  }
+
   @Test("Verifies and restores all supported capabilities")
   func writeTesterVerifiesAndRestores() {
     let device = FakeCompatibleAudioDevice(

@@ -6,17 +6,17 @@ enum SupportReportConsentRenderer {
     colorEnabled: Bool = false
   ) -> String? {
     var rows: [(String, String)] = []
-    if plan.willTestListeningModes, let initialMode = plan.initialListeningMode {
+    if case let .willTest(payload) = plan.listeningModes {
       rows.append(
         (
           "Listening modes",
-          plan.listeningModeTargets.map(\.rawValue).joined(separator: ", ")
+          payload.targets.map(\.rawValue).joined(separator: ", ")
             + " (about 2s each)"
         )
       )
-      rows.append(("Restore mode", initialMode.rawValue))
+      rows.append(("Restore mode", payload.initial.rawValue))
     }
-    if plan.willTestConversationAwareness {
+    if case .willTest = plan.conversationAwareness {
       rows.append(("Conversation Awareness", "toggle and restore"))
     }
     guard !rows.isEmpty else { return nil }
