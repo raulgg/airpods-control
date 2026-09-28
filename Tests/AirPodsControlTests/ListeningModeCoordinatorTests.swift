@@ -547,6 +547,32 @@ struct ListeningModeCoordinatorTests {
   }
 
   @Test
+  func namedDeviceMatchUsesPreJoinHALNameThenFallsBack() throws {
+    let av = FakeListeningModeTransport(
+      name: "AirPods Pro",
+      kind: .av,
+      modes: [.transparency],
+      current: .transparency
+    )
+    let hal = FakeListeningModeTransport(
+      name: "Desk",
+      kind: .hal,
+      modes: [.transparency, .adaptive, .noiseCancellation],
+      current: .transparency
+    )
+    let outcome = try coordinatorOutcome(
+      ["--device", "Desk", "lm", "set", "adaptive"],
+      candidates: [
+        candidate(name: "AirPods Pro", av: av, route: .selected),
+        candidate(name: "Desk", hal: hal, route: .selected),
+      ]
+    )
+    #expect(outcome.plain == "ok", "pre-join HAL name still selects the HAL row")
+    #expect(av.setterTargets.isEmpty, "AV without Adaptive does not take the write")
+    #expect(hal.setterTargets == [.adaptive], "HAL handles Adaptive after AV is not ready")
+  }
+
+  @Test
   func uniqueSelectedReadySessionFailsClosed() {
     let logger = DebugLogger(enabled: false)
 

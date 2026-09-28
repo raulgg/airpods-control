@@ -288,25 +288,26 @@ final class ListeningModeCoordinator {
   }
 
   private func logicalCandidates() -> [ListeningModeCandidate] {
-    let joinedHAL = halCandidates.map(attachUniqueActiveAV)
-    let independentAV = avCandidates.filter { avCandidate in
-      !joinedHAL.contains { halCandidate in
-        representsJoinedAVTarget(avCandidate, in: halCandidate)
-      }
-    }
-    return joinedHAL + independentAV
+    assembledCandidates(hal: halCandidates, av: avCandidates)
   }
 
   // Exact --device matching uses pre-join selectable names, then attaches AV.
   private func namedMatches(_ requestedName: String) -> [ListeningModeCandidate] {
-    let halMatches = matching(requestedName, in: halCandidates)
-      .map(attachUniqueActiveAV)
-    let avMatches = matching(requestedName, in: avCandidates).filter { avCandidate in
-      !halMatches.contains { halCandidate in
-        representsJoinedAVTarget(avCandidate, in: halCandidate)
-      }
+    assembledCandidates(
+      hal: matching(requestedName, in: halCandidates),
+      av: matching(requestedName, in: avCandidates)
+    )
+  }
+
+  private func assembledCandidates(
+    hal: [ListeningModeCandidate],
+    av: [ListeningModeCandidate]
+  ) -> [ListeningModeCandidate] {
+    let joinedHAL = hal.map(attachUniqueActiveAV)
+    let independentAV = av.filter { avCandidate in
+      !joinedHAL.contains { representsJoinedAVTarget(avCandidate, in: $0) }
     }
-    return halMatches + avMatches
+    return joinedHAL + independentAV
   }
 
   private func matching(
@@ -374,70 +375,38 @@ final class ListeningModeCoordinator {
     return avIdentifier == joinedIdentifier
   }
 
-  private struct AllowOffHandoff {
-    var liveAuthorization: ListeningModeAllowOffAuthorization?
-    var blocksCachedAllowOff: Bool
-  }
-
-  private func preferredTransports(
-    for candidate: ListeningModeCandidate
-  ) -> [any ListeningModeTransport] {
-    switch candidate.route {
-    case .selected:
-      return [candidate.avTransport, candidate.halTransport].compactMap { $0 }
-    case .notSelected:
-      return [candidate.halTransport].compactMap { $0 }
-    case .unknown:
-      return [candidate.avTransport, candidate.halTransport].compactMap { $0 }
-    }
-  }
-
   private func selectTransport(
     for candidate: ListeningModeCandidate,
     command: ListeningModeCommand
   ) -> ListeningModeSession? {
-    let transports = preferredTransports(for: candidate)
-    guard !transports.isEmpty else { return nil }
-
-    var sessions: [ListeningModeSession] = []
-    var allowOff = AllowOffHandoff(
-      liveAuthorization: nil,
-      blocksCachedAllowOff: false
-    )
-    for transport in transports {
-      let captured = session(
-        for: transport,
-        command: command,
-        correlation: candidate.allowOffCorrelation,
-        allowOff: allowOff
-      )
-      sessions.append(captured)
-      if transport.listeningModeTransportKind == .av,
-         captured.allowOffAuthorization != nil
-      {
-        allowOff.liveAuthorization = captured.allowOffAuthorization
-      }
-      if transport.listeningModeTransportKind == .av,
-         captured.blocksCachedAllowOff
-      {
-        allowOff.blocksCachedAllowOff = true
-        allowOff.liveAuthorization = nil
-      }
-      if isReady(captured, for: command) {
-        return captured
+    let avSession: ListeningModeSession?
+    if candidate.route == .notSelected {
+      avSession = nil
+    } else {
+      avSession = candidate.avTransport.map {
+        session(for: $0, command: command, correlation: candidate.allowOffCorrelation)
       }
     }
+    if let avSession, isReady(avSession, for: command) { return avSession }
 
+    guard let hal = candidate.halTransport else { return avSession }
+    let halSession = session(
+      for: hal,
+      command: command,
+      correlation: candidate.allowOffCorrelation,
+      allowOffFromAV: avSession
+    )
     // The preferred provider preserves the established unknown/unsupported
     // result when the logical device exists but preflight cannot proceed.
-    return sessions.first
+    if avSession == nil || isReady(halSession, for: command) { return halSession }
+    return avSession
   }
 
   private func session(
     for transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    allowOff: AllowOffHandoff
+    allowOffFromAV: ListeningModeSession? = nil
   ) -> ListeningModeSession {
     switch command {
     case .get:
@@ -447,7 +416,7 @@ final class ListeningModeCoordinator {
         for: transport,
         command: command,
         correlation: correlation,
-        allowOff: allowOff
+        allowOffFromAV: allowOffFromAV
       )
     }
   }
@@ -479,19 +448,21 @@ final class ListeningModeCoordinator {
     for transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    allowOff: AllowOffHandoff
+    allowOffFromAV: ListeningModeSession?
   ) -> ListeningModeSession {
     let preflight = availabilityPreflight(
       for: transport,
       command: command,
       correlation: correlation,
-      allowOff: allowOff
+      allowOffFromAV: allowOffFromAV
     )
     let canSet: Bool
     switch command {
     case .set, .cycle:
       canSet = transport.canSetListeningMode()
-    case .list, .get:
+    case .list:
+      canSet = false
+    case .get:
       canSet = false
     }
     return assemble(
@@ -546,7 +517,7 @@ final class ListeningModeCoordinator {
     for transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    allowOff: AllowOffHandoff
+    allowOffFromAV: ListeningModeSession?
   ) -> ListeningModeAvailabilityPreflight {
     let observedAt = transport.listeningModeTransportKind == .av
       ? correlation?.captureObservationTime()
@@ -569,11 +540,7 @@ final class ListeningModeCoordinator {
       transport: transport,
       command: command,
       correlation: correlation,
-      allowOff: AllowOffHandoff(
-        liveAuthorization: allowOff.liveAuthorization,
-        blocksCachedAllowOff: allowOff.blocksCachedAllowOff
-          || freshAVBlocksCachedAllowOff
-      ),
+      allowOffFromAV: allowOffFromAV,
       observedAt: facts.observedAt
     )
     let offPermission: ListeningModeOffPermission?
@@ -614,7 +581,7 @@ final class ListeningModeCoordinator {
     transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    allowOff: AllowOffHandoff,
+    allowOffFromAV: ListeningModeSession?,
     observedAt: Date?
   ) -> ListeningModeAllowOffAuthorization? {
     guard ListeningModePreflightPolicy.commandMayUseAllowOffCache(command) else {
@@ -634,8 +601,9 @@ final class ListeningModeCoordinator {
       return nil
     case .hal:
       guard case .value = availability else { return nil }
-      guard !allowOff.blocksCachedAllowOff else { return nil }
-      return allowOff.liveAuthorization ?? correlation?.cachedAuthorization()
+      guard !(allowOffFromAV?.blocksCachedAllowOff ?? false) else { return nil }
+      return allowOffFromAV?.allowOffAuthorization
+        ?? correlation?.cachedAuthorization()
     }
   }
 
