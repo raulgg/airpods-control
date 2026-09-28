@@ -21,58 +21,41 @@ expect() {
 
 expect false "empty diff" </dev/null
 
-printf '%s\n' 'docs/cli.md' 'README.md' 'CONTRIBUTING.md' |
-  expect false "docs-only"
-
-printf '%s\n' \
-  'Tests/AirPodsControlTests/CLIParsingTests.swift' \
-  'Tests/CLIContractTests/cli.sh' \
-  'Package.swift' |
-  expect false "unit-test-only"
-
-printf '%s\n' 'Sources/AirPodsControl/CLI.swift' |
-  expect true "Sources change"
-
 printf '%s\n' '"Sources/AirPodsControl/caf\303\251.swift"' |
   expect false "quoted git path is not a raw Sources path"
 
-printf '%s\n' 'Sources/AVBypass/bypass.c' |
-  expect true "interpose source"
+printf '%s\n' \
+  'docs/cli.md' \
+  'README.md' \
+  'CONTRIBUTING.md' \
+  'docs/man/airpods-control.1' \
+  'version.txt' \
+  'mise.toml' \
+  'Package.swift' \
+  'Tests/AirPodsControlTests/CLIParsingTests.swift' \
+  'Tests/CLIContractTests/cli.sh' \
+  'scripts/test/runtime-ci-needed.sh' \
+  'scripts/verify-catalog.sh' \
+  'foo/Makefile' \
+  '.github/workflows/quality-checks.yml' |
+  expect false "docs, unit tests, tooling, and unrelated paths"
 
-printf '%s\n' 'Makefile' |
-  expect true "Makefile"
-
-printf '%s\n' 'build.sh' |
-  expect true "build.sh"
-
-printf '%s\n' 'scripts/verify-runtime.sh' |
-  expect true "verify-runtime script"
-
-printf '%s\n' 'scripts/runtime-ci-needed.sh' |
-  expect true "classifier script"
-
-printf '%s\n' 'scripts/test/runtime-ci-needed.sh' |
-  expect false "classifier tests"
-
-printf '%s\n' 'Tests/VerifyRuntimeTests/verify-runtime.sh' |
-  expect true "verify-runtime tests"
-
-printf '%s\n' '.github/workflows/macos-validation.yml' |
-  expect true "validation workflow"
+while IFS= read -r path; do
+  printf '%s\n' "$path" | expect true "$path"
+done <<'EOF'
+Sources
+Sources/AirPodsControl/CLI.swift
+Sources/AVBypass/bypass.c
+Makefile
+build.sh
+scripts/verify-runtime.sh
+scripts/runtime-ci-needed.sh
+Tests/VerifyRuntimeTests
+Tests/VerifyRuntimeTests/verify-runtime.sh
+.github/workflows/macos-validation.yml
+EOF
 
 printf '%s\n' 'docs/cli.md' 'Sources/AirPodsControl/CLI.swift' |
   expect true "mixed docs and Sources"
-
-printf '%s\n' 'docs/man/airpods-control.1' 'version.txt' 'mise.toml' |
-  expect false "man page version and tooling"
-
-printf '%s\n' '.github/workflows/quality-checks.yml' |
-  expect false "unrelated workflow"
-
-printf '%s\n' 'foo/Makefile' 'scripts/verify-catalog.sh' |
-  expect false "unrelated Makefile path and catalog script"
-
-printf '%s\n' 'Sources' |
-  expect true "Sources directory"
 
 echo "ok: runtime-ci-needed fixtures"
