@@ -28,6 +28,44 @@ struct SupportReportWriteTesterTests {
         plan.listeningModeTargets == expected,
         "initial \(initial.rawValue) keeps later probes, including Transparency"
       )
+      guard case .willTest = plan.listeningModes else {
+        Issue.record("advertised modes with a setter plan as willTest")
+        return
+      }
+    }
+  }
+
+  @Test
+  func writeTestPlanEncodesSkipVersusTest() {
+    let both = SupportReportWriteTestPlan.make(
+      device: FakeCompatibleAudioDevice(
+        listeningModes: Array(ListeningMode.allCases),
+        listeningMode: .noiseCancellation,
+        conversationAwarenessSupported: true,
+        conversationAwarenessEnabled: false
+      )
+    )
+    guard case .willTest = both.listeningModes else {
+      Issue.record("full capabilities plan listening-mode tests")
+      return
+    }
+    guard case .willTest = both.conversationAwareness else {
+      Issue.record("supported Awareness plans a toggle")
+      return
+    }
+
+    let noAwareness = SupportReportWriteTestPlan.make(
+      device: FakeCompatibleAudioDevice(
+        listeningModes: Array(ListeningMode.allCases),
+        listeningMode: .transparency,
+        conversationAwarenessSupported: false
+      )
+    )
+    switch noAwareness.conversationAwareness {
+    case let .skipped(reason):
+      #expect(reason == "not supported", "unsupported Awareness is a skipped plan")
+    case .willTest:
+      Issue.record("unsupported Awareness must not plan a toggle")
     }
   }
 

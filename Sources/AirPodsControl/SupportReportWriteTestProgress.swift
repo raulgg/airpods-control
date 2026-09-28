@@ -8,13 +8,6 @@ enum SupportReportWriteTestProgressOperation: Equatable {
 
   var skippedLabel: String { labeled(skipping: true) }
 
-  var isListeningModeProgress: Bool {
-    switch self {
-    case .listeningMode, .listeningModeRestoration: return true
-    case .conversationAwareness, .conversationAwarenessRestoration: return false
-    }
-  }
-
   private func labeled(skipping: Bool) -> String {
     switch self {
     case let .listeningMode(mode):
@@ -38,23 +31,30 @@ enum SupportReportWriteTestProgressOperation: Equatable {
 }
 
 struct SupportReportWriteTestProgressPlan {
-  let operations: [SupportReportWriteTestProgressOperation]
+  let listeningModeOperations: [SupportReportWriteTestProgressOperation]
+  let conversationAwarenessOperations: [SupportReportWriteTestProgressOperation]
+
+  var operations: [SupportReportWriteTestProgressOperation] {
+    listeningModeOperations + conversationAwarenessOperations
+  }
 
   init(_ plan: SupportReportWriteTestPlan) {
-    var operations: [SupportReportWriteTestProgressOperation] = []
-    if plan.willTestListeningModes {
-      operations.append(contentsOf: plan.listeningModeTargets.map {
+    var listeningModeOperations: [SupportReportWriteTestProgressOperation] = []
+    if case let .willTest(payload) = plan.listeningModes {
+      listeningModeOperations.append(contentsOf: payload.targets.map {
         .listeningMode($0)
       })
-      operations.append(.listeningModeRestoration)
+      listeningModeOperations.append(.listeningModeRestoration)
     }
-    if plan.willTestConversationAwareness {
-      operations.append(contentsOf: [
+    var conversationAwarenessOperations: [SupportReportWriteTestProgressOperation] = []
+    if case .willTest = plan.conversationAwareness {
+      conversationAwarenessOperations.append(contentsOf: [
         .conversationAwareness,
         .conversationAwarenessRestoration,
       ])
     }
-    self.operations = operations
+    self.listeningModeOperations = listeningModeOperations
+    self.conversationAwarenessOperations = conversationAwarenessOperations
   }
 }
 
@@ -106,11 +106,11 @@ struct SupportReportWriteTestProgressReporter {
   }
 
   func skippedListeningModes() {
-    skipped(plan.operations.filter(\.isListeningModeProgress))
+    skipped(plan.listeningModeOperations)
   }
 
   func skippedConversationAwareness() {
-    skipped(plan.operations.filter { !$0.isListeningModeProgress })
+    skipped(plan.conversationAwarenessOperations)
   }
 
   func interrupted(by signal: Int32) {

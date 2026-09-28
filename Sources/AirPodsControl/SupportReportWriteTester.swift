@@ -160,8 +160,12 @@ enum SupportReportWriteTester {
       return .skipped(reason: reason)
     }
 
-    if let reason = plan.modeTestsSkippedReason {
+    let payload: ListeningModeWriteTestPlan
+    switch plan.listeningModes {
+    case let .skipped(reason):
       return skipped(reason)
+    case let .willTest(planned):
+      payload = planned
     }
     if observeInterruption() != nil {
       return skipped("interrupted before test")
@@ -169,22 +173,19 @@ enum SupportReportWriteTester {
     guard device.canSetListeningMode() else {
       return skipped("setter no longer exposed, nothing written")
     }
-    guard Set(plan.listeningModes).isSubset(of: Set(device.availableListeningModes()))
+    guard Set(payload.advertised).isSubset(of: Set(device.availableListeningModes()))
     else {
       return skipped("planned listening modes are no longer advertised, nothing written")
     }
-    guard device.currentListeningMode() == plan.initialListeningMode else {
+    guard device.currentListeningMode() == payload.initial else {
       return skipped("initial state changed after planning, nothing written")
     }
-    guard let initialMode = plan.initialListeningMode else {
-      // make() never plans mode tests without a readable initial mode.
-      return skipped("initial state unreadable, nothing written")
-    }
+    let initialMode = payload.initial
 
-    let transparencySupported = plan.listeningModes.contains(.transparency)
+    let transparencySupported = payload.advertised.contains(.transparency)
     var tests: [SupportReportWriteTestResults.ListeningModeTest] = []
     var stoppedAfterSetterError = false
-    for target in plan.listeningModeTargets {
+    for target in payload.targets {
       if observeInterruption() != nil { break }
       progress.started(.listeningMode(target))
       let test = testListeningMode(
@@ -198,7 +199,7 @@ enum SupportReportWriteTester {
       }
       if observeInterruption() != nil { break }
     }
-    let untestedTargets = plan.listeningModeTargets.dropFirst(tests.count)
+    let untestedTargets = payload.targets.dropFirst(tests.count)
     progress.skipped(untestedTargets.map { .listeningMode($0) })
 
     let restoration = restoreIfNeeded(
@@ -240,8 +241,12 @@ enum SupportReportWriteTester {
       return .skipped(reason: reason)
     }
 
-    if let reason = plan.conversationAwarenessSkippedReason {
+    let initialState: Bool
+    switch plan.conversationAwareness {
+    case let .skipped(reason):
       return skipped(reason)
+    case let .willTest(planned):
+      initialState = planned
     }
     if observeInterruption() != nil {
       return skipped("interrupted before test")
@@ -255,12 +260,8 @@ enum SupportReportWriteTester {
     if observeInterruption() != nil {
       return skipped("interrupted before test")
     }
-    guard currentState == plan.initialConversationAwareness else {
+    guard currentState == initialState else {
       return skipped("initial state changed after planning, nothing written")
-    }
-    guard let initialState = plan.initialConversationAwareness else {
-      // make() never plans this test without a readable initial state.
-      return skipped("initial state unreadable, nothing written")
     }
 
     progress.started(.conversationAwareness)

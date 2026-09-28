@@ -1,39 +1,51 @@
-struct SupportReportWriteTestPlan {
-  let initialListeningMode: ListeningMode?
-  let listeningModes: [ListeningMode]
-  let modeTestsSkippedReason: String?
-  let initialConversationAwareness: Bool?
-  let conversationAwarenessSkippedReason: String?
+enum SupportReportCapabilityPlan<Payload> {
+  case skipped(reason: String)
+  case willTest(Payload)
+}
 
-  var listeningModeTargets: [ListeningMode] {
-    guard modeTestsSkippedReason == nil, let initialListeningMode else { return [] }
+struct ListeningModeWriteTestPlan {
+  let initial: ListeningMode
+  let advertised: [ListeningMode]
+
+  var targets: [ListeningMode] {
     // The already-current first probe is the captured initial mode; restoration
     // demonstrates it later. Keep it when it sits later in the sequence so an
     // Off fallback cannot skip a real Transparency transition.
-    if listeningModes.first == initialListeningMode {
-      return Array(listeningModes.dropFirst())
+    if advertised.first == initial {
+      return Array(advertised.dropFirst())
     }
-    return listeningModes
+    return advertised
+  }
+}
+
+struct SupportReportWriteTestPlan {
+  let listeningModes: SupportReportCapabilityPlan<ListeningModeWriteTestPlan>
+  let conversationAwareness: SupportReportCapabilityPlan<Bool>
+
+  var listeningModeTargets: [ListeningMode] {
+    switch listeningModes {
+    case .skipped:
+      return []
+    case let .willTest(payload):
+      return payload.targets
+    }
   }
 
   var willTestListeningModes: Bool {
-    !listeningModeTargets.isEmpty
+    if case .willTest = listeningModes { return true }
+    return false
   }
 
   var willTestConversationAwareness: Bool {
-    conversationAwarenessSkippedReason == nil
+    if case .willTest = conversationAwareness { return true }
+    return false
   }
 
   // Preserves the more specific reasons already recorded by planning.
   func skippingAll(reason: String) -> SupportReportWriteTestPlan {
     SupportReportWriteTestPlan(
-      initialListeningMode: initialListeningMode,
-      listeningModes: listeningModes,
-      modeTestsSkippedReason: willTestListeningModes
-        ? reason : modeTestsSkippedReason,
-      initialConversationAwareness: initialConversationAwareness,
-      conversationAwarenessSkippedReason: willTestConversationAwareness
-        ? reason : conversationAwarenessSkippedReason
+      listeningModes: Self.skipIfTesting(listeningModes, reason: reason),
+      conversationAwareness: Self.skipIfTesting(conversationAwareness, reason: reason)
     )
   }
 
@@ -46,65 +58,75 @@ struct SupportReportWriteTestPlan {
     }
     let initialMode = device.currentListeningMode()
     let initialConversationAwareness = device.conversationAwarenessState()
-
     return SupportReportWriteTestPlan(
-      initialListeningMode: initialMode,
-      listeningModes: orderedModes,
-      modeTestsSkippedReason: listeningModeSkipReason(
+      listeningModes: listeningModePlan(
         device: device,
         advertised: advertised,
         orderedModes: orderedModes,
         initialMode: initialMode
       ),
-      initialConversationAwareness: initialConversationAwareness,
-      conversationAwarenessSkippedReason: conversationAwarenessSkipReason(
+      conversationAwareness: conversationAwarenessPlan(
         device: device,
         initialState: initialConversationAwareness
       )
     )
   }
 
-  private static func listeningModeSkipReason(
+  private static func skipIfTesting<Payload>(
+    _ plan: SupportReportCapabilityPlan<Payload>,
+    reason: String
+  ) -> SupportReportCapabilityPlan<Payload> {
+    switch plan {
+    case .skipped:
+      return plan
+    case .willTest:
+      return .skipped(reason: reason)
+    }
+  }
+
+  private static func listeningModePlan(
     device: any CompatibleAudioDevice,
     advertised: Set<ListeningMode>,
     orderedModes: [ListeningMode],
     initialMode: ListeningMode?
-  ) -> String? {
+  ) -> SupportReportCapabilityPlan<ListeningModeWriteTestPlan> {
     if !device.canSetListeningMode() {
-      return "setter not exposed"
+      return .skipped(reason: "setter not exposed")
     }
     if orderedModes.isEmpty {
-      return "no recognized advertised modes"
+      return .skipped(reason: "no recognized advertised modes")
     }
-    if initialMode == nil {
-      return "initial state unreadable, nothing written"
+    guard let initialMode else {
+      return .skipped(reason: "initial state unreadable, nothing written")
     }
-    if let initialMode, !advertised.contains(initialMode) {
-      return "initial mode is not advertised, nothing written"
+    if !advertised.contains(initialMode) {
+      return .skipped(reason: "initial mode is not advertised, nothing written")
     }
-    if let initialMode, !orderedModes.contains(where: { $0 != initialMode }) {
-      return "no alternate recognized advertised modes"
+    if !orderedModes.contains(where: { $0 != initialMode }) {
+      return .skipped(reason: "no alternate recognized advertised modes")
     }
-    return nil
+    return .willTest(
+      ListeningModeWriteTestPlan(initial: initialMode, advertised: orderedModes)
+    )
   }
 
-  private static func conversationAwarenessSkipReason(
+  private static func conversationAwarenessPlan(
     device: any CompatibleAudioDevice,
     initialState: Bool?
-  ) -> String? {
+  ) -> SupportReportCapabilityPlan<Bool> {
     switch device.supportsConversationAwareness() {
     case .some(false):
-      return "not supported"
+      return .skipped(reason: "not supported")
     case .none:
-      return "capability unavailable"
+      return .skipped(reason: "capability unavailable")
     case .some(true):
       if !device.canSetConversationAwareness() {
-        return "setter not exposed"
+        return .skipped(reason: "setter not exposed")
       }
-      if initialState == nil {
-        return "initial state unreadable, nothing written"
+      guard let initialState else {
+        return .skipped(reason: "initial state unreadable, nothing written")
       }
-      return nil
+      return .willTest(initialState)
     }
   }
 }
