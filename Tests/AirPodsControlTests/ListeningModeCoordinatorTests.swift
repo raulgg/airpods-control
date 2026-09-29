@@ -512,7 +512,7 @@ struct ListeningModeCoordinatorTests {
   }
 
   @Test
-  func namedDeviceMatchUsesPreJoinNames() throws {
+  func namedDeviceMatchUsesPreJoinNamesThenFallsBackToHAL() throws {
     let av = FakeListeningModeTransport(
       name: "AirPods Pro",
       kind: .av,
@@ -525,15 +525,17 @@ struct ListeningModeCoordinatorTests {
       modes: [.transparency, .adaptive, .noiseCancellation],
       current: .transparency
     )
-    let outcome = try coordinatorOutcome(
+    let candidates = [
+      candidate(name: "AirPods Pro", av: av, route: .selected),
+      candidate(name: "Desk", hal: hal, route: .selected),
+    ]
+
+    let avName = try coordinatorOutcome(
       ["--device", "AirPods Pro", "lm", "set", "adaptive"],
-      candidates: [
-        candidate(name: "AirPods Pro", av: av, route: .selected),
-        candidate(name: "Desk", hal: hal, route: .selected),
-      ]
+      candidates: candidates
     )
     #expect(
-      outcome.plain == "unsupported",
+      avName.plain == "unsupported",
       "HAL Desk does not inherit the unique AV name for --device matching"
     )
     #expect(av.setterTargets.isEmpty, "an unsupported AV-only name match does not write")
@@ -544,30 +546,12 @@ struct ListeningModeCoordinatorTests {
         && hal.canSetCount == 0,
       "joined AV name must not select or preflight the HAL row"
     )
-  }
 
-  @Test
-  func namedDeviceMatchUsesPreJoinHALNameThenFallsBack() throws {
-    let av = FakeListeningModeTransport(
-      name: "AirPods Pro",
-      kind: .av,
-      modes: [.transparency],
-      current: .transparency
-    )
-    let hal = FakeListeningModeTransport(
-      name: "Desk",
-      kind: .hal,
-      modes: [.transparency, .adaptive, .noiseCancellation],
-      current: .transparency
-    )
-    let outcome = try coordinatorOutcome(
+    let halName = try coordinatorOutcome(
       ["--device", "Desk", "lm", "set", "adaptive"],
-      candidates: [
-        candidate(name: "AirPods Pro", av: av, route: .selected),
-        candidate(name: "Desk", hal: hal, route: .selected),
-      ]
+      candidates: candidates
     )
-    #expect(outcome.plain == "ok", "pre-join HAL name still selects the HAL row")
+    #expect(halName.plain == "ok", "pre-join HAL name still selects the HAL row")
     #expect(av.setterTargets.isEmpty, "AV without Adaptive does not take the write")
     #expect(hal.setterTargets == [.adaptive], "HAL handles Adaptive after AV is not ready")
   }

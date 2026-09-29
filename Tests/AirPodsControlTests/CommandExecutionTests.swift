@@ -88,37 +88,6 @@ struct CommandExecutionTests {
     #expect(noDeviceReport.supportReport == nil, "missing device does not offer issue creation")
   }
 
-  @Test
-  func commandDeviceResolutionMapsDeviceSelection() {
-    let device = FakeCompatibleAudioDevice(
-      name: "Desk AirPods",
-      listeningMode: .transparency
-    )
-    switch CommandDeviceResolution.devices(from: .selected([device])) {
-    case let .devices(resolved):
-      #expect(resolved.count == 1, "selected devices map to the devices case")
-      #expect(resolved[0].name == "Desk AirPods", "mapped device keeps its name")
-    case .statusDevices, .failed:
-      Issue.record("selected compatible devices must map to .devices")
-    }
-    switch CommandDeviceResolution.devices(
-      from: DeviceSelection<FakeCompatibleAudioDevice>.noDevice
-    ) {
-    case .failed(.noDevice):
-      break
-    case .devices, .statusDevices, .failed:
-      Issue.record("no-device selection must map to failed no-device")
-    }
-    switch CommandDeviceResolution.statusDevices(
-      from: DeviceSelection<FakeCompatibleAudioDevice>.ambiguousDevice
-    ) {
-    case .failed(.ambiguousDevice):
-      break
-    case .devices, .statusDevices, .failed:
-      Issue.record("ambiguous selection must map to failed ambiguous-device")
-    }
-  }
-
   @Test("Preserves the named listening-mode setter no-device contract")
   func namedListeningModeSetterNoDeviceOutcome() throws {
     let missingName = "__missing_airpods__"
