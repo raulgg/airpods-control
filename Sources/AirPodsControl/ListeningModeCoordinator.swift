@@ -233,14 +233,8 @@ final class ListeningModeCoordinator {
     let selectedCandidate: ListeningModeCandidate
 
     if let requestedName {
-      let halMatches = matching(requestedName, in: halCandidates)
-        .map(attachUniqueActiveAV)
-      let avMatches = matching(requestedName, in: avCandidates).filter { avCandidate in
-        !halMatches.contains { halCandidate in
-          representsJoinedAVTarget(avCandidate, in: halCandidate)
-        }
-      }
-      let matchCount = halMatches.count + avMatches.count
+      let matches = namedMatches(requestedName)
+      let matchCount = matches.count
       guard matchCount == 1 else {
         logger.warning(
           "device_selection",
@@ -250,7 +244,7 @@ final class ListeningModeCoordinator {
           ? discoveryFailureResolution(for: command) ?? .failed(.noDevice)
           : .failed(.ambiguousDevice)
       }
-      selectedCandidate = halMatches.first ?? avMatches[0]
+      selectedCandidate = matches[0]
     } else {
       let candidates = logicalCandidates()
       guard !candidates.isEmpty else {
@@ -294,11 +288,24 @@ final class ListeningModeCoordinator {
   }
 
   private func logicalCandidates() -> [ListeningModeCandidate] {
-    let joinedHAL = halCandidates.map(attachUniqueActiveAV)
-    let independentAV = avCandidates.filter { avCandidate in
-      !joinedHAL.contains { halCandidate in
-        representsJoinedAVTarget(avCandidate, in: halCandidate)
-      }
+    assembledCandidates(hal: halCandidates, av: avCandidates)
+  }
+
+  // Exact --device matching uses pre-join selectable names, then attaches AV.
+  private func namedMatches(_ requestedName: String) -> [ListeningModeCandidate] {
+    assembledCandidates(
+      hal: matching(requestedName, in: halCandidates),
+      av: matching(requestedName, in: avCandidates)
+    )
+  }
+
+  private func assembledCandidates(
+    hal: [ListeningModeCandidate],
+    av: [ListeningModeCandidate]
+  ) -> [ListeningModeCandidate] {
+    let joinedHAL = hal.map(attachUniqueActiveAV)
+    let independentAV = av.filter { avCandidate in
+      !joinedHAL.contains { representsJoinedAVTarget(avCandidate, in: $0) }
     }
     return joinedHAL + independentAV
   }
@@ -372,111 +379,118 @@ final class ListeningModeCoordinator {
     for candidate: ListeningModeCandidate,
     command: ListeningModeCommand
   ) -> ListeningModeSession? {
-    let transports: [any ListeningModeTransport]
-    switch candidate.route {
-    case .selected:
-      transports = [candidate.avTransport, candidate.halTransport].compactMap { $0 }
-    case .notSelected:
-      transports = [candidate.halTransport].compactMap { $0 }
-    case .unknown:
-      transports = [candidate.avTransport, candidate.halTransport].compactMap { $0 }
-    }
-    guard !transports.isEmpty else { return nil }
-
-    var sessions: [ListeningModeSession] = []
-    var liveAllowOffAuthorization: ListeningModeAllowOffAuthorization?
-    var blocksCachedAllowOff = false
-    for transport in transports {
-      let captured = session(
-        for: transport,
-        command: command,
-        correlation: candidate.allowOffCorrelation,
-        liveAllowOffAuthorization: liveAllowOffAuthorization,
-        blocksCachedAllowOff: blocksCachedAllowOff
-      )
-      sessions.append(captured)
-      if transport.listeningModeTransportKind == .av,
-         captured.allowOffAuthorization != nil
-      {
-        liveAllowOffAuthorization = captured.allowOffAuthorization
-      }
-      if transport.listeningModeTransportKind == .av,
-         captured.blocksCachedAllowOff
-      {
-        blocksCachedAllowOff = true
-        liveAllowOffAuthorization = nil
-      }
-      if isReady(captured, for: command) {
-        return captured
+    let avSession: ListeningModeSession?
+    if candidate.route == .notSelected {
+      avSession = nil
+    } else {
+      avSession = candidate.avTransport.map {
+        session(for: $0, command: command, correlation: candidate.allowOffCorrelation)
       }
     }
+    if let avSession, isReady(avSession, for: command) { return avSession }
 
+    guard let hal = candidate.halTransport else { return avSession }
+    let halSession = session(
+      for: hal,
+      command: command,
+      correlation: candidate.allowOffCorrelation,
+      allowOffFromAV: avSession
+    )
     // The preferred provider preserves the established unknown/unsupported
     // result when the logical device exists but preflight cannot proceed.
-    return sessions.first
+    if avSession == nil || isReady(halSession, for: command) { return halSession }
+    return avSession
   }
 
   private func session(
     for transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    liveAllowOffAuthorization: ListeningModeAllowOffAuthorization?,
-    blocksCachedAllowOff: Bool
+    allowOffFromAV: ListeningModeSession? = nil
   ) -> ListeningModeSession {
-    let availableModes: [ListeningMode]
-    let stateObservation: ListeningModeStateObservation
-    let availabilityObservation: ListeningModeAvailabilityObservation?
-    let canSet: Bool
-    var offPermission: ListeningModeOffPermission?
-    var freshAVBlocksCachedAllowOff = false
-
     switch command {
     case .get:
-      availableModes = []
-      availabilityObservation = nil
-      let currentObservedAt = transport.listeningModeTransportKind == .av
-        ? correlation?.captureObservationTime()
-        : nil
-      stateObservation = transport.listeningModeStateObservation()
-      canSet = false
-      if stateObservation.value == .off, let correlation, let currentObservedAt {
-        correlation.observeCurrentOff(observedAt: currentObservedAt)
-      }
+      return getState(for: transport, correlation: correlation)
     case .list, .set, .cycle:
-      let preflight = availabilityPreflight(
+      return availability(
         for: transport,
         command: command,
         correlation: correlation,
-        liveAllowOffAuthorization: liveAllowOffAuthorization,
-        blocksCachedAllowOff: blocksCachedAllowOff
+        allowOffFromAV: allowOffFromAV
       )
-      stateObservation = preflight.facts.stateObservation
-      availabilityObservation = preflight.facts.availabilityObservation
-      availableModes = preflight.facts.availableModes
-      offPermission = preflight.offPermission
-      freshAVBlocksCachedAllowOff = preflight.blocksCachedAllowOff
-      switch command {
-      case .list:
-        canSet = false
-      case .set, .cycle:
-        canSet = transport.canSetListeningMode()
-      case .get:
-        canSet = false
-      }
     }
+  }
 
+  private func getState(
+    for transport: any ListeningModeTransport,
+    correlation: ListeningModeAllowOffCorrelation?
+  ) -> ListeningModeSession {
+    let currentObservedAt = transport.listeningModeTransportKind == .av
+      ? correlation?.captureObservationTime()
+      : nil
+    let stateObservation = transport.listeningModeStateObservation()
+    if stateObservation.value == .off, let correlation, let currentObservedAt {
+      correlation.observeCurrentOff(observedAt: currentObservedAt)
+    }
+    return ListeningModeSession(
+      name: transport.name,
+      transport: transport,
+      availableModes: [],
+      stateObservation: stateObservation,
+      availabilityObservation: nil,
+      writePlan: nil,
+      offPermission: nil,
+      blocksCachedAllowOff: false
+    )
+  }
+
+  private func availability(
+    for transport: any ListeningModeTransport,
+    command: ListeningModeCommand,
+    correlation: ListeningModeAllowOffCorrelation?,
+    allowOffFromAV: ListeningModeSession?
+  ) -> ListeningModeSession {
+    let preflight = availabilityPreflight(
+      for: transport,
+      command: command,
+      correlation: correlation,
+      allowOffFromAV: allowOffFromAV
+    )
+    let canSet: Bool
+    switch command {
+    case .set, .cycle:
+      canSet = transport.canSetListeningMode()
+    case .list:
+      canSet = false
+    case .get:
+      canSet = false
+    }
+    return assemble(
+      preflight,
+      canSet: canSet,
+      transport: transport,
+      correlation: correlation
+    )
+  }
+
+  private func assemble(
+    _ preflight: ListeningModeAvailabilityPreflight,
+    canSet: Bool,
+    transport: any ListeningModeTransport,
+    correlation: ListeningModeAllowOffCorrelation?
+  ) -> ListeningModeSession {
     let effectiveModes = ListeningModePreflightPolicy.effectiveModes(
-      availableModes: availableModes,
-      offPermission: offPermission
+      availableModes: preflight.facts.availableModes,
+      offPermission: preflight.offPermission
     )
 
     let stateIsSafe = transport.listeningModeTransportKind == .av
-      || stateObservation.value != nil
+      || preflight.facts.stateObservation.value != nil
     let writePlan = canSet && stateIsSafe
       ? ListeningModeWritePlan(
         transport: transport,
         availableModes: effectiveModes,
-        offPermission: offPermission,
+        offPermission: preflight.offPermission,
         allowOffCorrelation: correlation
       )
       : nil
@@ -485,11 +499,11 @@ final class ListeningModeCoordinator {
       name: transport.name,
       transport: transport,
       availableModes: effectiveModes,
-      stateObservation: stateObservation,
-      availabilityObservation: availabilityObservation,
+      stateObservation: preflight.facts.stateObservation,
+      availabilityObservation: preflight.facts.availabilityObservation,
       writePlan: writePlan,
-      offPermission: offPermission,
-      blocksCachedAllowOff: freshAVBlocksCachedAllowOff
+      offPermission: preflight.offPermission,
+      blocksCachedAllowOff: preflight.blocksCachedAllowOff
     )
   }
 
@@ -503,8 +517,7 @@ final class ListeningModeCoordinator {
     for transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    liveAllowOffAuthorization: ListeningModeAllowOffAuthorization?,
-    blocksCachedAllowOff: Bool
+    allowOffFromAV: ListeningModeSession?
   ) -> ListeningModeAvailabilityPreflight {
     let observedAt = transport.listeningModeTransportKind == .av
       ? correlation?.captureObservationTime()
@@ -527,8 +540,7 @@ final class ListeningModeCoordinator {
       transport: transport,
       command: command,
       correlation: correlation,
-      liveAllowOffAuthorization: liveAllowOffAuthorization,
-      blocksCachedAllowOff: blocksCachedAllowOff || freshAVBlocksCachedAllowOff,
+      allowOffFromAV: allowOffFromAV,
       observedAt: facts.observedAt
     )
     let offPermission: ListeningModeOffPermission?
@@ -569,8 +581,7 @@ final class ListeningModeCoordinator {
     transport: any ListeningModeTransport,
     command: ListeningModeCommand,
     correlation: ListeningModeAllowOffCorrelation?,
-    liveAllowOffAuthorization: ListeningModeAllowOffAuthorization?,
-    blocksCachedAllowOff: Bool,
+    allowOffFromAV: ListeningModeSession?,
     observedAt: Date?
   ) -> ListeningModeAllowOffAuthorization? {
     guard ListeningModePreflightPolicy.commandMayUseAllowOffCache(command) else {
@@ -590,8 +601,9 @@ final class ListeningModeCoordinator {
       return nil
     case .hal:
       guard case .value = availability else { return nil }
-      guard !blocksCachedAllowOff else { return nil }
-      return liveAllowOffAuthorization ?? correlation?.cachedAuthorization()
+      guard !(allowOffFromAV?.blocksCachedAllowOff ?? false) else { return nil }
+      return allowOffFromAV?.allowOffAuthorization
+        ?? correlation?.cachedAuthorization()
     }
   }
 

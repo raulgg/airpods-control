@@ -10,6 +10,65 @@ private func supportWriteTestSignalHandler(_: Int32) {}
 // These tests share process-wide signal handlers and the C monitor singleton.
 @Suite("Support report write tester", .serialized)
 struct SupportReportWriteTesterTests {
+  @Test("Drops only an already-current first probe from listening-mode targets")
+  func listeningModeTargetsDropFirstOnlyWhenInitialIsFirst() {
+    let cases: [(ListeningMode, [ListeningMode])] = [
+      (.noiseCancellation, [.adaptive, .transparency, .off]),
+      (.transparency, [.noiseCancellation, .adaptive, .transparency, .off]),
+    ]
+    for (initial, expected) in cases {
+      let plan = SupportReportWriteTestPlan.make(
+        device: FakeCompatibleAudioDevice(
+          listeningModes: Array(ListeningMode.allCases),
+          listeningMode: initial,
+          conversationAwarenessSupported: false
+        )
+      )
+      #expect(
+        plan.listeningModeTargets == expected,
+        "initial \(initial.rawValue) keeps later probes, including Transparency"
+      )
+      guard case .willTest = plan.listeningModes else {
+        Issue.record("advertised modes with a setter plan as willTest")
+        return
+      }
+    }
+  }
+
+  @Test
+  func writeTestPlanEncodesSkipVersusTest() {
+    let both = SupportReportWriteTestPlan.make(
+      device: FakeCompatibleAudioDevice(
+        listeningModes: Array(ListeningMode.allCases),
+        listeningMode: .noiseCancellation,
+        conversationAwarenessSupported: true,
+        conversationAwarenessEnabled: false
+      )
+    )
+    guard case .willTest = both.listeningModes else {
+      Issue.record("full capabilities plan listening-mode tests")
+      return
+    }
+    guard case .willTest = both.conversationAwareness else {
+      Issue.record("supported Awareness plans a toggle")
+      return
+    }
+
+    let noAwareness = SupportReportWriteTestPlan.make(
+      device: FakeCompatibleAudioDevice(
+        listeningModes: Array(ListeningMode.allCases),
+        listeningMode: .transparency,
+        conversationAwarenessSupported: false
+      )
+    )
+    switch noAwareness.conversationAwareness {
+    case let .skipped(reason):
+      #expect(reason == "not supported", "unsupported Awareness is a skipped plan")
+    case .willTest:
+      Issue.record("unsupported Awareness must not plan a toggle")
+    }
+  }
+
   @Test("Verifies and restores all supported capabilities")
   func writeTesterVerifiesAndRestores() {
     let device = FakeCompatibleAudioDevice(
@@ -118,6 +177,69 @@ struct SupportReportWriteTesterTests {
       results.conversationAwareness.testRun?.restored == true,
       "an unchanged Conversation Awareness state counts as restored"
     )
+  }
+
+  @Test("Restores after Off fallback when readback still reports the initial mode")
+  func writeTesterRestoresAfterInferredOffFallbackMatchingInitial() {
+    let device = FakeCompatibleAudioDevice(
+      listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+      listeningMode: .noiseCancellation,
+      conversationAwarenessSupported: false
+    )
+    // Hardware accepted Off and bounced to Transparency, but the settled
+    // readback still reports the pre-Off Noise Cancellation mode. That is
+    // the same mismatch resolveListeningModeWrite infers as Transparency.
+    device.listeningModeWriteOverride = { target in
+      target == .off ? .noiseCancellation : target
+    }
+    let results = SupportReportWriteTester.run(device: device)
+    let modeRun = results.listeningModes.testRun
+    let offTest = modeRun?.tests.first { $0.mode == .off }
+
+    #expect(
+      offTest?.inferredOffFallback == true
+        && offTest?.write.observed == .transparency,
+      "accepted Off with a Noise Cancellation readback infers Transparency"
+    )
+    #expect(
+      modeRun?.restoration.attempted?.mode == .noiseCancellation
+        && modeRun?.restoration.attempted?.write.verified == true,
+      "inferred Transparency is not treated as already-restored Noise Cancellation"
+    )
+    #expect(modeRun?.restored == true, "restoration returns to the captured mode")
+    #expect(
+      device.currentListeningMode() == .noiseCancellation,
+      "the device ends in its initial listening mode"
+    )
+    #expect(results.fullyRestored, "an inferred Off fallback still fully restores")
+  }
+
+  @Test("Does not restore an unapplied Off that never left the initial mode")
+  func writeTesterKeepsUnappliedOffOnTheInitialMode() {
+    let device = FakeCompatibleAudioDevice(
+      listeningModes: [.off, .transparency, .adaptive],
+      listeningMode: .adaptive,
+      appliesListeningModeWrite: false,
+      conversationAwarenessSupported: false
+    )
+    let results = SupportReportWriteTester.run(device: device)
+    let modeRun = results.listeningModes.testRun
+
+    #expect(
+      modeRun?.tests.first { $0.mode == .off }?.inferredOffFallback == true,
+      "an accepted Off that stays on Adaptive is still labeled as a fallback"
+    )
+    #expect(
+      modeRun?.restoration.stateNeverChanged == true
+        && modeRun?.restored == true
+        && modeRun?.finalMode == .adaptive,
+      "no demonstrated departure means the live Adaptive read is still current"
+    )
+    #expect(
+      device.listeningModeSetCount == 2,
+      "Transparency and Off are probed, and the initial mode is not written back"
+    )
+    #expect(results.fullyRestored, "an unchanged initial mode counts as restored")
   }
 
   @Test("Records targets that are already current")

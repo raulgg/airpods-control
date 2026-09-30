@@ -193,6 +193,56 @@ private enum StableBluetoothRoute {
   case readError
 }
 
+private enum BluetoothRouteTransportClass {
+  case classic
+  case unrelated
+  case unresolvedConservative(String)
+
+  init(_ transport: UInt32) {
+    switch transport {
+    case kAudioDeviceTransportTypeBluetooth:
+      self = .classic
+    case kAudioDeviceTransportTypeBuiltIn,
+         kAudioDeviceTransportTypeAggregate,
+         kAudioDeviceTransportTypeVirtual,
+         kAudioDeviceTransportTypePCI,
+         kAudioDeviceTransportTypeFireWire,
+         kAudioDeviceTransportTypeHDMI,
+         kAudioDeviceTransportTypeDisplayPort,
+         kAudioDeviceTransportTypeAirPlay,
+         kAudioDeviceTransportTypeAVB,
+         kAudioDeviceTransportTypeThunderbolt,
+         kAudioDeviceTransportTypeAutoAggregate,
+         continuityCaptureWiredTransport,
+         continuityCaptureWirelessTransport,
+         continuityCaptureTransport:
+      self = .unrelated
+    case kAudioDeviceTransportTypeUnknown:
+      self = .unresolvedConservative("unknown")
+    case kAudioDeviceTransportTypeBluetoothLE:
+      // Unknown and BLE cannot be mapped by IOBluetoothAudioManager.
+      self = .unresolvedConservative("bluetooth-le")
+    case kAudioDeviceTransportTypeUSB:
+      // USB is conservative because the same AirPods Max/Beats may also remain
+      // in the Bluetooth inventory while attached over USB.
+      self = .unresolvedConservative("usb")
+    default:
+      self = .unresolvedConservative("unrecognized")
+    }
+  }
+
+  var debugToken: String {
+    switch self {
+    case .classic:
+      return "classic-bluetooth"
+    case .unrelated:
+      return "unrelated"
+    case let .unresolvedConservative(token):
+      return token
+    }
+  }
+}
+
 private struct AudioRoutingSnapshot {
   let output: StableBluetoothRoute
   let input: StableBluetoothRoute
@@ -351,7 +401,6 @@ final class AudioRoutingObserver {
     _ defaultRead: AudioRoutingRead<AudioDeviceID?>,
     direction: AudioRoutingDirection
   ) -> StableBluetoothRoute {
-    let deviceID: AudioDeviceID
     switch defaultRead {
     case let .failure(status):
       logger.warning("routing.default_\(direction.logLabel).error", status)
@@ -361,10 +410,18 @@ final class AudioRoutingObserver {
       return .unresolved
     case .value(nil):
       return .noDefault
-    case let .value(.some(value)):
-      deviceID = value
+    case let .value(.some(deviceID)):
+      if let aggregate = aggregateRoute(for: deviceID, direction: direction) {
+        return aggregate
+      }
+      return routeForTransportClass(deviceID, direction: direction)
     }
+  }
 
+  private func aggregateRoute(
+    for deviceID: AudioDeviceID,
+    direction: AudioRoutingDirection
+  ) -> StableBluetoothRoute? {
     // A composite is a distinct route. Its physical members are not selected.
     // This gate deliberately precedes every private mapping call.
     switch backend.isAggregateDevice(deviceID) {
@@ -377,9 +434,14 @@ final class AudioRoutingObserver {
     case .value(true):
       return .composite
     case .value(false):
-      break
+      return nil
     }
+  }
 
+  private func routeForTransportClass(
+    _ deviceID: AudioDeviceID,
+    direction: AudioRoutingDirection
+  ) -> StableBluetoothRoute {
     switch backend.readTransportType(for: deviceID) {
     case let .failure(status):
       logger.warning("routing.transport_\(direction.logLabel).error", status)
@@ -387,42 +449,27 @@ final class AudioRoutingObserver {
     case .unavailable:
       logger.debug("routing.transport_\(direction.logLabel)", "unavailable")
       return .unresolved
-    case .value(kAudioDeviceTransportTypeUnknown):
-      logger.debug("routing.transport_\(direction.logLabel)", "unknown")
-      return .unresolved
-    case .value(kAudioDeviceTransportTypeBluetoothLE):
-      logger.debug("routing.transport_\(direction.logLabel)", "bluetooth-le")
-      return .unresolved
-    case .value(kAudioDeviceTransportTypeUSB):
-      // Unknown and BLE cannot be mapped by IOBluetoothAudioManager. USB is
-      // conservative because the same AirPods Max/Beats may also remain in
-      // the Bluetooth inventory while attached over USB.
-      logger.debug("routing.transport_\(direction.logLabel)", "usb")
-      return .unresolved
-    case .value(kAudioDeviceTransportTypeBluetooth):
-      logger.debug("routing.transport_\(direction.logLabel)", "classic-bluetooth")
-      break
-    case .value(kAudioDeviceTransportTypeBuiltIn),
-         .value(kAudioDeviceTransportTypeAggregate),
-         .value(kAudioDeviceTransportTypeVirtual),
-         .value(kAudioDeviceTransportTypePCI),
-         .value(kAudioDeviceTransportTypeFireWire),
-         .value(kAudioDeviceTransportTypeHDMI),
-         .value(kAudioDeviceTransportTypeDisplayPort),
-         .value(kAudioDeviceTransportTypeAirPlay),
-         .value(kAudioDeviceTransportTypeAVB),
-         .value(kAudioDeviceTransportTypeThunderbolt),
-         .value(kAudioDeviceTransportTypeAutoAggregate),
-         .value(continuityCaptureWiredTransport),
-         .value(continuityCaptureWirelessTransport),
-         .value(continuityCaptureTransport):
-      logger.debug("routing.transport_\(direction.logLabel)", "unrelated")
-      return .notBluetooth
-    case .value:
-      logger.debug("routing.transport_\(direction.logLabel)", "unrecognized")
-      return .unresolved
+    case let .value(value):
+      let classification = BluetoothRouteTransportClass(value)
+      logger.debug(
+        "routing.transport_\(direction.logLabel)",
+        classification.debugToken
+      )
+      switch classification {
+      case .classic:
+        return mappedBluetoothRoute(for: deviceID, direction: direction)
+      case .unrelated:
+        return .notBluetooth
+      case .unresolvedConservative:
+        return .unresolved
+      }
     }
+  }
 
+  private func mappedBluetoothRoute(
+    for deviceID: AudioDeviceID,
+    direction: AudioRoutingDirection
+  ) -> StableBluetoothRoute {
     switch bluetoothBackend.bluetoothDevice(for: deviceID) {
     case let .failure(status):
       logger.warning("routing.bluetooth_\(direction.logLabel).error", status)

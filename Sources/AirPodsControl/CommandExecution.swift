@@ -37,10 +37,7 @@ enum CommandExecution {
     guard let command = ListeningModeCommand(invocation.command) else {
       preconditionFailure("executeListeningMode requires a listening-mode command")
     }
-    let logger = DebugLogger(enabled: invocation.debugEnabled)
-    logger.debug("cli.command", invocation.command.debugName)
-    logger.debug("cli.json", invocation.jsonOutput)
-    logger.debug("cli.requested_device", invocation.requestedDeviceName)
+    let logger = debugLog(invocation)
 
     let resolution = resolveSession(command, invocation.requestedDeviceName, logger)
     let session: ListeningModeSession
@@ -56,56 +53,191 @@ enum CommandExecution {
 
     switch command {
     case .get:
-      let mode: ListeningMode?
-      switch session.stateObservation {
-      case let .value(value): mode = value
-      case .unknown: mode = nil
-      case .unavailable:
-        return listeningModeFailureOutcome(.unavailable, session: session)
-      case .readError:
-        return listeningModeFailureOutcome(.readError, session: session)
-      }
-      return resourceOutcome(
-        resource: .listeningMode,
-        deviceName: session.name,
-        plain: mode?.rawValue ?? "unknown",
-        state: mode?.rawValue,
-        extra: listeningModeExtra(for: session)
+      return listeningModeGet(session: session)
+    case .list:
+      return listeningModeList(session: session)
+    case .set(let target):
+      return listeningModeSet(target, session: session, logger: logger)
+    case .cycle(let requested):
+      return listeningModeCycle(requested, session: session, logger: logger)
+    }
+  }
+
+  static func execute(
+    _ invocation: CLIInvocation,
+    resolveDevices: (
+      _ requestedName: String?,
+      _ policy: DeviceSelectionPolicy,
+      _ logger: DebugLogger
+    ) -> CommandDeviceResolution,
+    supportReport: SupportReportCommand = SupportReportCommand()
+  ) -> CommandOutcome {
+    let logger = debugLog(invocation)
+
+    switch invocation.command {
+    case .version:
+      return CommandOutcome(
+        plain: BuildVersion.current,
+        data: ["version": .string(BuildVersion.current)]
       )
 
-    case .list:
-      switch session.availabilityObservation {
-      case .value, .partial: break
-      case .unavailable, .none:
-        return listeningModeFailureOutcome(.unavailable, session: session)
-      case .readError:
-        return listeningModeFailureOutcome(.readError, session: session)
-      }
-      let tokens = session.availableModes.map(\.rawValue)
-      return resourceOutcome(
-        resource: .listeningMode,
-        deviceName: session.name,
-        plain: tokens.joined(separator: ","),
-        state: session.currentMode?.rawValue,
-        extra: listeningModeExtra(
-          for: session,
-          adding: ["supportedListeningModes": .array(tokens.map(JSONValue.string))]
+    case .status:
+      return statusOutcome(
+        from: resolveDevices(
+          invocation.requestedDeviceName,
+          .allOrExact,
+          logger
         )
       )
 
-    case .set(let target):
-      guard let writePlan = session.writePlan else {
-        return listeningModeFailureOutcome(.unavailable, session: session)
-      }
-      guard writePlan.canWrite(target) else {
-        let reason: TerminalReason
-        switch session.availabilityObservation {
-        case .value: reason = .unsupported
-        case .partial, .unavailable, .readError, .none: reason = .unavailable
-        }
-        return listeningModeFailureOutcome(reason, session: session)
+    case let .supportReport(writeTestsPreference):
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .devices(resolved):
+        precondition(
+          !resolved.isEmpty,
+          "successful device resolution must not be empty"
+        )
+        return supportReport.outcome(
+          writeTests: writeTestsPreference,
+          device: resolved[0]
+        )
+      case .statusDevices:
+        preconditionFailure("status device resolution used for a non-status command")
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
       }
 
+    case .listeningModeGet, .listeningModeList,
+         .listeningModeSet, .listeningModeCycle:
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
+      case .devices, .statusDevices:
+        preconditionFailure("listening-mode commands use executeListeningMode")
+      }
+
+    case .conversationAwarenessGet:
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .devices(resolved):
+        precondition(
+          !resolved.isEmpty,
+          "successful device resolution must not be empty"
+        )
+        return conversationAwarenessGet(device: resolved[0])
+      case .statusDevices:
+        preconditionFailure("status device resolution used for a non-status command")
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
+      }
+
+    case let .conversationAwarenessSet(target):
+      switch resolveDevices(
+        invocation.requestedDeviceName,
+        .singleOrExact,
+        logger
+      ) {
+      case let .devices(resolved):
+        precondition(
+          !resolved.isEmpty,
+          "successful device resolution must not be empty"
+        )
+        return conversationAwarenessSet(target, device: resolved[0])
+      case .statusDevices:
+        preconditionFailure("status device resolution used for a non-status command")
+      case let .failed(reason):
+        return deviceResolutionFailureOutcome(
+          for: invocation.command,
+          reason: reason
+        )
+      }
+    }
+  }
+
+  private static func debugLog(_ invocation: CLIInvocation) -> DebugLogger {
+    let logger = DebugLogger(enabled: invocation.debugEnabled)
+    logger.debug("cli.command", invocation.command.debugName)
+    logger.debug("cli.json", invocation.jsonOutput)
+    logger.debug("cli.requested_device", invocation.requestedDeviceName)
+    return logger
+  }
+
+  private static func listeningModeGet(
+    session: ListeningModeSession
+  ) -> CommandOutcome {
+    let mode: ListeningMode?
+    switch session.stateObservation {
+    case let .value(value): mode = value
+    case .unknown: mode = nil
+    case .unavailable:
+      return listeningModeFailureOutcome(.unavailable, session: session)
+    case .readError:
+      return listeningModeFailureOutcome(.readError, session: session)
+    }
+    return resourceOutcome(
+      resource: .listeningMode,
+      deviceName: session.name,
+      plain: mode?.rawValue ?? "unknown",
+      state: mode?.rawValue,
+      extra: listeningModeExtra(for: session)
+    )
+  }
+
+  private static func listeningModeList(
+    session: ListeningModeSession
+  ) -> CommandOutcome {
+    switch session.availabilityObservation {
+    case .value, .partial: break
+    case .unavailable, .none:
+      return listeningModeFailureOutcome(.unavailable, session: session)
+    case .readError:
+      return listeningModeFailureOutcome(.readError, session: session)
+    }
+    let tokens = session.availableModes.map(\.rawValue)
+    return resourceOutcome(
+      resource: .listeningMode,
+      deviceName: session.name,
+      plain: tokens.joined(separator: ","),
+      state: session.currentMode?.rawValue,
+      extra: listeningModeExtra(
+        for: session,
+        adding: ["supportedListeningModes": .array(tokens.map(JSONValue.string))]
+      )
+    )
+  }
+
+  private static func listeningModeSet(
+    _ target: ListeningMode,
+    session: ListeningModeSession,
+    logger: DebugLogger
+  ) -> CommandOutcome {
+    switch listeningModeMutationEligibility(
+      session: session,
+      eligible: session.writePlan?.canWrite(target) == true
+    ) {
+    case let .ineligible(reason):
+      return listeningModeFailureOutcome(reason, session: session)
+    case let .eligible(writePlan):
       if session.currentMode == target {
         return resourceOutcome(
           resource: .listeningMode,
@@ -123,24 +255,25 @@ enum CommandExecution {
         writePlan: writePlan,
         logger: logger
       )
+    }
+  }
 
-    case .cycle(let requested):
-      let cycleModes = ListeningModeCyclePolicy.supportedModes(
-        requested: requested,
-        available: session.availableModes
-      )
-      guard let writePlan = session.writePlan else {
-        return listeningModeFailureOutcome(.unavailable, session: session)
-      }
-      guard cycleModes.count >= 2 else {
-        let reason: TerminalReason
-        switch session.availabilityObservation {
-        case .value: reason = .unsupported
-        case .partial, .unavailable, .readError, .none: reason = .unavailable
-        }
-        return listeningModeFailureOutcome(reason, session: session)
-      }
-
+  private static func listeningModeCycle(
+    _ requested: [ListeningMode]?,
+    session: ListeningModeSession,
+    logger: DebugLogger
+  ) -> CommandOutcome {
+    let cycleModes = ListeningModeCyclePolicy.supportedModes(
+      requested: requested,
+      available: session.availableModes
+    )
+    switch listeningModeMutationEligibility(
+      session: session,
+      eligible: cycleModes.count >= 2
+    ) {
+    case let .ineligible(reason):
+      return listeningModeFailureOutcome(reason, session: session)
+    case let .eligible(writePlan):
       let target = ListeningMode.next(current: session.currentMode, within: cycleModes)
       logger.debug("cycle.set", cycleModes.map(\.rawValue).joined(separator: ","))
       logger.debug("cycle.target", target.rawValue)
@@ -154,153 +287,117 @@ enum CommandExecution {
     }
   }
 
-  static func execute(
-    _ invocation: CLIInvocation,
-    resolveDevices: (
-      _ requestedName: String?,
-      _ policy: DeviceSelectionPolicy,
-      _ logger: DebugLogger
-    ) -> CommandDeviceResolution,
-    supportReport: SupportReportCommand = SupportReportCommand()
+  // Set and cycle share write-plan eligibility. List keeps readError, and get
+  // treats unknown as a successful read.
+  private static func listeningModeMutationEligibility(
+    session: ListeningModeSession,
+    eligible: Bool
+  ) -> ListeningModeMutationEligibility {
+    guard let writePlan = session.writePlan else {
+      return .ineligible(.unavailable)
+    }
+    guard eligible else {
+      switch session.availabilityObservation {
+      case .value: return .ineligible(.unsupported)
+      case .partial, .unavailable, .readError, .none: return .ineligible(.unavailable)
+      }
+    }
+    return .eligible(writePlan)
+  }
+
+  private static func statusOutcome(
+    from resolution: CommandDeviceResolution
   ) -> CommandOutcome {
-    let logger = DebugLogger(enabled: invocation.debugEnabled)
-    logger.debug("cli.command", invocation.command.debugName)
-    logger.debug("cli.json", invocation.jsonOutput)
-    logger.debug("cli.requested_device", invocation.requestedDeviceName)
-
-    if case .version = invocation.command {
-      return CommandOutcome(
-        plain: BuildVersion.current,
-        data: ["version": .string(BuildVersion.current)]
-      )
-    }
-
-    let selectionPolicy: DeviceSelectionPolicy
-    if case .status = invocation.command {
-      selectionPolicy = .allOrExact
-    } else {
-      selectionPolicy = .singleOrExact
-    }
-
-    let resolution = resolveDevices(
-      invocation.requestedDeviceName,
-      selectionPolicy,
-      logger
-    )
-
-    if case .status = invocation.command {
-      switch resolution {
-      case let .statusDevices(resolved):
-        precondition(!resolved.isEmpty, "successful status resolution must not be empty")
-        return StatusCommand.outcome(devices: resolved)
-      case let .devices(resolved):
-        // A writable compatible device also satisfies the status-reading
-        // interface. The production status resolver uses statusDevices.
-        precondition(!resolved.isEmpty, "successful device resolution must not be empty")
-        return StatusCommand.outcome(
-          devices: resolved.map { $0 as any AudioDeviceStatusReading }
-        )
-      case let .failed(reason):
-        return deviceResolutionFailureOutcome(for: invocation.command, reason: reason)
-      }
-    }
-
-    let devices: [any CompatibleAudioDevice]
     switch resolution {
+    case let .statusDevices(resolved):
+      precondition(!resolved.isEmpty, "successful status resolution must not be empty")
+      return StatusCommand.outcome(devices: resolved)
     case let .devices(resolved):
+      // A writable compatible device also satisfies the status-reading
+      // interface. The production status resolver uses statusDevices.
       precondition(!resolved.isEmpty, "successful device resolution must not be empty")
-      devices = resolved
-    case .statusDevices:
-      preconditionFailure("status device resolution used for a non-status command")
+      return StatusCommand.outcome(
+        devices: resolved.map { $0 as any AudioDeviceStatusReading }
+      )
     case let .failed(reason):
-      return deviceResolutionFailureOutcome(for: invocation.command, reason: reason)
+      return deviceResolutionFailureOutcome(for: .status, reason: reason)
+    }
+  }
+
+  private static func conversationAwarenessGet(
+    device: any CompatibleAudioDevice
+  ) -> CommandOutcome {
+    let enabled: Bool
+    switch device.readConversationAwarenessStatus() {
+    case let .value(value): enabled = value
+    case .unsupported:
+      return conversationAwarenessFailure(.unsupported, device: device)
+    case .unresolved:
+      return conversationAwarenessFailure(.unavailable, device: device)
+    case .readError:
+      return conversationAwarenessFailure(.readError, device: device)
+    }
+    let state = enabled ? "on" : "off"
+    return resourceOutcome(
+      resource: .conversationAwareness,
+      deviceName: device.name,
+      plain: state,
+      state: state
+    )
+  }
+
+  private static func conversationAwarenessSet(
+    _ target: Bool,
+    device: any CompatibleAudioDevice
+  ) -> CommandOutcome {
+    let current: Bool
+    switch device.readConversationAwarenessStatus() {
+    case let .value(value): current = value
+    case .unsupported:
+      return conversationAwarenessFailure(.unsupported, device: device)
+    case .unresolved, .readError:
+      return conversationAwarenessFailure(.unavailable, device: device)
+    }
+    guard device.canSetConversationAwareness() else {
+      return conversationAwarenessFailure(.unavailable, device: device)
     }
 
-    let device = devices[0]
-
-    switch invocation.command {
-    case .version:
-      preconditionFailure("version handled before device resolution")
-
-    case .status:
-      preconditionFailure("status handled after device resolution")
-
-    case let .supportReport(writeTestsPreference):
-      return supportReport.outcome(writeTests: writeTestsPreference, device: device)
-
-    case .listeningModeGet, .listeningModeList,
-         .listeningModeSet, .listeningModeCycle:
-      preconditionFailure("listening-mode commands use executeListeningMode")
-
-    case .conversationAwarenessGet:
-      let enabled: Bool
-      switch device.readConversationAwarenessStatus() {
-      case let .value(value): enabled = value
-      case .unsupported:
-        return conversationAwarenessFailure(.unsupported, device: device)
-      case .unresolved:
-        return conversationAwarenessFailure(.unavailable, device: device)
-      case .readError:
-        return conversationAwarenessFailure(.readError, device: device)
-      }
-      let state = enabled ? "on" : "off"
+    if current == target {
+      let state = target ? "on" : "off"
       return resourceOutcome(
         resource: .conversationAwareness,
         deviceName: device.name,
-        plain: state,
+        plain: "ok",
         state: state
       )
+    }
 
-    case let .conversationAwarenessSet(target):
-      let current: Bool
-      switch device.readConversationAwarenessStatus() {
-      case let .value(value): current = value
-      case .unsupported:
-        return conversationAwarenessFailure(.unsupported, device: device)
-      case .unresolved, .readError:
-        return conversationAwarenessFailure(.unavailable, device: device)
-      }
-      guard device.canSetConversationAwareness() else {
-        return conversationAwarenessFailure(.unavailable, device: device)
-      }
-
-      if current == target {
-        let state = target ? "on" : "off"
-        return resourceOutcome(
-          resource: .conversationAwareness,
-          deviceName: device.name,
-          plain: "ok",
-          state: state
-        )
-      }
-
-      let observation = device.setConversationAwarenessAndReadBack(target)
-      let observed = observation.observed.map { $0 ? "on" : "off" }
-      guard observation.setterAccepted else {
-        return resourceOutcome(
-          resource: .conversationAwareness,
-          deviceName: device.name,
-          plain: TerminalReason.unavailable.token,
-          terminalReason: .unavailable,
-          state: observed
-        )
-      }
-      if observation.observed == target {
-        return resourceOutcome(
-          resource: .conversationAwareness,
-          deviceName: device.name,
-          plain: "ok",
-          state: observed
-        )
-      }
+    let observation = device.setConversationAwarenessAndReadBack(target)
+    let observed = observation.observed.map { $0 ? "on" : "off" }
+    guard observation.setterAccepted else {
       return resourceOutcome(
         resource: .conversationAwareness,
         deviceName: device.name,
-        plain: "no-op",
-        terminalReason: .noOp,
+        plain: TerminalReason.unavailable.token,
+        terminalReason: .unavailable,
         state: observed
       )
     }
+    if observation.observed == target {
+      return resourceOutcome(
+        resource: .conversationAwareness,
+        deviceName: device.name,
+        plain: "ok",
+        state: observed
+      )
+    }
+    return resourceOutcome(
+      resource: .conversationAwareness,
+      deviceName: device.name,
+      plain: "no-op",
+      terminalReason: .noOp,
+      state: observed
+    )
   }
 
   private static func listeningModeFailureOutcome(
@@ -437,5 +534,10 @@ enum CommandExecution {
       "expiresAt": .string(formatter.string(from: evidence.expiresAt)),
     ])
     return result
+  }
+
+  private enum ListeningModeMutationEligibility {
+    case eligible(ListeningModeWritePlan)
+    case ineligible(TerminalReason)
   }
 }
