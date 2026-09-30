@@ -214,30 +214,32 @@ struct SupportReportWriteTesterTests {
     #expect(results.fullyRestored, "an inferred Off fallback still fully restores")
   }
 
-  @Test("Keeps Off fallback to the initial Transparency mode unrestored")
-  func writeTesterSkipsRestoreWhenInferredOffFallbackMatchesInitialTransparency() {
+  @Test("Does not restore an unapplied Off that never left the initial mode")
+  func writeTesterKeepsUnappliedOffOnTheInitialMode() {
     let device = FakeCompatibleAudioDevice(
-      listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
-      listeningMode: .transparency,
+      listeningModes: [.off, .transparency, .adaptive],
+      listeningMode: .adaptive,
+      appliesListeningModeWrite: false,
       conversationAwarenessSupported: false
     )
-    device.listeningModeWriteOverride = { target in
-      target == .off ? .noiseCancellation : target
-    }
     let results = SupportReportWriteTester.run(device: device)
     let modeRun = results.listeningModes.testRun
 
     #expect(
       modeRun?.tests.first { $0.mode == .off }?.inferredOffFallback == true,
-      "stale non-Transparency Off readback still infers the fallback"
+      "an accepted Off that stays on Adaptive is still labeled as a fallback"
     )
     #expect(
       modeRun?.restoration.stateNeverChanged == true
         && modeRun?.restored == true
-        && modeRun?.finalMode == .transparency,
-      "inferred Transparency is the captured initial mode, so restore is skipped"
+        && modeRun?.finalMode == .adaptive,
+      "no demonstrated departure means the live Adaptive read is still current"
     )
-    #expect(results.fullyRestored, "matching inferred fallback counts as restored")
+    #expect(
+      device.listeningModeSetCount == 2,
+      "Transparency and Off are probed, and the initial mode is not written back"
+    )
+    #expect(results.fullyRestored, "an unchanged initial mode counts as restored")
   }
 
   @Test("Records targets that are already current")

@@ -202,13 +202,13 @@ enum SupportReportWriteTester {
     let untestedTargets = payload.targets.dropFirst(tests.count)
     progress.skipped(untestedTargets.map { .listeningMode($0) })
 
-    // An accepted Off write can fall back to Transparency while the provider
-    // still reports the pre-Off mode. Restore must use that inferred state;
-    // trusting the live read would skip restoration when it matches initial.
-    let currentForRestore = inferredOffFallbackMode(from: tests)
-      ?? device.currentListeningMode()
+    let liveMode = device.currentListeningMode()
     let restoration = restoreIfNeeded(
-      current: currentForRestore,
+      current: modeForListeningModeRestore(
+        tests: tests,
+        liveMode: liveMode,
+        initialMode: initialMode
+      ),
       initial: initialMode,
       operation: .listeningModeRestoration,
       progress: progress
@@ -217,15 +217,7 @@ enum SupportReportWriteTester {
         initialMode, device: device, transparencySupported: transparencySupported
       )
     }
-    let liveFinal = device.currentListeningMode()
-    let finalMode: ListeningMode?
-    if case .stateNeverChanged = restoration,
-       inferredOffFallbackMode(from: tests) != nil
-    {
-      finalMode = .transparency
-    } else {
-      finalMode = liveFinal
-    }
+    let finalMode = device.currentListeningMode()
     return .ran(
       SupportReportWriteTestResults.ListeningModeTestRun(
         tests: tests,
@@ -302,11 +294,23 @@ enum SupportReportWriteTester {
     )
   }
 
-  private static func inferredOffFallbackMode(
-    from tests: [SupportReportWriteTestResults.ListeningModeTest]
+  // An accepted Off write can fall back to Transparency while readback still
+  // reports the mode from before that write. Use the inferred Transparency
+  // state only when an earlier probe already left the initial mode and the
+  // readback has snapped back to it. An unapplied Off that never leaves the
+  // initial mode keeps the live read, so restoration does not name that mode.
+  private static func modeForListeningModeRestore(
+    tests: [SupportReportWriteTestResults.ListeningModeTest],
+    liveMode: ListeningMode?,
+    initialMode: ListeningMode
   ) -> ListeningMode? {
-    guard let last = tests.last, last.inferredOffFallback else { return nil }
-    return .transparency
+    guard let last = tests.last, last.inferredOffFallback, liveMode == initialMode else {
+      return liveMode
+    }
+    let leftInitialMode = tests.contains { test in
+      test.mode != initialMode && test.write.verified && !test.targetAlreadyCurrent
+    }
+    return leftInitialMode ? .transparency : liveMode
   }
 
   private static func restoreIfNeeded<State: Equatable, Attempt>(
