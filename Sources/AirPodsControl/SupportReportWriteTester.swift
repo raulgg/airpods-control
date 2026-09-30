@@ -202,8 +202,13 @@ enum SupportReportWriteTester {
     let untestedTargets = payload.targets.dropFirst(tests.count)
     progress.skipped(untestedTargets.map { .listeningMode($0) })
 
+    // An accepted Off write can fall back to Transparency while the provider
+    // still reports the pre-Off mode. Restore must use that inferred state;
+    // trusting the live read would skip restoration when it matches initial.
+    let currentForRestore = inferredOffFallbackMode(from: tests)
+      ?? device.currentListeningMode()
     let restoration = restoreIfNeeded(
-      current: device.currentListeningMode(),
+      current: currentForRestore,
       initial: initialMode,
       operation: .listeningModeRestoration,
       progress: progress
@@ -212,7 +217,15 @@ enum SupportReportWriteTester {
         initialMode, device: device, transparencySupported: transparencySupported
       )
     }
-    let finalMode = device.currentListeningMode()
+    let liveFinal = device.currentListeningMode()
+    let finalMode: ListeningMode?
+    if case .stateNeverChanged = restoration,
+       inferredOffFallbackMode(from: tests) != nil
+    {
+      finalMode = .transparency
+    } else {
+      finalMode = liveFinal
+    }
     return .ran(
       SupportReportWriteTestResults.ListeningModeTestRun(
         tests: tests,
@@ -287,6 +300,13 @@ enum SupportReportWriteTester {
         restored: finalState == initialState
       )
     )
+  }
+
+  private static func inferredOffFallbackMode(
+    from tests: [SupportReportWriteTestResults.ListeningModeTest]
+  ) -> ListeningMode? {
+    guard let last = tests.last, last.inferredOffFallback else { return nil }
+    return .transparency
   }
 
   private static func restoreIfNeeded<State: Equatable, Attempt>(

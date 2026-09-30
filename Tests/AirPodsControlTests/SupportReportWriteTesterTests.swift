@@ -179,6 +179,67 @@ struct SupportReportWriteTesterTests {
     )
   }
 
+  @Test("Restores after Off fallback when readback still reports the initial mode")
+  func writeTesterRestoresAfterInferredOffFallbackMatchingInitial() {
+    let device = FakeCompatibleAudioDevice(
+      listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+      listeningMode: .noiseCancellation,
+      conversationAwarenessSupported: false
+    )
+    // Hardware accepted Off and bounced to Transparency, but the settled
+    // readback still reports the pre-Off Noise Cancellation mode. That is
+    // the same mismatch resolveListeningModeWrite infers as Transparency.
+    device.listeningModeWriteOverride = { target in
+      target == .off ? .noiseCancellation : target
+    }
+    let results = SupportReportWriteTester.run(device: device)
+    let modeRun = results.listeningModes.testRun
+    let offTest = modeRun?.tests.first { $0.mode == .off }
+
+    #expect(
+      offTest?.inferredOffFallback == true
+        && offTest?.write.observed == .transparency,
+      "accepted Off with a Noise Cancellation readback infers Transparency"
+    )
+    #expect(
+      modeRun?.restoration.attempted?.mode == .noiseCancellation
+        && modeRun?.restoration.attempted?.write.verified == true,
+      "inferred Transparency is not treated as already-restored Noise Cancellation"
+    )
+    #expect(modeRun?.restored == true, "restoration returns to the captured mode")
+    #expect(
+      device.currentListeningMode() == .noiseCancellation,
+      "the device ends in its initial listening mode"
+    )
+    #expect(results.fullyRestored, "an inferred Off fallback still fully restores")
+  }
+
+  @Test("Keeps Off fallback to the initial Transparency mode unrestored")
+  func writeTesterSkipsRestoreWhenInferredOffFallbackMatchesInitialTransparency() {
+    let device = FakeCompatibleAudioDevice(
+      listeningModes: [.off, .transparency, .adaptive, .noiseCancellation],
+      listeningMode: .transparency,
+      conversationAwarenessSupported: false
+    )
+    device.listeningModeWriteOverride = { target in
+      target == .off ? .noiseCancellation : target
+    }
+    let results = SupportReportWriteTester.run(device: device)
+    let modeRun = results.listeningModes.testRun
+
+    #expect(
+      modeRun?.tests.first { $0.mode == .off }?.inferredOffFallback == true,
+      "stale non-Transparency Off readback still infers the fallback"
+    )
+    #expect(
+      modeRun?.restoration.stateNeverChanged == true
+        && modeRun?.restored == true
+        && modeRun?.finalMode == .transparency,
+      "inferred Transparency is the captured initial mode, so restore is skipped"
+    )
+    #expect(results.fullyRestored, "matching inferred fallback counts as restored")
+  }
+
   @Test("Records targets that are already current")
   func writeTesterRecordsAlreadyCurrentTargets() {
     let device = FakeCompatibleAudioDevice(
