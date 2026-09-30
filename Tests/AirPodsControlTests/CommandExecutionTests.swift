@@ -219,7 +219,7 @@ struct CommandExecutionTests {
       outcome.plain == """
       AirPods or Beats report-device discovery is unavailable.
       Connect exactly one compatible AirPods or Beats device as a macOS output device,
-      then run `airpods-control support-report` again.
+      then run `pods-control support-report` again.
       Nothing was sent to GitHub.
       """,
       "support-report preserves unavailable discovery guidance"

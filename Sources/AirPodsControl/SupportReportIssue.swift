@@ -7,10 +7,10 @@ struct SupportReportIssueDraft {
 
 enum SupportReportIssue {
   static let repositoryIssuesURL =
-    URL(string: "https://github.com/raulgg/airpods-control/issues/new")!
+    URL(string: "https://github.com/raulgg/pods-control/issues/new")!
   // The empty form, with no prefilled fields. Used when composition fails.
   static let formURL = URL(
-    string: "https://github.com/raulgg/airpods-control/issues/new"
+    string: "https://github.com/raulgg/pods-control/issues/new"
       + "?template=compatibility-report.yml"
   )!
   static let templateName = "compatibility-report.yml"

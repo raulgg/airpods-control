@@ -40,7 +40,7 @@ jobs:
         continue-on-error: true
         run: |
           curl -fsSL --retry 3 --retry-all-errors --max-time 60 \
-            -A "airpods-control-homebrew-badge (+https://github.com/raulgg/airpods-control)" \
+            -A "pods-control-homebrew-badge (+https://github.com/raulgg/pods-control)" \
             -o "$RUNNER_TEMP/install-90d.json" \
             https://formulae.brew.sh/api/analytics/install/90d.json
 

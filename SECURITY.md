@@ -1,6 +1,6 @@
 # Security
 
-`airpods-control` uses a small interpose library to make one private entitlement
+`pods-control` uses a small interpose library to make one private entitlement
 appear present inside its own process. This gives the process access to a
 private Apple audio API without granting privileges outside it. The project
 installs by compiling source on the user's Mac, either through Homebrew or
@@ -19,10 +19,13 @@ that function. It returns "present" for
 to the real system implementation unchanged.
 
 `DYLD_INSERT_LIBRARIES` loads the interpose only into the short-lived
-`airpods-control` process. A local build stores the library beside the
+`pods-control` process. A local build stores the library beside the
 executable in the build directory; `make install` copies both files under
-`PREFIX/libexec/airpods-control`. The installed library is not injected into
-other processes, and its code stops running when `airpods-control` exits.
+`PREFIX/libexec/pods-control`. The installed library is not injected into
+other processes, and its code stops running when `pods-control` exits.
+`bin/airpods-control` is a symlink to that same binary. Install removes a
+leftover `PREFIX/libexec/airpods-control` tree after the new files are in
+place, and uninstall removes both command names.
 
 After the re-exec, the executable's
 [`Sources/BypassProbe/bypass_probe.c`](Sources/BypassProbe/bypass_probe.c) asks
@@ -34,7 +37,7 @@ shared system audio context or compatible device is available.
 
 - The interpose does not elevate to root or another user. It grants no
   administrator rights, cross-user access, or access to another machine.
-- The entitlement result exists only inside the `airpods-control` process. It
+- The entitlement result exists only inside the `pods-control` process. It
   does not affect another process, user, or session, and the interpose does not
   write to a shared location.
 - SIP, Gatekeeper, code signing, the sandbox, and library validation remain
@@ -103,7 +106,7 @@ especially the interpose, and trusting the compiler on your machine.
   entitlement probe under [`Sources/BypassProbe`](Sources/BypassProbe), and the
   Swift files under [`Sources/AirPodsControl`](Sources/AirPodsControl). Review
   them before building.
-- The dylib still loads only into `airpods-control`. Ad-hoc signing does not
+- The dylib still loads only into `pods-control`. Ad-hoc signing does not
   expand its runtime scope or grant the forged private entitlement to other
   processes.
 
@@ -114,10 +117,10 @@ one entitlement string and delegate every other case to
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/raulgg/airpods-control/security/advisories/new).
+[GitHub private vulnerability reporting](https://github.com/raulgg/pods-control/security/advisories/new).
 Do not include sensitive vulnerability details in a public issue.
 
-Include the affected macOS version, the `airpods-control` version or commit, the
+Include the affected macOS version, the `pods-control` version or commit, the
 expected behavior, and enough reproduction detail to investigate. Redact device
 names and other personal information from debug output.
 

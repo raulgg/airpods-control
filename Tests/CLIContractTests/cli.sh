@@ -2,7 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-BUILT_CLI="$ROOT/build/airpods-control"
+BUILT_CLI="$ROOT/build/pods-control"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -39,8 +39,8 @@ VERSION=$(cat "$ROOT/version.txt")
 # entitlement bootstrap and private-framework lookup.
 PROBE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/airpods-control-test.XXXXXX")
 trap 'rm -rf "$PROBE_DIR"' EXIT HUP INT TERM
-cp "$BUILT_CLI" "$PROBE_DIR/airpods-control"
-CLI="$PROBE_DIR/airpods-control"
+cp "$BUILT_CLI" "$PROBE_DIR/pods-control"
+CLI="$PROBE_DIR/pods-control"
 
 "$CLI" --help >/dev/null
 "$CLI" lm --help >/dev/null

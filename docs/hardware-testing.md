@@ -32,14 +32,14 @@ capture_parent="${TMPDIR:-/tmp}"
 capture_previous_umask="$(umask)"
 umask 077
 capture_dir="$(
-  mktemp -d "${capture_parent%/}/airpods-control-selection.XXXXXX"
+  mktemp -d "${capture_parent%/}/pods-control-selection.XXXXXX"
 )" || exit 1
 chmod 700 "$capture_dir"
 
 case_name=output-only
-build/airpods-control status --device "My AirPods" \
+build/pods-control status --device "My AirPods" \
   >"$capture_dir/$case_name.txt"
-build/airpods-control status --device "My AirPods" --json --debug \
+build/pods-control status --device "My AirPods" --json --debug \
   >"$capture_dir/$case_name.json" \
   2>"$capture_dir/$case_name.debug.log"
 ```
@@ -139,9 +139,9 @@ Capture plain and JSON output for every state, allowing a short pause after
 each placement change for macOS to publish the state:
 
 ```sh
-build/airpods-control status --device "My AirPods" \
+build/pods-control status --device "My AirPods" \
   >"$capture_dir/placement-both.txt"
-build/airpods-control status --device "My AirPods" --json \
+build/pods-control status --device "My AirPods" --json \
   >"$capture_dir/placement-both.json"
 ```
 
@@ -182,20 +182,20 @@ independently of the active output.
    capture_previous_umask="$(umask)"
    umask 077
    capture_dir="$(
-     mktemp -d "${capture_parent%/}/airpods-control.XXXXXX"
+     mktemp -d "${capture_parent%/}/pods-control.XXXXXX"
    )" || exit 1
    chmod 700 "$capture_dir"
    printf 'Private capture directory: %s\n' "$capture_dir"
 
-   build/airpods-control --device "My AirPods" \
+   build/pods-control --device "My AirPods" \
      listening-mode get --json --debug \
      >"$capture_dir/both-listening-mode.json" \
      2>"$capture_dir/both.debug.log"
-   build/airpods-control --device "My AirPods" \
+   build/pods-control --device "My AirPods" \
      listening-mode list --json --debug \
      >"$capture_dir/both-listening-modes.json" \
      2>>"$capture_dir/both.debug.log"
-   build/airpods-control --device "My AirPods" \
+   build/pods-control --device "My AirPods" \
      conversation-awareness get --json --debug \
      >"$capture_dir/both-conversation-awareness.json" \
      2>>"$capture_dir/both.debug.log"
@@ -206,15 +206,15 @@ independently of the active output.
    run:
 
    ```sh
-   build/airpods-control --device "My AirPods" \
+   build/pods-control --device "My AirPods" \
      listening-mode get --json --debug \
      >"$capture_dir/one-listening-mode.json" \
      2>"$capture_dir/one.debug.log"
-   build/airpods-control --device "My AirPods" \
+   build/pods-control --device "My AirPods" \
      listening-mode list --json --debug \
      >"$capture_dir/one-listening-modes.json" \
      2>>"$capture_dir/one.debug.log"
-   build/airpods-control --device "My AirPods" \
+   build/pods-control --device "My AirPods" \
      conversation-awareness get --json --debug \
      >"$capture_dir/one-conversation-awareness.json" \
      2>>"$capture_dir/one.debug.log"

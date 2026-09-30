@@ -13,17 +13,17 @@ TMP_BASE=${TMPDIR:-/tmp}
 TMP=$(mktemp -d "${TMP_BASE%/}/airpods-control-bypass-test.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
-cp "$BINARY" "$TMP/airpods-control"
+cp "$BINARY" "$TMP/pods-control"
 cp "$DYLIB" "$TMP/avbypass.dylib"
 
-"$ROOT/scripts/verify-runtime.sh" "$TMP/airpods-control"
+"$ROOT/scripts/verify-runtime.sh" "$TMP/pods-control"
 
 mkdir "$TMP/hardened"
-cp "$BINARY" "$TMP/hardened/airpods-control"
+cp "$BINARY" "$TMP/hardened/pods-control"
 cp "$DYLIB" "$TMP/hardened/avbypass.dylib"
-codesign --force --sign - --options runtime "$TMP/hardened/airpods-control"
+codesign --force --sign - --options runtime "$TMP/hardened/pods-control"
 if "$ROOT/scripts/verify-runtime.sh" \
-  "$TMP/hardened/airpods-control" >/dev/null 2>&1; then
+  "$TMP/hardened/pods-control" >/dev/null 2>&1; then
   echo "error: runtime verifier accepted a hardened-runtime binary" >&2
   exit 1
 fi
@@ -38,7 +38,7 @@ done
 lipo -create $inputs -output "$TMP/avbypass.dylib"
 codesign --force --sign - "$TMP/avbypass.dylib"
 
-if "$ROOT/scripts/verify-runtime.sh" "$TMP/airpods-control" >/dev/null 2>&1; then
+if "$ROOT/scripts/verify-runtime.sh" "$TMP/pods-control" >/dev/null 2>&1; then
   echo "error: runtime verifier accepted a non-interposing dylib" >&2
   exit 1
 fi

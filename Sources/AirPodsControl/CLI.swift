@@ -67,14 +67,15 @@ struct CLIInvocation {
 struct CLIParseError: Error {}
 
 let globalHelp = """
-A macOS CLI for AirPods and Beats.
+macOS CLI for AirPods and Beats listening modes.
+airpods-control is the same command.
 
 Usage:
-  airpods-control [--device NAME] <resource> <command> [--json] [--debug]
-  airpods-control status [--device NAME] [--json] [--debug]
-  airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
-  airpods-control --version | -v | version
-  airpods-control --help | -h
+  pods-control [--device NAME] <resource> <command> [--json] [--debug]
+  pods-control status [--device NAME] [--json] [--debug]
+  pods-control support-report [--with-write-tests | --no-write-tests] [--debug]
+  pods-control --version | -v | version
+  pods-control --help | -h
 
 Resources:
   listening-mode, lm            Read, set, list, or cycle listening modes.
@@ -103,13 +104,13 @@ Exit status:
   5 read-error; 6 unavailable; 7 state-uncertain; 8 ambiguous-device.
   Caught signals use 128 + signal.
 
-Run 'airpods-control status --help' or
-'airpods-control <resource> --help' for command-specific help.
+Run 'pods-control status --help' or
+'pods-control <resource> --help' for command-specific help.
 """
 
 let statusHelp = """
 Usage:
-  airpods-control status [--device NAME] [--json] [--debug]
+  pods-control status [--device NAME] [--json] [--debug]
 
 Read the status of every compatible AirPods or Beats device without changing
 anything: listening mode, Conversation Awareness, left/right ear placement, and
@@ -178,10 +179,10 @@ Options:
 
 let listeningModeHelp = """
 Usage:
-  airpods-control [--device NAME] listening-mode get [--json] [--debug]
-  airpods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
-  airpods-control [--device NAME] listening-mode list [--json] [--debug]
-  airpods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
+  pods-control [--device NAME] listening-mode get [--json] [--debug]
+  pods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
+  pods-control [--device NAME] listening-mode list [--json] [--debug]
+  pods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
 
 Alias:
   lm
@@ -232,8 +233,8 @@ denial. List and the default cycle never probe.
 
 let conversationAwarenessHelp = """
 Usage:
-  airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
-  airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
+  pods-control [--device NAME] conversation-awareness get [--json] [--debug]
+  pods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
 
 Alias:
   ca
@@ -248,7 +249,7 @@ Options:
 
 let supportReportHelp = """
 Usage:
-  airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
+  pods-control support-report [--with-write-tests | --no-write-tests] [--debug]
 
 Build a local compatibility report from device and macOS metadata. Missing or
 unrecognized product identity is included as unavailable data in a successful
