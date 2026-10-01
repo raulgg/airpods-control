@@ -1,91 +1,5 @@
 import Foundation
 
-enum AllowOffCacheDirectoryMigration {
-  static let directoryName = "io.github.raulgg.pods-control"
-  static let legacyDirectoryName = "io.github.raulgg.airpods-control"
-  static let fileName = "allow-off-v1.json"
-  static let denyMarkerPrefix = "allow-off-v1-deny-"
-
-  // Keep the previous file so a 0.5.0 rollback can still read it.
-  static func migrateIfNeeded(
-    fileURL: URL,
-    fileManager: FileManager = .default
-  ) {
-    let directoryURL = fileURL.deletingLastPathComponent()
-    guard directoryURL.lastPathComponent == directoryName,
-          fileURL.lastPathComponent == fileName,
-          !fileManager.fileExists(atPath: fileURL.path)
-    else { return }
-
-    let legacyDirectoryURL = directoryURL
-      .deletingLastPathComponent()
-      .appendingPathComponent(legacyDirectoryName, isDirectory: true)
-    let legacyFileURL = legacyDirectoryURL.appendingPathComponent(
-      fileName,
-      isDirectory: false
-    )
-    guard fileManager.fileExists(atPath: legacyFileURL.path) else { return }
-
-    do {
-      try fileManager.createDirectory(
-        at: directoryURL,
-        withIntermediateDirectories: true,
-        attributes: [.posixPermissions: NSNumber(value: 0o700)]
-      )
-      try fileManager.setAttributes(
-        [.posixPermissions: NSNumber(value: 0o700)],
-        ofItemAtPath: directoryURL.path
-      )
-    } catch {
-      return
-    }
-    var copied = false
-    do {
-      try fileManager.copyItem(at: legacyFileURL, to: fileURL)
-      copied = true
-      try fileManager.setAttributes(
-        [.posixPermissions: NSNumber(value: 0o600)],
-        ofItemAtPath: fileURL.path
-      )
-    } catch {
-      if copied { try? fileManager.removeItem(at: fileURL) }
-      return
-    }
-    try? excludeAllowOffCacheURLFromBackup(directoryURL)
-    try? excludeAllowOffCacheURLFromBackup(fileURL)
-    copyDenyMarkers(
-      from: legacyDirectoryURL,
-      to: directoryURL,
-      fileManager: fileManager
-    )
-  }
-
-  private static func copyDenyMarkers(
-    from legacyDirectoryURL: URL,
-    to directoryURL: URL,
-    fileManager: FileManager
-  ) {
-    guard let names = try? fileManager.contentsOfDirectory(
-      atPath: legacyDirectoryURL.path
-    ) else { return }
-    for name in names where name.hasPrefix(denyMarkerPrefix) {
-      let source = legacyDirectoryURL.appendingPathComponent(name)
-      let destination = directoryURL.appendingPathComponent(name)
-      if fileManager.fileExists(atPath: destination.path) { continue }
-      do {
-        try fileManager.copyItem(at: source, to: destination)
-        try fileManager.setAttributes(
-          [.posixPermissions: NSNumber(value: 0o600)],
-          ofItemAtPath: destination.path
-        )
-        try? excludeAllowOffCacheURLFromBackup(destination)
-      } catch {
-        continue
-      }
-    }
-  }
-}
-
 final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   static let defaultTTL: TimeInterval = 7 * 24 * 60 * 60
 
@@ -126,11 +40,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       appropriateFor: nil,
       create: false
     )
-    .appendingPathComponent(
-      AllowOffCacheDirectoryMigration.directoryName,
-      isDirectory: true
-    )
-    .appendingPathComponent("allow-off-v1.json", isDirectory: false)
+    .appendingPathComponent(allowOffCacheDirectoryName, isDirectory: true)
+    .appendingPathComponent(allowOffCacheFileName, isDirectory: false)
   }
 
   static func systemDefault(
@@ -146,7 +57,6 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   }
 
   func lookup(rawDeviceUID: String) -> AllowOffCacheLookup {
-    AllowOffCacheDirectoryMigration.migrateIfNeeded(fileURL: fileURL)
     guard AllowOffCachePolicy.isValidTTL(ttl),
           case .value(let document) = storage.readPersistedCache(),
           let key = AllowOffCachePolicy.digestKey(
@@ -215,7 +125,6 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
     observedAt: Date,
     recordsDenial: Bool
   ) -> AllowOffCacheMutation {
-    AllowOffCacheDirectoryMigration.migrateIfNeeded(fileURL: fileURL)
     guard AllowOffCachePolicy.isValidTTL(ttl),
           AllowOffCachePolicy.isValidRawDeviceUID(rawDeviceUID),
           AllowOffCachePolicy.isFiniteObservationTime(observedAt)
@@ -448,7 +357,6 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
-    AllowOffCacheDirectoryMigration.migrateIfNeeded(fileURL: fileURL)
     return storage.withExclusiveMutationLock {
       guard case .value(let document) = storage.readPersistedCache() else {
         return purgeInvalidCacheIfNeeded()

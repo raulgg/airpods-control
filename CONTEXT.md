@@ -279,7 +279,8 @@
   `~/Library/Caches/io.github.raulgg.pods-control/allow-off-v1.json`. A
   missing file is copied once from
   `~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json`
-  when that older file exists; the older file is left in place. Absence,
+  when that older directory and file already meet the cache's ownership,
+  mode, and regular-file checks. The older file is left in place. Absence,
   a failed copy, or removal by cache cleanup is a cache miss, not an
   operational error.
 

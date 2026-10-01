@@ -213,7 +213,8 @@ backup-excluded cache is stored at:
 
 If that file is missing, the same bytes are copied from
 `~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json`
-when the older file exists. The older file is left in place. A failed
+when that older directory and file already meet the cache's ownership,
+mode, and regular-file checks. The older file is left in place. A failed
 copy is a cache miss, not an operational error.
 
 The key is the full SHA-256 digest of a random per-cache salt followed by the

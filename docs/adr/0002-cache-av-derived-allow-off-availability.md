@@ -80,7 +80,8 @@ in:
 
 A missing file is copied from
 `~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json`
-when that older file exists. The older file is not deleted in this
+when that older directory and file already meet the cache's ownership,
+mode, and regular-file checks. The older file is not deleted in this
 version. A failed copy is a miss.
 
 Each positive or denial record expires seven days after its observation. The
