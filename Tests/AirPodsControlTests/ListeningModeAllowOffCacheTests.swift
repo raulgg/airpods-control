@@ -29,7 +29,7 @@ private func withTemporaryAllowOffCache(
   _ body: (URL) -> Void
 ) {
   let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-    "airpods-control-allow-off-cache-tests-\(UUID().uuidString)",
+    "pods-control-allow-off-cache-tests-\(UUID().uuidString)",
     isDirectory: true
   )
   do {
@@ -51,6 +51,41 @@ private func withTemporaryAllowOffCache(
     root
       .appendingPathComponent("cache", isDirectory: true)
       .appendingPathComponent("allow-off-v1.json", isDirectory: false)
+  )
+}
+
+private func withAllowOffCacheRenameFixture(
+  _ body: (_ legacyFileURL: URL, _ newFileURL: URL) -> Void
+) {
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "pods-control-allow-off-migration-\(UUID().uuidString)",
+    isDirectory: true
+  )
+  do {
+    try FileManager.default.createDirectory(
+      at: root,
+      withIntermediateDirectories: false
+    )
+  } catch {
+    Issue.record("allow-off cache migration test creates its temporary root")
+    return
+  }
+  defer {
+    try? FileManager.default.removeItem(at: root)
+  }
+  body(
+    root
+      .appendingPathComponent(
+        allowOffCacheLegacyDirectoryName,
+        isDirectory: true
+      )
+      .appendingPathComponent(allowOffCacheFileName, isDirectory: false),
+    root
+      .appendingPathComponent(
+        allowOffCacheDirectoryName,
+        isDirectory: true
+      )
+      .appendingPathComponent(allowOffCacheFileName, isDirectory: false)
   )
 }
 
@@ -76,6 +111,20 @@ private func allowOffCacheJSON(
         let object = value as? [String: Any]
   else { return nil }
   return object
+}
+
+private func allowOffCacheLstat(_ url: URL) -> stat? {
+  var value = stat()
+  let result: Int32 = url.withUnsafeFileSystemRepresentation { path in
+    guard let path else { return -1 }
+    return Darwin.lstat(path, &value)
+  }
+  return result == 0 ? value : nil
+}
+
+private func allowOffCacheIsSymbolicLink(_ url: URL) -> Bool {
+  guard let value = allowOffCacheLstat(url) else { return false }
+  return value.st_mode & S_IFMT == S_IFLNK
 }
 
 private func allowOffCachePermissions(at url: URL) -> Int? {
@@ -184,7 +233,7 @@ struct PersistentListeningModeAllowOffCacheTests {
   func allowOffCacheUsesVersionedCachesPathAndFactory() {
     do {
       let expectedSuffix =
-        "/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json"
+        "/Library/Caches/io.github.raulgg.pods-control/allow-off-v1.json"
       let defaultURL = try? PersistentListeningModeAllowOffCache.defaultFileURL()
       #expect(
         defaultURL?.path.hasSuffix(expectedSuffix) == true,
@@ -193,6 +242,454 @@ struct PersistentListeningModeAllowOffCacheTests {
       #expect(
         PersistentListeningModeAllowOffCache.systemDefault() != nil,
         "allow-off cache has a side-effect-free system-default factory"
+      )
+    }
+  }
+
+  @Test("Copies a legacy Allow Off cache on miss and keeps the old file")
+  func allowOffCacheCopiesLegacyFileOnMiss() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_000))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "AppleHDAEngineOutput:AirPods:CaseSensitive-UID"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "legacy Allow Off evidence is stored"
+      )
+      guard let legacyData = try? Data(contentsOf: legacyURL) else {
+        Issue.record("legacy Allow Off cache was written")
+        return
+      }
+      let legacyDirectory = legacyURL.deletingLastPathComponent()
+      let marker = legacyDirectory.appendingPathComponent(
+        "allow-off-v1-deny-abc.jsonl"
+      )
+      let lock = legacyDirectory.appendingPathComponent("allow-off-v1.lock")
+      do {
+        try Data("deny\n".utf8).write(to: marker)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o600)],
+          ofItemAtPath: marker.path
+        )
+        try Data("lock".utf8).write(to: lock)
+      } catch {
+        Issue.record("legacy Allow Off cache side files were seeded")
+        return
+      }
+
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { Data(repeating: 9, count: 32) }
+      )
+      guard let record = allowOffRecord(
+        from: migrated.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("legacy Allow Off evidence is visible at the new path")
+        return
+      }
+      #expect(
+        record.evidence.observedAt == clock.value,
+        "copied Allow Off evidence keeps its timestamp"
+      )
+      #expect(
+        (try? Data(contentsOf: newURL)) == legacyData,
+        "the new cache file is a byte copy"
+      )
+      #expect(
+        (try? Data(contentsOf: legacyURL)) == legacyData,
+        "migration does not delete or rewrite the legacy cache"
+      )
+      let newDirectory = newURL.deletingLastPathComponent()
+      #expect(
+        FileManager.default.fileExists(
+          atPath: newDirectory.appendingPathComponent(
+            "allow-off-v1-deny-abc.jsonl"
+          ).path
+        ),
+        "migration copies deny markers"
+      )
+      #expect(
+        !FileManager.default.fileExists(
+          atPath: newDirectory.appendingPathComponent("allow-off-v1.lock").path
+        ),
+        "migration does not copy the lock file"
+      )
+      try? FileManager.default.removeItem(at: legacyURL)
+      #expect(
+        allowOffRecord(from: migrated.lookup(rawDeviceUID: rawUID)) != nil,
+        "later reads use the copied file"
+      )
+    }
+  }
+
+  @Test("Treats a failed legacy Allow Off copy as a cache miss")
+  func allowOffCacheCopyFailureIsAMiss() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_000))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "AppleHDAEngineOutput:AirPods:CaseSensitive-UID"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "legacy Allow Off evidence exists before the failed copy"
+      )
+      let blocker = newURL.deletingLastPathComponent()
+      do {
+        try Data("nope".utf8).write(to: blocker)
+      } catch {
+        Issue.record("copy-failure fixture blocks the new cache directory")
+        return
+      }
+      let blockerMode = allowOffCachePermissions(at: blocker)
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      #expect(
+        migrated.lookup(rawDeviceUID: rawUID) == .miss,
+        "a failed legacy copy is a cache miss"
+      )
+      #expect(
+        FileManager.default.fileExists(atPath: legacyURL.path),
+        "a failed copy leaves the legacy cache in place"
+      )
+      #expect(
+        (try? Data(contentsOf: blocker)) == Data("nope".utf8),
+        "a failed copy does not replace the blocked path"
+      )
+      #expect(
+        allowOffCachePermissions(at: blocker) == blockerMode,
+        "a failed copy does not chmod the blocked path"
+      )
+    }
+  }
+
+  @Test("Does not adopt a legacy Allow Off cache the reader would reject")
+  func allowOffCacheLeavesUntrustedLegacyFileUntouched() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_100))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "untrusted-legacy-cache-uid"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "untrusted legacy cache test seeds evidence"
+      )
+      do {
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o644)],
+          ofItemAtPath: legacyURL.path
+        )
+      } catch {
+        Issue.record("untrusted legacy cache test loosens the file mode")
+        return
+      }
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      #expect(
+        migrated.lookup(rawDeviceUID: rawUID) == .miss,
+        "an untrusted legacy cache is a miss"
+      )
+      #expect(
+        allowOffCacheLstat(newURL) == nil,
+        "an untrusted legacy cache is not copied"
+      )
+      #expect(
+        allowOffCachePermissions(at: legacyURL) == 0o644,
+        "an untrusted legacy cache keeps its mode"
+      )
+    }
+  }
+
+  @Test("Does not adopt a hard-linked legacy Allow Off cache")
+  func allowOffCacheLeavesHardLinkedLegacyFileUntouched() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_150))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "hard-linked-legacy-cache-uid"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "hard-linked legacy cache test seeds evidence"
+      )
+      let linkURL = legacyURL
+        .deletingLastPathComponent()
+        .appendingPathComponent("legacy-hard-link.json")
+      do {
+        try FileManager.default.linkItem(at: legacyURL, to: linkURL)
+      } catch {
+        Issue.record("hard-linked legacy cache test creates the extra link")
+        return
+      }
+      guard let legacyData = try? Data(contentsOf: legacyURL) else {
+        Issue.record("hard-linked legacy cache test reads the seeded file")
+        return
+      }
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      #expect(
+        migrated.lookup(rawDeviceUID: rawUID) == .miss,
+        "a hard-linked legacy cache is a miss"
+      )
+      #expect(
+        allowOffCacheLstat(newURL) == nil,
+        "a hard-linked legacy cache is not copied"
+      )
+      #expect(
+        (try? Data(contentsOf: linkURL)) == legacyData,
+        "a hard-linked legacy cache leaves the extra link unchanged"
+      )
+      #expect(
+        allowOffCacheLstat(legacyURL)?.st_nlink == 2,
+        "a hard-linked legacy cache keeps both names"
+      )
+    }
+  }
+
+  @Test("Does not follow a symlinked legacy Allow Off cache")
+  func allowOffCacheLeavesSymlinkedLegacyTargetUntouched() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_200))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "symlinked-legacy-cache-uid"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "symlinked legacy cache test seeds a trusted directory"
+      )
+      let externalURL = legacyURL
+        .deletingLastPathComponent()
+        .appendingPathComponent("external-legacy-target.json")
+      let externalData = Data("legacy-symlink-target".utf8)
+      do {
+        try externalData.write(to: externalURL)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o644)],
+          ofItemAtPath: externalURL.path
+        )
+        try FileManager.default.removeItem(at: legacyURL)
+        try FileManager.default.createSymbolicLink(
+          at: legacyURL,
+          withDestinationURL: externalURL
+        )
+      } catch {
+        Issue.record("symlinked legacy cache test prepares its target")
+        return
+      }
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      #expect(
+        migrated.lookup(rawDeviceUID: rawUID) == .miss,
+        "a symlinked legacy cache is a miss"
+      )
+      #expect(
+        allowOffCacheLstat(newURL) == nil,
+        "a symlinked legacy cache is not copied"
+      )
+      #expect(
+        (try? Data(contentsOf: externalURL)) == externalData,
+        "a symlinked legacy cache leaves the target bytes unchanged"
+      )
+      #expect(
+        allowOffCachePermissions(at: externalURL) == 0o644,
+        "a symlinked legacy cache leaves the target mode unchanged"
+      )
+    }
+  }
+
+  @Test("Does not follow a symlinked new Allow Off cache directory")
+  func allowOffCacheLeavesSymlinkedDestinationDirectoryUntouched() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_300))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "symlinked-destination-directory-uid"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "symlinked destination test seeds trusted legacy evidence"
+      )
+      let externalDirectory = newURL
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("external-cache-directory", isDirectory: true)
+      let newDirectory = newURL.deletingLastPathComponent()
+      do {
+        try FileManager.default.createDirectory(
+          at: externalDirectory,
+          withIntermediateDirectories: false
+        )
+        try FileManager.default.createSymbolicLink(
+          at: newDirectory,
+          withDestinationURL: externalDirectory
+        )
+      } catch {
+        Issue.record("symlinked destination test prepares its target")
+        return
+      }
+      guard let modeBefore = allowOffCachePermissions(at: externalDirectory) else {
+        Issue.record("symlinked destination test records the target mode")
+        return
+      }
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      #expect(
+        migrated.lookup(rawDeviceUID: rawUID) == .miss,
+        "a symlinked destination directory is a miss"
+      )
+      #expect(
+        allowOffCacheIsSymbolicLink(newDirectory),
+        "a symlinked destination directory stays a symlink"
+      )
+      #expect(
+        allowOffCachePermissions(at: externalDirectory) == modeBefore,
+        "a symlinked destination directory leaves the target mode unchanged"
+      )
+      #expect(
+        allowOffCacheLstat(externalDirectory.appendingPathComponent(allowOffCacheFileName))
+          == nil,
+        "a symlinked destination directory receives no cache file"
+      )
+    }
+  }
+
+  @Test("Retries a legacy Allow Off copy after an untrusted deny marker")
+  func allowOffCacheRetriesAfterUntrustedDenyMarker() {
+    withAllowOffCacheRenameFixture { legacyURL, newURL in
+      let clock = AllowOffCacheTestClock(Date(timeIntervalSince1970: 1_700_000_400))
+      let legacy = PersistentListeningModeAllowOffCache(
+        fileURL: legacyURL,
+        now: clock.read,
+        saltGenerator: { allowOffCacheTestSalt }
+      )
+      let rawUID = "untrusted-deny-marker-uid"
+      #expect(
+        legacy.applyObservation(
+          rawDeviceUID: rawUID,
+          allowsOff: true,
+          observedAt: clock.value
+        ) == .applied,
+        "untrusted deny marker test seeds legacy evidence"
+      )
+      let legacyDirectory = legacyURL.deletingLastPathComponent()
+      let marker = legacyDirectory.appendingPathComponent(
+        "allow-off-v1-deny-abc.jsonl"
+      )
+      let externalURL = legacyDirectory.appendingPathComponent("external-deny-target")
+      let externalData = Data("deny-marker-target".utf8)
+      do {
+        try externalData.write(to: externalURL)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o755)],
+          ofItemAtPath: externalURL.path
+        )
+        try FileManager.default.createSymbolicLink(
+          at: marker,
+          withDestinationURL: externalURL
+        )
+      } catch {
+        Issue.record("untrusted deny marker test prepares a symlink")
+        return
+      }
+      let migrated = PersistentListeningModeAllowOffCache(
+        fileURL: newURL,
+        now: clock.read,
+        saltGenerator: { Data(repeating: 9, count: 32) }
+      )
+      #expect(
+        migrated.lookup(rawDeviceUID: rawUID) == .miss,
+        "an untrusted deny marker blocks the copy"
+      )
+      #expect(
+        allowOffCacheLstat(newURL) == nil,
+        "a blocked copy leaves the new cache absent"
+      )
+      #expect(
+        allowOffCachePermissions(at: externalURL) == 0o755,
+        "an untrusted deny marker leaves its target mode unchanged"
+      )
+      do {
+        try FileManager.default.removeItem(at: marker)
+        try Data("deny\n".utf8).write(to: marker)
+        try FileManager.default.setAttributes(
+          [.posixPermissions: NSNumber(value: 0o600)],
+          ofItemAtPath: marker.path
+        )
+      } catch {
+        Issue.record("untrusted deny marker test replaces the marker")
+        return
+      }
+      guard let record = allowOffRecord(
+        from: migrated.lookup(rawDeviceUID: rawUID)
+      ) else {
+        Issue.record("a later trusted legacy cache is copied")
+        return
+      }
+      #expect(
+        record.evidence.observedAt == clock.value,
+        "the retried copy keeps the legacy timestamp"
+      )
+      #expect(
+        (try? Data(contentsOf: newURL.deletingLastPathComponent()
+            .appendingPathComponent("allow-off-v1-deny-abc.jsonl")))
+          == Data("deny\n".utf8),
+        "the retried copy includes the trusted deny marker"
       )
     }
   }

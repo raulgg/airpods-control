@@ -14,9 +14,10 @@ LIPO ?= lipo
 CODESIGN ?= codesign
 INSTALL ?= install
 
-BINARY := $(BUILD_DIR)/airpods-control
+BINARY := $(BUILD_DIR)/pods-control
 DYLIB := $(BUILD_DIR)/avbypass.dylib
-MANPAGE := docs/man/airpods-control.1
+MANPAGE := docs/man/pods-control.1
+MANPAGE_ALIAS := docs/man/airpods-control.1
 BUILD_STAMP := $(BUILD_DIR)/.built
 VERSION_FILE := version.txt
 VERSION_SOURCE := $(BUILD_DIR)/Version.swift
@@ -55,9 +56,12 @@ SWIFT_PACKAGE_EXTRA_FLAGS ?=
 SWIFT_PACKAGE_WARNING_FLAGS := -Xswiftc -warnings-as-errors
 SIGNAL_MONITOR_RACE_TEST_BINARY := $(BUILD_DIR)/signal-monitor-race-tests
 SWIFT_MODULE_CACHE := $(abspath $(BUILD_DIR)/module-cache)
-LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
+LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/pods-control
+LEGACY_LIBEXEC_DIR := $(DESTDIR)$(PREFIX)/libexec/airpods-control
 BIN_DIR := $(DESTDIR)$(PREFIX)/bin
 MAN_DIR := $(DESTDIR)$(PREFIX)/share/man/man1
+NEW_SYMLINK_TARGET := ../libexec/pods-control/pods-control
+LEGACY_SYMLINK_TARGET := ../libexec/airpods-control/airpods-control
 
 .PHONY: all _build test verify-catalog verify-runtime install uninstall clean
 
@@ -107,7 +111,7 @@ _build: $(VERSION_SOURCE)
 			-target "$$arch-apple-macosx$(DEPLOYMENT_TARGET)" \
 			-I"$(SIGNAL_MONITOR_INCLUDE_DIR)" -I"$(BYPASS_PROBE_INCLUDE_DIR)" \
 			-module-cache-path "$(SWIFT_MODULE_CACHE)" \
-			-o "$$tmp/airpods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
+			-o "$$tmp/pods-control.$$arch" $(SWIFT_BUILD_SOURCES) \
 			"$$tmp/signal-monitor.$$arch.o" "$$tmp/bypass-probe.$$arch.o" \
 			-Xlinker -framework -Xlinker Security; \
 	}; \
@@ -136,14 +140,14 @@ _build: $(VERSION_SOURCE)
 	fi; \
 	binary_inputs=""; dylib_inputs=""; \
 	for arch in $$selected; do \
-		binary_inputs="$$binary_inputs $$tmp/airpods-control.$$arch"; \
+		binary_inputs="$$binary_inputs $$tmp/pods-control.$$arch"; \
 		dylib_inputs="$$dylib_inputs $$tmp/avbypass.$$arch.dylib"; \
 	done; \
-	"$(LIPO)" -create $$binary_inputs -output "$$tmp/airpods-control"; \
+	"$(LIPO)" -create $$binary_inputs -output "$$tmp/pods-control"; \
 	"$(LIPO)" -create $$dylib_inputs -output "$$tmp/avbypass.dylib"; \
 	"$(CODESIGN)" --force --sign - "$$tmp/avbypass.dylib"; \
-	"$(CODESIGN)" --force --sign - "$$tmp/airpods-control"; \
-	mv "$$tmp/airpods-control" "$(BINARY)"; \
+	"$(CODESIGN)" --force --sign - "$$tmp/pods-control"; \
+	mv "$$tmp/pods-control" "$(BINARY)"; \
 	mv "$$tmp/avbypass.dylib" "$(DYLIB)"; \
 	touch "$(BUILD_STAMP)"; \
 	echo "built: $(BINARY) ($$("$(LIPO)" -archs "$(BINARY)")) + avbypass.dylib"
@@ -185,39 +189,68 @@ verify-runtime: all
 
 install: all
 	@set -eu; \
-	command_path="$(BIN_DIR)/airpods-control"; \
-	expected_target=../libexec/airpods-control/airpods-control; \
-	if [ -e "$$command_path" ] || [ -L "$$command_path" ]; then \
-		if [ ! -L "$$command_path" ] || \
-			[ "$$(readlink "$$command_path")" != "$$expected_target" ]; then \
-			echo "error: refusing to replace command not owned by this package: $$command_path" >&2; \
-			exit 1; \
+	owned_symlink() { \
+		path=$$1; \
+		shift; \
+		if [ ! -e "$$path" ] && [ ! -L "$$path" ]; then \
+			return 0; \
 		fi; \
-	fi
-	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"
-	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/airpods-control"
-	"$(INSTALL)" -m 755 "$(DYLIB)" "$(LIBEXEC_DIR)/avbypass.dylib"
-	"$(INSTALL)" -m 644 "$(MANPAGE)" "$(MAN_DIR)/airpods-control.1"
-	@if [ ! -L "$(BIN_DIR)/airpods-control" ]; then \
-		ln -s ../libexec/airpods-control/airpods-control \
-			"$(BIN_DIR)/airpods-control"; \
-	fi
+		if [ -L "$$path" ]; then \
+			actual=$$(readlink "$$path"); \
+			for allowed in "$$@"; do \
+				if [ "$$actual" = "$$allowed" ]; then \
+					return 0; \
+				fi; \
+			done; \
+		fi; \
+		echo "error: refusing to replace command not owned by this package: $$path" >&2; \
+		exit 1; \
+	}; \
+	owned_symlink "$(BIN_DIR)/pods-control" "$(NEW_SYMLINK_TARGET)"; \
+	owned_symlink "$(BIN_DIR)/airpods-control" \
+		"$(NEW_SYMLINK_TARGET)" "$(LEGACY_SYMLINK_TARGET)"; \
+	"$(INSTALL)" -d "$(LIBEXEC_DIR)" "$(BIN_DIR)" "$(MAN_DIR)"; \
+	"$(INSTALL)" -m 755 "$(BINARY)" "$(LIBEXEC_DIR)/pods-control"; \
+	"$(INSTALL)" -m 755 "$(DYLIB)" "$(LIBEXEC_DIR)/avbypass.dylib"; \
+	"$(INSTALL)" -m 644 "$(MANPAGE)" "$(MAN_DIR)/pods-control.1"; \
+	"$(INSTALL)" -m 644 "$(MANPAGE_ALIAS)" "$(MAN_DIR)/airpods-control.1"; \
+	ln -sfn "$(NEW_SYMLINK_TARGET)" "$(BIN_DIR)/pods-control"; \
+	ln -sfn "$(NEW_SYMLINK_TARGET)" "$(BIN_DIR)/airpods-control"; \
+	legacy="$(LEGACY_LIBEXEC_DIR)"; \
+	case "$$legacy" in \
+		*/libexec/airpods-control) rm -rf "$$legacy" ;; \
+	esac
 
 uninstall:
 	@set -eu; \
-	command_path="$(BIN_DIR)/airpods-control"; \
-	expected_target=../libexec/airpods-control/airpods-control; \
-	if [ -e "$$command_path" ] || [ -L "$$command_path" ]; then \
-		if [ ! -L "$$command_path" ] || \
-			[ "$$(readlink "$$command_path")" != "$$expected_target" ]; then \
-			echo "error: refusing to remove command not owned by this package: $$command_path" >&2; \
-			exit 1; \
+	refuse_unowned() { \
+		path=$$1; \
+		shift; \
+		if [ ! -e "$$path" ] && [ ! -L "$$path" ]; then \
+			return 0; \
 		fi; \
-		rm -f "$$command_path"; \
-	fi
-	rm -f "$(LIBEXEC_DIR)/airpods-control" "$(LIBEXEC_DIR)/avbypass.dylib"
-	rm -f "$(MAN_DIR)/airpods-control.1"
-	-rmdir "$(LIBEXEC_DIR)"
+		if [ -L "$$path" ]; then \
+			actual=$$(readlink "$$path"); \
+			for allowed in "$$@"; do \
+				if [ "$$actual" = "$$allowed" ]; then \
+					return 0; \
+				fi; \
+			done; \
+		fi; \
+		echo "error: refusing to remove command not owned by this package: $$path" >&2; \
+		exit 1; \
+	}; \
+	refuse_unowned "$(BIN_DIR)/pods-control" "$(NEW_SYMLINK_TARGET)"; \
+	refuse_unowned "$(BIN_DIR)/airpods-control" \
+		"$(NEW_SYMLINK_TARGET)" "$(LEGACY_SYMLINK_TARGET)"; \
+	rm -f "$(BIN_DIR)/pods-control" "$(BIN_DIR)/airpods-control"; \
+	rm -f "$(LIBEXEC_DIR)/pods-control" "$(LIBEXEC_DIR)/avbypass.dylib"; \
+	rmdir "$(LIBEXEC_DIR)" 2>/dev/null || true; \
+	legacy="$(LEGACY_LIBEXEC_DIR)"; \
+	case "$$legacy" in \
+		*/libexec/airpods-control) rm -rf "$$legacy" ;; \
+	esac; \
+	rm -f "$(MAN_DIR)/pods-control.1" "$(MAN_DIR)/airpods-control.1"
 
 clean:
 	@test -n "$(BUILD_DIR)" && test "$(BUILD_DIR)" != "/"

@@ -12,8 +12,8 @@ body:
   - type: input
     id: version
     attributes:
-      label: airpods-control version
-      description: Run `airpods-control --version`, or provide the commit hash.
+      label: pods-control version
+      description: Run `pods-control --version`, or provide the commit hash.
       placeholder: Version number or commit hash
     validations:
       required: true

@@ -103,7 +103,7 @@ Conversation Awareness features are the same.
 | AirPods 4 (ANC) | A3056, A3055, A3057 | 0x201B | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
 | AirPods 5 | A3531, A3532, A3533, A3439, A3440, A3441 | 0x2030, 0x2036 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
 | AirPods Pro 1 | A2084, A2083 | 0x200E | ANC, Transparency | Pending |
-| AirPods Pro 2 | A2931, A2699, A2698, A3047, A3048, A3049 | 0x2014, 0x2024 | ANC, Transparency, Adaptive Audio, Conversation Awareness | [Partially verified](https://github.com/raulgg/airpods-control/issues/34) |
+| AirPods Pro 2 | A2931, A2699, A2698, A3047, A3048, A3049 | 0x2014, 0x2024 | ANC, Transparency, Adaptive Audio, Conversation Awareness | [Partially verified](https://github.com/raulgg/pods-control/issues/34) |
 | AirPods Pro 3 | A3063, A3064, A3065 | 0x2027 | ANC, Transparency, Adaptive Audio, Conversation Awareness | Verified baseline |
 | AirPods Max 1 | A2096, A3184 | 0x200A, 0x201F | ANC, Transparency | Pending |
 | AirPods Max 2 | A3454 | 0x202D | ANC, Transparency, Adaptive Audio, Conversation Awareness | Pending |
@@ -162,7 +162,7 @@ Connect exactly one compatible AirPods or Beats device as a macOS output device,
 then run:
 
 ```sh
-airpods-control support-report
+pods-control support-report
 ```
 
 Read the report before opening the GitHub issue form. Add only safe optional

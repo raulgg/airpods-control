@@ -29,6 +29,7 @@ printf '%s\n' \
   'README.md' \
   'CONTRIBUTING.md' \
   'docs/man/airpods-control.1' \
+  'docs/man/pods-control.1' \
   'version.txt' \
   'mise.toml' \
   'Package.swift' \

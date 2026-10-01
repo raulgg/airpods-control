@@ -9,7 +9,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Connect exactly one compatible AirPods or Beats device and run `airpods-control support-report`. Review the report locally before submitting it. The privacy confirmation below lists what the report must not contain.
+        Connect exactly one compatible AirPods or Beats device and run `pods-control support-report`. Review the report locally before submitting it. The privacy confirmation below lists what the report must not contain.
 
   - type: textarea
     id: report
@@ -23,7 +23,7 @@ body:
         - Model identifier:
         - Device family:
         - macOS:
-        - airpods-control:
+        - pods-control:
 
         #### Capabilities
 

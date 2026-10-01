@@ -1,4 +1,4 @@
-# airpods-control
+# pods-control
 
 <p align="center">
   <picture>
@@ -9,19 +9,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/raulgg/airpods-control/actions/workflows/macos-validation.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/raulgg/airpods-control/macos-validation.yml?branch=main&amp;style=flat-square&amp;label=CI"></a>&nbsp;
-  <a href="https://github.com/raulgg/airpods-control/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/raulgg/airpods-control?style=flat-square&amp;color=0a0a0c"></a>&nbsp;
+  <a href="https://github.com/raulgg/pods-control/actions/workflows/macos-validation.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/raulgg/pods-control/macos-validation.yml?branch=main&amp;style=flat-square&amp;label=CI"></a>&nbsp;
+  <a href="https://github.com/raulgg/pods-control/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/raulgg/pods-control?style=flat-square&amp;color=0a0a0c"></a>&nbsp;
   <a href="#compatibility"><img alt="Tested on macOS Golden Gate 27" src="https://img.shields.io/badge/tested-macOS%20Golden%20Gate%2027-0a0a0c?style=flat-square&amp;logo=apple&amp;logoColor=white"></a>&nbsp;
-  <a href="#install"><img alt="Homebrew" src="https://img.shields.io/badge/brew-raulgg%2Ftap%2Fairpods--control-FBB040?style=flat-square&amp;logo=homebrew&amp;logoColor=black"></a>&nbsp;
-  <a href="https://formulae.brew.sh/analytics/install/90d/"><img alt="Homebrew install events, last 90 days" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/raulgg/airpods-control/badges/homebrew-installs.json&amp;style=flat-square"></a>&nbsp;
+  <a href="#install"><img alt="Homebrew" src="https://img.shields.io/badge/brew-raulgg%2Ftap%2Fpods--control-FBB040?style=flat-square&amp;logo=homebrew&amp;logoColor=black"></a>&nbsp;
+  <a href="https://formulae.brew.sh/analytics/install/90d/"><img alt="Homebrew install events, last 90 days" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/raulgg/pods-control/badges/homebrew-installs.json&amp;style=flat-square"></a>&nbsp;
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-6e5aff?style=flat-square"></a>
 </p>
 
 Control AirPods and Beats listening modes (`off`, `transparency`, `adaptive`,
-`noise-cancellation`) and Conversation Awareness on macOS.
+`noise-cancellation`) and Conversation Awareness on macOS. The command was
+formerly `airpods-control`.
 
 ```console
-$ airpods-control status
+$ pods-control status
 My AirPods Pro:
   Listening mode: transparency
   Conversation Awareness: off
@@ -29,7 +30,7 @@ My AirPods Pro:
   Selected as audio input: no
   Left ear placement: in-ear
   Right ear placement: out-of-ear
-$ airpods-control listening-mode set noise-cancellation
+$ pods-control listening-mode set noise-cancellation
 ok
 ```
 
@@ -67,15 +68,25 @@ The CLI does not poll in the background or automate the UI.
 ## Install
 
 Homebrew is the recommended path. The
-[formula](https://github.com/raulgg/homebrew-tap/blob/main/Formula/airpods-control.rb)
+[formula](https://github.com/raulgg/homebrew-tap/blob/main/Formula/pods-control.rb)
 downloads the tagged source and compiles the native architecture with your
 Command Line Tools.
 
 ```sh
-brew install raulgg/tap/airpods-control
-brew upgrade airpods-control
-brew uninstall airpods-control
+brew install raulgg/tap/pods-control
+brew install airpods-control
+brew upgrade pods-control
+brew uninstall pods-control
 ```
+
+`brew install raulgg/tap/airpods-control` still installs the published formula
+until `pods-control` is on the tap. After that, `airpods-control` is an alias
+for the same formula, and `brew upgrade airpods-control` moves the keg.
+
+`airpods-control` on `PATH` is the same binary as `pods-control` and prints
+nothing extra. `man airpods-control` shows the same page. This project is not
+CocoaPods and not Kubernetes. It runs on macOS only: not iOS, Windows, Linux,
+or Android, and not through Control Center or Accessibility.
 
 See the [security and trust model](SECURITY.md) before installing.
 
@@ -89,7 +100,7 @@ This one-liner works only after a release that contains the script. Replace
 `vVERSION` with that tag. Do not pin `main`.
 
 ```sh
-base=https://raw.githubusercontent.com/raulgg/airpods-control/vVERSION
+base=https://raw.githubusercontent.com/raulgg/pods-control/vVERSION
 curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
   --prefix "$HOME/.local"
 ```
@@ -98,7 +109,7 @@ Omit `--prefix` to install to `/usr/local` (may prompt for `sudo` only when
 copying files). Uninstall with the same `--prefix` used to install:
 
 ```sh
-base=https://raw.githubusercontent.com/raulgg/airpods-control/vVERSION
+base=https://raw.githubusercontent.com/raulgg/pods-control/vVERSION
 curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
   --prefix "$HOME/.local" --uninstall
 ```
@@ -106,8 +117,8 @@ curl -fsSL "$base/scripts/install-from-source.sh" | sh -s -- \
 Contributors who already have a clone can compile it directly:
 
 ```sh
-git clone https://github.com/raulgg/airpods-control
-cd airpods-control
+git clone https://github.com/raulgg/pods-control
+cd pods-control
 make
 sudo make install
 ```
@@ -119,23 +130,23 @@ The build produces an ad-hoc-signed executable and `avbypass.dylib`.
 
 ```sh
 # Read or change the listening mode
-airpods-control listening-mode get
-airpods-control listening-mode set noise-cancellation
+pods-control listening-mode get
+pods-control listening-mode set noise-cancellation
 
 # List supported modes or cycle between them
-airpods-control listening-mode list
-airpods-control listening-mode cycle
+pods-control listening-mode list
+pods-control listening-mode cycle
 
 # Read or change Conversation Awareness
-airpods-control conversation-awareness get
-airpods-control conversation-awareness set off
+pods-control conversation-awareness get
+pods-control conversation-awareness set off
 
 # Read status for every eligible device represented by Core Audio
-airpods-control status
+pods-control status
 
 # Target a device or request structured output
-airpods-control --device "My AirPods Pro" listening-mode get
-airpods-control status --device "My AirPods Pro" --json
+pods-control --device "My AirPods Pro" listening-mode get
+pods-control status --device "My AirPods Pro" --json
 ```
 
 `listening-mode` can be shortened to `lm`, and `conversation-awareness` to `ca`;
@@ -149,10 +160,10 @@ Declining the chooser, automated ambiguity, and duplicate exact names all report
 `ambiguous-device` (exit `8`). Multiple selected HAL targets fail closed when
 ambiguity remains; leftover AV records do not enter the HAL chooser. On systems
 where HAL control is entirely unavailable, a single compatible AV output is
-selected; multiple outputs are ambiguous. Run `airpods-control --help` for
+selected; multiple outputs are ambiguous. Run `pods-control --help` for
 built-in help. The [complete CLI reference](docs/cli.md) covers aliases, JSON
 output, diagnostics, write verification, and exit codes. After installation, you
-can also run `man airpods-control`.
+can also run `man pods-control`.
 
 ## Documentation
 
@@ -241,7 +252,7 @@ are never printed or logged. `support-report` accesses neither this cache nor
 the status path.
 
 To reach the shared system audio context used by feature controls, the
-`airpods-control` process loads the small interpose library in
+`pods-control` process loads the small interpose library in
 [`Sources/AVBypass/bypass.c`](Sources/AVBypass/bypass.c). The library satisfies
 one private entitlement check inside that process and passes every other
 entitlement query through unchanged. It does not elevate privileges or affect
@@ -261,7 +272,7 @@ To share compatibility details:
 
 1. Connect exactly one compatible AirPods or Beats device as a macOS output
    device.
-2. Run `airpods-control support-report`.
+2. Run `pods-control support-report`.
 3. Choose whether to run the consented write tests when asked.
 4. Review the report, add any safe optional notes, complete the privacy
    confirmation, and submit the GitHub issue if you choose to open it.
@@ -294,7 +305,7 @@ rules, verdict vocabulary, restoration behavior, and exit codes.
 [NoiseBuddy](https://github.com/insidegui/NoiseBuddy) by Guilherme Rambo
 documented the AVFoundation technique used by this project.
 
-`airpods-control` is an independent tool and is not endorsed by Apple.
+`pods-control` is an independent tool and is not endorsed by Apple.
 AirPods and AirPods Pro are trademarks of Apple Inc. Beats is a trademark of
 Beats Electronics, LLC.
 

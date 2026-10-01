@@ -1,4 +1,4 @@
-// airpods-control — control AirPods listening mode and Conversation Awareness
+// pods-control — control AirPods listening mode and Conversation Awareness
 // from a scriptable command-line interface.
 //
 // Compiled with swiftc (no Xcode needed) + a tiny C bypass dylib. On launch it

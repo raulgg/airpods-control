@@ -1,0 +1,555 @@
+.TH PODS-CONTROL 1 "" "pods-control" "User Commands"
+.SH NAME
+pods-control \- macOS CLI for AirPods and Beats listening modes
+.SH SYNOPSIS
+.B pods-control
+.B status
+.RB [ --device
+.IR name ]
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B pods-control
+.RB [ --device
+.IR name ]
+.RB ( listening-mode | lm )
+.RB ( get | list )
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B pods-control
+.RB [ --device
+.IR name ]
+.RB ( listening-mode | lm )
+.BI "set " mode
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B pods-control
+.RB [ --device
+.IR name ]
+.RB ( listening-mode | lm )
+.B cycle
+.RB [ --modes
+.IR m1,m2[,...] ]
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B pods-control
+.RB [ --device
+.IR name ]
+.RB ( conversation-awareness | ca )
+.B get
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B pods-control
+.RB [ --device
+.IR name ]
+.RB ( conversation-awareness | ca )
+.BI "set " "on|off"
+.RB [ --json ]
+.RB [ --debug ]
+.br
+.B pods-control
+.B support-report
+.RB [ --with-write-tests " | " --no-write-tests ]
+.RB [ --debug ]
+.br
+.B pods-control
+.RB [ --version | -v | version ]
+.RB [ --help | -h ]
+.SH DESCRIPTION
+.B pods-control
+reads and sets listening mode and Conversation Awareness on connected AirPods and Beats headphones through
+private macOS audio interfaces, including the private
+.B AVOutputDevice
+control object in
+.BR AVRouting.framework .
+The
+.B AVOutputDevice
+object is macOS's per-endpoint audio control surface.
+A successful write means the selected macOS provider reports the requested state within a bounded readback window; it is not a direct accessory acknowledgement. No Control Center, menu bar, or Accessibility permission is involved.
+.PP
+.B airpods-control
+is the same program, installed as a second command. It prints nothing extra.
+This tool is not CocoaPods and it is not related to Kubernetes.
+It does not run on iOS, Windows, Linux, or Android.
+.PP
+Reaching the API requires one private audio entitlement
+.RB ( com.apple.avfoundation.allow-system-wide-context )
+to appear present inside the
+.B pods-control
+process. A small interpose library loaded into that process with
+.B DYLD_INSERT_LIBRARIES
+provides that result. See the project README and SECURITY document for the full trust model.
+.SH COMMANDS
+.SS STATUS
+.TP
+.B status
+Read the listening mode, Conversation Awareness state, left/right ear placement, and whether each compatible device is selected as the macOS audio output or input. There is no alias. The output excludes battery information and device metadata other than the name used to identify each record. Compatibility metadata and consented write tests are handled by the separate
+.B support-report
+command.
+.IP
+Status builds records from the public
+.B kAudioHardwarePropertyDevices
+list of currently available Core Audio devices. An eligible endpoint must be ordinary and nonaggregate, use classic Bluetooth, be alive and ready, have an audio stream, and map to an IOBluetoothDevice. A runtime-gated HAL (Core Audio's hardware abstraction layer) property is the primary Apple audio compatibility signal. An allowlisted Apple or Beats manufacturer is used only when that property is unavailable. Input and output endpoints form one record when their mapped objects compare equal in both directions, with the output endpoint preferred. The Core Audio name is used only for display and exact
+.B --device
+targeting, never identity or correlation.
+.IP
+Selected means that the record's mapped Bluetooth object matches macOS's ordinary default output or input after the endpoint passes through the same mapper. Input and output are checked separately. Playing audio, recording, application routes, the system-alert route, and membership in an aggregate or multi-output route do not count. Selection does not use names, model identifiers, Bluetooth/MAC addresses, Core Audio UIDs, private route identifiers, or discovery order. Bluetooth LE, USB, unknown transports, missing selectors or properties, and unavailable or nil mappings are
+.B unknown
+in plain output and JSON
+.BR null .
+.IP
+Without
+.BR --device ,
+print one record for every eligible canonical device derived from the Core Audio inventory, including Beats candidates. This inventory is independent of the selected defaults, so an eligible device selected only for input, or for neither direction, still appears. Core Audio does not guarantee a stable inventory order. With
+.BR --device ,
+print only the unique case-insensitive whole-name match. No match produces
+.BR no-device ;
+multiple matches produce
+.BR ambiguous-device .
+.IP
+Plain output places every record beneath its device-name heading, even when only one device is selected. Fields appear in this order: Listening mode, Conversation Awareness, Selected as audio output, Selected as audio input, left/right ear placement, and Read errors. Inapplicable feature lines are omitted, and records are separated by one blank line. For example:
+.nf
+.RS
+My AirPods Pro:
+  Listening mode: transparency
+  Conversation Awareness: on
+  Selected as audio output: yes
+  Selected as audio input: no
+  Left ear placement: in-ear
+  Right ear placement: out-of-ear
+
+Studio Beats:
+  Listening mode: adaptive
+  Conversation Awareness: unknown
+  Selected as audio output: no
+  Selected as audio input: no
+.RE
+.fi
+.IP
+Runtime-gated HAL properties can report listening mode for inactive endpoints. The active AV value has priority, followed by one consistent HAL value from the mapped endpoints.
+.IP
+An unknown active AV value stops the lookup. A future or unknown nonzero HAL value, or conflicting HAL values, does the same. The mapped Bluetooth object is tried only when HAL is unavailable or neutral, or when a HAL read fails. That failure is retained. If the fallback cannot resolve the mode, Listening mode is
+.B unknown
+and is included under Read errors.
+.IP
+Conversation Awareness requires the active endpoint to remain stable, bind to the default Core Audio output, and map to the record's Bluetooth object. Without this join, Conversation Awareness is
+.BR unknown .
+.IP
+When macOS exposes the runtime-gated HAL ear-detection properties, status reads one typed left/right placement pair for each eligible endpoint. Known values are
+.BR in-ear ,
+.BR out-of-ear ,
+or
+.BR in-case .
+Missing or disabled placement is unsupported and omits both fields. Unknown or conflicting evidence is displayed as
+.BR unknown
+and encoded as JSON
+.BR null ;
+a genuine read failure keeps those fallbacks and names both placement keys in the
+.B errors
+object. The placement read is one-pass and read-only; this status path does not scan BLE advertisements or change Conversation Awareness.
+.IP
+A feature field is omitted only when the feature is known to be unsupported. An unresolved or failed listening-mode or Conversation Awareness read is displayed as
+.BR unknown .
+This differs from an individual Conversation Awareness command, whose unsupported fallback remains
+.BR unsupported .
+Unresolved and failed status fields are JSON
+.BR null ,
+with the canonical field key still present. A genuine read failure retains that fallback state and adds a
+.B Read errors:
+line whose errored labels appear in fixed Listening mode, Conversation Awareness, Audio output selection, Audio input selection, Left ear placement, Right ear placement order. In JSON, the record instead gains an
+.B errors
+object mapping each affected canonical key to
+.BR read-error .
+.IP
+The selection lines are always present and use
+.BR yes ,
+.BR no ,
+or
+.BR unknown .
+Their JSON keys are always
+.B isSelectedAudioOutput
+and
+.BR isSelectedAudioInput ,
+with Boolean or
+.B null
+values. A
+.B no
+requires positive evidence that the device is not selected. For each direction, status reads the ordinary default Core Audio endpoint, rejects aggregate and multi-output endpoints, and classifies its transport. A composite default does not select any member, and a known unrelated transport is
+.BR no .
+Only a classic Bluetooth endpoint is passed to the system Bluetooth-device mapper. An exact system-object match is
+.BR yes ;
+a mapping to a different classic Bluetooth device is
+.BR no .
+Bluetooth LE, USB, unknown or unsupported transports, unavailable selectors or properties, an unavailable mapper, and a mapper that returns no device are
+.BR unknown .
+An actual failure while reading the default route, device class, or transport, or while performing an available mapper operation, is a genuine read error with the same unknown fallback.
+Input and output failures are isolated from each other.
+.IP
+A mixed result succeeds if any selected device produces a usable, unresolved, or unsupported status result. Only when every selected device produces genuine read errors and no usable, unresolved, or proven-unsupported field does the command return
+.BR read-error
+(exit 5). One field failure does not hide another field or stop later device reads.
+.IP
+If no compatible device is connected, or
+.B --device
+does not identify one unique compatible device, plain output is exactly
+.BR "No compatible AirPods or Beats device is connected."
+The exit status is 1. JSON is exactly
+.BR {\(dqdevices\(dq:[],\(dqerror\(dq:\(dqno-device\(dq,\(dqresult\(dq:\(dqerror\(dq} .
+.IP
+Each invocation reads the available Core Audio inventory once and shares the same default-route observations across its records. Input and output are read independently, so the pair is not an atomic system-wide snapshot. The selected defaults do not affect inventory or deduplication. Core Audio names are used only for display and targeting.
+.IP
+An AudioDeviceID is an opaque Core Audio handle. Status passes it unchanged to Core Audio and the system mapper. Its numeric value is never parsed, logged, printed, or compared as identity. Inventory and selection do not read raw Core Audio UIDs, Bluetooth/MAC addresses, serial numbers, or private route identifiers. Raw HAL values are not logged or printed.
+.IP
+The optional active-output feature probe asks Core Audio to translate the bounded AVOutputContext associatedAudioDeviceID and compares the result with the stable default output. The default's mapped Bluetooth object must also match the status record. The probe samples the private AVOutputDevice deviceID before and after only to reject an endpoint change. These identifiers stay inside the process and never appear in output, diagnostics, or a support report. Enrichment failure does not change audio selection.
+.SS LISTENING MODE
+For each command, a command-ready selected AirPods output uses the private AV
+provider and skips Classic Bluetooth and HAL inventory. An eligible device
+proven unselected uses its mapped Core Audio HAL
+output endpoint that exposes the lstm property. In a group with several Core
+Audio outputs, this control endpoint can differ from the named display endpoint.
+Unknown routing tries AV before a pre-write HAL fallback. Once a setter is
+attempted, the provider is sticky and the command never retries through the
+other provider. No command changes the audio route.
+.TP
+.BR "listening-mode get" ", " "lm get"
+Print the current listening mode.
+.TP
+.BR "listening-mode set " mode ", " "lm set " mode
+Set the listening mode. The setter is idempotent: repeating a request for the
+current state does not issue another write. If the mode is already active,
+prints
+.B ok
+without issuing a write. Otherwise prints
+.B ok
+on a verified change, or
+.B no-op
+if the requested mode is not observed within the bounded verification window.
+.TP
+.BR "listening-mode list" ", " "lm list"
+Print the comma-separated modes supported by the connected device in the deterministic order documented under
+.BR MODES .
+.IP
+A HAL-backed list contains the available Noise Cancellation, Transparency, and Adaptive bits. HAL does not expose the separate user-configured Allow Off setting. A valid cached AV observation for the exact output endpoint can additionally establish Off as described under
+.BR "ALLOW OFF CACHE" .
+Without usable positive evidence, HAL lists omit Off. The default cycle never includes Off. An explicit
+.BR "set off"
+or explicit cycle containing Off may make one HAL setter attempt when there is neither usable positive evidence nor a cached denial. A cached denial suppresses the probe and makes explicit Off unsupported. AV-backed commands follow the modes AV advertises, including Off when advertised.
+.TP
+.BR "listening-mode cycle" ", " "lm cycle"
+Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes always cycle in the order documented under
+.BR MODES .
+The cycle set defaults to every mode the device supports except
+.BR off ;
+.B --modes
+selects an explicit subset of at least two distinct modes. Modes the device does not support are skipped; if fewer than two remain the command reports
+.B unsupported
+(exit 4). If the current mode is outside the cycle set (including
+.BR off ),
+cycle still advances in canonical order from the current mode to the next mode that is in the set, wrapping around; if the current mode is unknown, cycle starts at the set's first mode. A change that does not verify reports
+.B no-op
+(exit 3).
+.SS ALLOW OFF CACHE
+The CLI can reuse recent Allow Off evidence for an exact HAL output endpoint. Positive evidence means that AV recently advertised or reported Off. Denial evidence requires an accepted Off request followed by definitive known non-Off readback. Neither is a live device query, durable device identity, or protocol acknowledgement.
+.PP
+An AV available-mode read updates the cache only when already needed for
+.BR list ,
+.BR "set off" ,
+or an explicit cycle set containing Off. A successful eligible read containing Off writes or refreshes positive evidence; a successful eligible read omitting Off invalidates older positive evidence without establishing denial. An internal ordering tombstone prevents delayed older work from restoring stale evidence. An AV-backed
+.B listening-mode get
+also refreshes positive evidence when it returns Off. A non-Off current-mode result and incidental reads do not alter the cache. Selector failures, unavailable endpoints, and failed reads leave it unchanged. The CLI does not perform an extra AV read to warm the cache.
+.PP
+A valid observation lets the exact HAL target include Off in
+.BR list ,
+attempt
+.BR "set off" ,
+or retain Off in an explicit cycle set. The default cycle always excludes Off. On a miss, only an explicit set Off or explicit cycle containing Off may probe once; get, list, and the default cycle never probe. Accepted definitive Off succeeds. Accepted definitive known non-Off is unsupported and records denial. A missing or rejected setter is unavailable. Accepted but unreadable, unknown, or timed-out final state is no-op and records no denial.
+.PP
+Correlation occurs after target and provider selection and cannot select, merge, or disambiguate devices. The cache key is the full SHA-256 digest of a random per-cache salt followed by the exact, case-sensitive public Core Audio UID. The cache persists the salt, digest, and observation time. The raw UID is used only transiently and is never persisted; the raw UID, digest, and salt are never printed or logged.
+.B support-report
+does not access this cache or include its data. Missing or nonunique correlation is a silent cache miss; it does not prevent the current explicit probe, but no reusable evidence can be stored.
+.PP
+Positive and denial evidence expires seven days after observation. Use does not extend the lifetime, and macOS version changes do not invalidate or refresh it. Internal tombstones only order observations and appear as a miss. Newer evidence replaces older state. Missing, expired, unreadable, or malformed data is a miss. The disposable, backup-excluded file is stored at
+.BR ~/Library/Caches/io.github.raulgg.pods-control/allow-off-v1.json .
+If that file is missing, its bytes are copied from
+.BR ~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
+when the older file exists. The older file is not deleted. A failed copy is a cache miss, not an operational error.
+Deleting it safely restores the pre-cache HAL behavior.
+.PP
+Any accepted Off request with definitive known non-Off bounded readback records denial. A rejected write, timeout, failed read, or unknown final state creates no denial.
+.PP
+An accepted positive-evidence-authorized HAL Off write still requires bounded HAL readback. A definitive non-Off final state produces
+.B no-op
+with that actual state and replaces positive evidence with denial. The command does not retry through AV, infer Transparency, or choose another cycle target.
+.SS CONVERSATION AWARENESS
+.TP
+.BR "conversation-awareness get" ", " "ca get"
+Print the current Conversation Awareness state as
+.B on
+or
+.BR off .
+.TP
+.BR "conversation-awareness set " "on|off" ", " "ca set " "on|off"
+Set Conversation Awareness. The setter is idempotent: repeating a request for
+the current state does not issue another write. It uses the same
+.B ok
+and
+.B no-op
+contract as listening mode.
+.SS GLOBAL
+.TP
+.B support-report
+Build a local compatibility report from existing device and macOS metadata. Exactly one compatible output device must be available: the command does not read device names and accepts neither
+.B --device
+nor
+.BR --json ,
+and does not choose arbitrarily among devices. With zero compatible devices it prints local instructions and exits 1; with multiple devices it exits 8. Both happen before a report, prompt, or write.
+.IP
+The read-only report includes only the normalized model identifier, advertised listening modes, Conversation Awareness capability, whether each query answers, whether macOS exposes each setter, the macOS version, and the CLI version. The model name is resolved locally from the Bluetooth product ID in the model identifier. Product identity is optional: missing, rejected, or unrecognized identity produces a successful partial report from the remaining safe observations and does not by itself disable consented write tests. Unknown advertised modes are included when they can be represented safely. Missing data is marked unavailable or not reported; the command does not guess it. The report omits the setting values returned by queries and never invokes a setter without consent.
+.IP
+The command never reads the customizable device name, firmware version, serial numbers, Bluetooth/MAC addresses, account data, or raw system dumps and logs. It does not enumerate the Core Audio status inventory, query the selected input or output route, call the selection mapper, run active-output enrichment, or read or report routing identifiers. It never uses the clipboard, sends telemetry, or submits anything. A read-only report does not change device settings or intentionally interrupt audio; consented write tests temporarily change the settings in the captured plan.
+.IP
+When at least one write test can be planned safely, an interactive run (standard input connected to a terminal, or TTY) captures the initial settings and advertised capabilities, displays that plan, and asks for consent, defaulting to no. The captured plan does not change after it is disclosed. If a setting changes while consent is pending, that setting is skipped. The tests switch through recognized advertised listening modes and toggle Conversation Awareness away from the captured state and back. Mode switches are audible, and noise control changes while the device is worn. Do not run the tests during a call.
+.IP
+An accepted but unverified write is reported as
+.BR no-op ;
+a rejected setter is reported as
+.B setter error
+and stops the remaining tests for that setting. A target that already matches the state read before the write is
+.B inconclusive
+rather than
+.BR verified .
+After normal completion or a setter error, the command makes one restoration attempt if needed. An unverified restoration names the final state, gives a manual-fix hint, and exits 7 (state-uncertain). An externally delivered SIGHUP, SIGINT, or SIGTERM stops further writes, attempts restoration first, and exits 129, 130, or 143, respectively. An interrupted run does not offer an issue-form URL. SIGKILL, a process crash, or power loss cannot guarantee restoration.
+.IP
+.B --with-write-tests
+answers the consent question with yes and is the only way to run the tests noninteractively;
+.B --no-write-tests
+answers it with no.
+.IP
+The report is printed for review before the command asks whether to open a prefilled GitHub issue form. If the report cannot be prefilled, copy it from the terminal. Under a script, pipeline, or CI, the command writes the issue form URL to standard error without prompting or opening a browser. On normal completion it returns 0, or 7 (state-uncertain) if write tests could not restore the initial settings; interrupted runs use the signal exit codes above. The contributor always reviews and submits the issue.
+.IP
+Compatibility varies by device, firmware, and macOS version. Compatibility
+reports are welcome. See the CLI reference and Device compatibility entries
+under
+.B SEE ALSO
+for report details and current per-capability results.
+.TP
+.BR --version ", " -v ", " version
+Print the version and exit.
+.TP
+.BR --help ", " -h
+Print global or resource-specific usage and exit. Help may appear anywhere in a command, takes precedence over all operations, and never accesses the device.
+.SH MODES
+.B off
+(Normal/no active mode),
+.BR transparency ,
+.BR adaptive ,
+.BR noise-cancellation .
+.PP
+For input,
+.B trans
+aliases
+.BR transparency ;
+.B automatic
+and
+.B auto
+alias
+.BR adaptive ;
+and
+.B anc
+and
+.B nc
+alias
+.BR noise-cancellation .
+Output always uses canonical names. There is no alias for
+.BR off .
+.SH OPTIONS
+.TP
+.BI "--modes " m1,m2[,...]
+For
+.BR "listening-mode cycle" :
+a comma-separated subset of the modes documented under
+.BR MODES ,
+at least two distinct entries. Mode aliases are accepted. Duplicates are ignored. Unknown tokens are
+.B bad-args
+(exit 2).
+.TP
+.BI "--device " name
+Target a compatible device using a case-insensitive exact name match. Listening-mode commands can match a mapped Core Audio HAL device or their compatible AV output device; status matches the preferred Core Audio display name after exact endpoint deduplication. A name targets an existing record and is never device identity or correlation. The option is accepted anywhere in an operational command and may be supplied once. It never falls back to another device. A missing match is
+.BR no-device ;
+multiple exact matches are
+.BR ambiguous-device .
+.IP
+The supplied name must not begin with a hyphen, so an option token cannot be consumed as a missing value.
+.IP
+Without this option, listening-mode commands automatically use one logical target. If several remain, they prompt only when standard input and standard error are terminals and JSON is absent, regardless of selected-route status. Unresolved ambiguity fails with
+.BR ambiguous-device .
+HAL target selection does not add leftover AV records to the chooser. A unique selected HAL target and unique singular active AV endpoint form one logical target even when optional status enrichment cannot join them; names are never used for that correlation. If HAL listening-mode control is entirely unavailable, the AV-only fallback must still resolve one target.
+Blank input,
+.BR q ,
+or end of input declines the chooser and reports
+.BR ambiguous-device .
+Conversation Awareness also requires a unique target.
+.B status
+instead reports every eligible canonical device derived from the currently available Core Audio endpoint list, regardless of which device is the selected output.
+.TP
+.B --json
+Emit structured JSON instead of plain script-friendly output. Accepted anywhere in an operational command or global version command. Every JSON response has a
+.B result
+field. Success uses
+.BR ok ;
+an accepted unverified write uses
+.BR no-op ;
+other normal nonzero outcomes use
+.B error
+and add the canonical
+.B error
+token. Caught signals use
+.B interrupted
+with the numeric
+.B signal
+and no error token. Individual resource operations also contain
+.B device
+and the command's resulting
+.B listeningMode
+or
+.B conversationAwareness
+state; unavailable values are JSON
+.BR null .
+The listening-mode list command additionally returns
+.BR supportedListeningModes .
+.IP
+When a listening-mode command actually consumes cached AV evidence to make Off available through HAL, its JSON response also contains
+.BR allowOffAvailability .
+That object contains
+.B source
+set to
+.BR cached-av-observation ,
+plus RFC 3339
+.B observedAt
+and
+.B expiresAt
+timestamps. Live AV evidence, cache misses, and HAL behavior that did not need the observation omit the object. Plain output is unchanged.
+.IP
+.B status
+always returns a top-level
+.B devices
+array, including for a selected singleton. Every record contains
+.B device
+and the always-present selection keys
+.B isSelectedAudioOutput
+and
+.BR isSelectedAudioInput ,
+whose values are Boolean or
+.BR null .
+Records also contain the applicable canonical resource keys
+.B listeningMode
+and
+.BR conversationAwareness ;
+resource aliases never become JSON keys. A proven-unsupported field is omitted. An unresolved field is present as
+.BR null .
+A genuine read failure adds an
+.B errors
+object mapping the affected canonical field key, including a selection key, to
+.BR read-error ;
+the object is absent if no genuine read error occurred. JSON keys are serialized alphabetically. If all queryable fields on all selected devices fail, the top-level response also contains
+.B error
+set to
+.B read-error
+and
+.B result
+set to
+.BR error .
+.TP
+.B --debug
+Emit diagnostic logs to stderr without changing stdout, JSON, or the exit code. Diagnostics cover the entitlement bypass, private API discovery, device selection, capabilities, reads, and writes. When a Core Audio call fails, diagnostics may include its
+.B OSStatus
+numeric status code returned by macOS. Status-inventory diagnostics report bounded eligibility, filter, mapping, and deduplication outcomes without logging opaque Core Audio handles or raw HAL values. Audio-selection diagnostics report only bounded outcomes such as mapped, unrelated transport, composite, or unresolved. Display names can appear but are never identity or correlation evidence. Raw addresses, UIDs, and private routing identifiers are not read for inventory or selection. The optional feature-enrichment probe never logs its associatedAudioDeviceID, translated device handle, or private endpoint deviceID. Accepted anywhere in an operational command, a global version command, or
+.BR support-report ,
+where the diagnostics can explain why a device is not recognized.
+.B support-report
+does not read the customizable device name, enumerate the Core Audio status inventory, query audio selection, or run enrichment, but its diagnostics can contain the installed dylib path and therefore a home directory in a source build.
+.IP
+Debug output from operational commands can also contain selected device names. Allow Off cache diagnostics are limited to hit or miss and record age; they never contain the Core Audio UID, cache digest, salt, key, or contents. Review diagnostics before pasting them into an issue.
+.SH EXIT STATUS
+.TP
+.B 0
+Success: the primary contract was fulfilled without a safety-invariant violation.
+.TP
+.B 1
+No device resolved under the command's device contract (no-device).
+.TP
+.B 2
+Missing or malformed arguments (bad-args).
+.TP
+.B 3
+A setter accepted the request, but the requested feature state was not verified and no required final-state invariant remains unresolved (no-op).
+.TP
+.B 4
+Affirmative target-specific evidence excludes the requested operation (unsupported).
+.TP
+.B 5
+A primary information read failed without a usable result (read-error).
+.TP
+.B 6
+A required provider, prerequisite, capability inventory, or control path is unavailable.
+.TP
+.B 7
+Side effects occurred and a required final device state cannot be confirmed (state-uncertain).
+.TP
+.B 8
+Multiple candidates remain for a command requiring one target (ambiguous-device).
+.TP
+.B 129
+An externally delivered SIGHUP was caught during the write tests and restoration was attempted.
+.TP
+.B 130
+An externally delivered SIGINT was caught during the write tests and restoration was attempted.
+.TP
+.B 143
+An externally delivered SIGTERM was caught during the write tests and restoration was attempted.
+.PP
+Caught signals retain 128 plus the signal number. Crashes, SIGKILL, forced termination, and uncaught signals are outside this handled contract. Ambiguity and declined chooser input previously shared exit 1 and now use exit 8. Failed support-report restoration previously shared exit 3 and now uses exit 7. Missing or unrecognized support-report identity now produces a successful partial report.
+.SH NOTES
+Listening-mode writes use one route-selected AV or HAL provider and a bounded same-provider readback window while the device settles. A matching readback means macOS reports the requested state through that provider; it is not a direct AirPods protocol acknowledgement. Commands never change the default output or start an audio stream. If
+.B off
+is not verified, the setter accepted the request, and the device advertises Transparency, direct writes and explicit cycles into
+.B off
+report
+.B no-op
+(exit 3) with
+.B listeningMode
+set to
+.BR transparency .
+This is the expected eventual fallback when Off Listening Mode is disabled, not an observed final sample. Rejected writes and devices without Transparency report the final observed canonical mode, or
+.B null
+when the final readback is missing or unknown.
+.PP
+A positive-evidence-authorized HAL Off write does not use that inferred Transparency fallback. If its definitive final read is a known non-Off mode, it reports
+.B no-op
+with that actual mode and records denial for later invocations. A first explicit HAL probe with the same definitive evidence reports
+.BR unsupported .
+A missing or rejected setter is
+.BR unavailable ;
+accepted but unreadable, unknown, or timed-out final state is
+.B no-op
+and records no denial. The command does not retry through AV or choose another cycle target.
+.PP
+This relies on a private API. Apple may change it in any update. A missing provider is
+.BR unavailable ;
+affirmative target-specific negative evidence is
+.BR unsupported .
+.SH SEE ALSO
+.BR airpods-control (1)
+is this page.
+.PP
+Project documentation: https://github.com/raulgg/pods-control
+.PP
+CLI reference: https://github.com/raulgg/pods-control/blob/main/docs/cli.md
+.PP
+Device compatibility: https://github.com/raulgg/pods-control/blob/main/docs/compatibility.md
+.SH AUTHOR
+Raul. Not affiliated with Apple. AirPods is a trademark of Apple Inc. Beats is a trademark of Beats Electronics, LLC.

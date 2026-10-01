@@ -40,8 +40,8 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
       appropriateFor: nil,
       create: false
     )
-    .appendingPathComponent("io.github.raulgg.airpods-control", isDirectory: true)
-    .appendingPathComponent("allow-off-v1.json", isDirectory: false)
+    .appendingPathComponent(allowOffCacheDirectoryName, isDirectory: true)
+    .appendingPathComponent(allowOffCacheFileName, isDirectory: false)
   }
 
   static func systemDefault(
@@ -357,7 +357,7 @@ final class PersistentListeningModeAllowOffCache: ListeningModeAllowOffCaching {
   }
 
   func remove(record: AllowOffCacheRecord) -> AllowOffCacheMutation {
-    storage.withExclusiveMutationLock {
+    return storage.withExclusiveMutationLock {
       guard case .value(let document) = storage.readPersistedCache() else {
         return purgeInvalidCacheIfNeeded()
       }

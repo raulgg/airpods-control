@@ -1,14 +1,16 @@
 #!/bin/sh
-# Fetch, compile, and install (or replace) airpods-control from a Git tag.
+# Fetch, compile, and install (or replace) pods-control from a Git tag.
 # Wrap work in a function so a truncated curl | sh download does nothing.
 
 install_from_source() {
 	set -eu
 
-	REPO_HTTPS=https://github.com/raulgg/airpods-control.git
-	RELEASES_LATEST=https://github.com/raulgg/airpods-control/releases/latest
-	FORMULA_NAME=airpods-control
-	EXPECTED_SYMLINK=../libexec/airpods-control/airpods-control
+	REPO_HTTPS=https://github.com/raulgg/pods-control.git
+	RELEASES_LATEST=https://github.com/raulgg/pods-control/releases/latest
+	FORMULA_NAME=pods-control
+	LEGACY_FORMULA_NAME=airpods-control
+	NEW_SYMLINK=../libexec/pods-control/pods-control
+	LEGACY_SYMLINK=../libexec/airpods-control/airpods-control
 	CLANG=/usr/bin/clang
 	SWIFTC=/usr/bin/swiftc
 	LIPO=/usr/bin/lipo
@@ -213,17 +215,29 @@ install_from_source() {
 	}
 
 	refuse_foreign_command() {
-		command_path=$prefix/bin/airpods-control
-		if [ -e "$command_path" ] || [ -L "$command_path" ]; then
-			if [ ! -L "$command_path" ] ||
-				[ "$(readlink "$command_path")" != "$EXPECTED_SYMLINK" ]; then
-				die "$E_FOREIGN" "error: refusing to replace command not owned by this package: $command_path"
-			fi
+		owned_command "$prefix/bin/pods-control" "$NEW_SYMLINK"
+		owned_command "$prefix/bin/airpods-control" "$NEW_SYMLINK" "$LEGACY_SYMLINK"
+	}
+
+	owned_command() {
+		command_path=$1
+		shift
+		if [ ! -e "$command_path" ] && [ ! -L "$command_path" ]; then
+			return 0
 		fi
+		if [ -L "$command_path" ]; then
+			actual=$(readlink "$command_path")
+			for allowed in "$@"; do
+				if [ "$actual" = "$allowed" ]; then
+					return 0
+				fi
+			done
+		fi
+		die "$E_FOREIGN" "error: refusing to replace command not owned by this package: $command_path"
 	}
 
 	can_write_install_prefix() {
-		mkdir -p "$prefix/bin" "$prefix/libexec/airpods-control" \
+		mkdir -p "$prefix/bin" "$prefix/libexec/pods-control" \
 			"$prefix/share/man/man1" 2>/dev/null && [ -w "$prefix/bin" ]
 	}
 
@@ -318,14 +332,21 @@ install_from_source() {
 
 	BREW=${BREW:-brew}
 	if command -v "$BREW" >/dev/null 2>&1; then
-		if "$BREW" list --formula "$FORMULA_NAME" >/dev/null 2>&1; then
+		owned_formula=
+		for candidate in "$FORMULA_NAME" "$LEGACY_FORMULA_NAME"; do
+			if "$BREW" list --formula "$candidate" >/dev/null 2>&1; then
+				owned_formula=$candidate
+				break
+			fi
+		done
+		if [ -n "$owned_formula" ]; then
 			brew_prefix=$("$BREW" --prefix)
 			if brew_prefix=$("$resolve_prefix" "$brew_prefix"); then
 				if [ "$prefix" = "$brew_prefix" ]; then
-					die "$E_BREW" "error: Homebrew already owns $FORMULA_NAME at $brew_prefix. Use: brew upgrade $FORMULA_NAME"
+					die "$E_BREW" "error: Homebrew already owns $owned_formula at $brew_prefix. Use: brew upgrade $FORMULA_NAME or brew upgrade $LEGACY_FORMULA_NAME"
 				fi
 				printf 'warning: Homebrew has %s; installing to %s anyway\n' \
-					"$FORMULA_NAME" "$prefix" >&2
+					"$owned_formula" "$prefix" >&2
 			fi
 		fi
 	fi
@@ -335,10 +356,13 @@ install_from_source() {
 	run_make 0 all ||
 		die "$E_BUILD" "error: build failed"
 
-	command_path=$prefix/bin/airpods-control
+	command_path=$prefix/bin/pods-control
+	legacy_command=$prefix/bin/airpods-control
 	old_version=unknown
 	if [ -x "$command_path" ]; then
 		old_version=$("$command_path" --version 2>/dev/null) || old_version=unknown
+	elif [ -x "$legacy_command" ]; then
+		old_version=$("$legacy_command" --version 2>/dev/null) || old_version=unknown
 	fi
 
 	run_privileged install ||
@@ -356,7 +380,7 @@ install_from_source() {
 	case ":$PATH:" in
 		*":$prefix/bin:"*) ;;
 		*)
-			printf 'note: %s/bin is not on PATH. Add it to run airpods-control by name.\n' \
+			printf 'note: %s/bin is not on PATH. Add it to run pods-control by name.\n' \
 				"$prefix"
 			;;
 	esac

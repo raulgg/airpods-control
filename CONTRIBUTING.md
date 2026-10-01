@@ -7,7 +7,7 @@ requests are welcome.
 
 - Search existing issues first.
 - For a compatibility report, connect exactly one compatible AirPods or Beats
-  device and run `airpods-control support-report`. Review the local report
+  device and run `pods-control support-report`. Review the local report
   before deciding whether to open the GitHub form.
 - Beats reports are welcome, but we have not verified support.
 - Check the [device compatibility matrix](docs/compatibility.md) for verified
@@ -17,7 +17,7 @@ requests are welcome.
 - Re-run the command with `--debug` when possible and attach stderr. Redact
   device names and other personal information.
 - Report security concerns through
-  [private vulnerability reporting](https://github.com/raulgg/airpods-control/security/advisories/new).
+  [private vulnerability reporting](https://github.com/raulgg/pods-control/security/advisories/new).
   Do not disclose sensitive vulnerability details in a public issue.
 
 This project uses an undocumented macOS API, so an update can break

@@ -93,18 +93,22 @@ When an already-tagged minor still needs a patch (for example 0.3.1 while
 
 ## Update the Homebrew tap
 
+The tap workflow file stays `update-formula.yml`. Release Please dispatches
+that filename. Pull request titles are `chore: update pods-control to ...`.
+The workflow display name can read "Update pods-control formula".
+
 1. Verify that the release run completed its `tap-dispatch` job.
-2. Verify that the tap's `Update airpods-control formula` workflow opened a pull
-   request.
+2. Verify that the tap workflow opened a pull request.
 3. Wait for every required `brew test-bot` check and the squash auto-merge.
 4. If dispatch fails, run the tap workflow manually with the existing release
    tag.
 
 User-facing Homebrew commands in [README.md](README.md) must stay aligned
-with the tap formula name `raulgg/tap/airpods-control`:
+with formula `pods-control` and alias `airpods-control`:
 
 ```sh
-brew install raulgg/tap/airpods-control
-brew upgrade airpods-control
-brew uninstall airpods-control
+brew install raulgg/tap/pods-control
+brew install airpods-control
+brew upgrade pods-control
+brew uninstall pods-control
 ```

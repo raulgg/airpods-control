@@ -66,9 +66,9 @@ jobs:
       - name: Build
         run: |
           make
-          lipo build/airpods-control -verify_arch arm64 x86_64
+          lipo build/pods-control -verify_arch arm64 x86_64
           lipo build/avbypass.dylib -verify_arch arm64 x86_64
-          codesign --verify --verbose build/airpods-control
+          codesign --verify --verbose build/pods-control
           codesign --verify --verbose build/avbypass.dylib
 
       - name: Smoke test (read-only)
@@ -83,36 +83,90 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
           expected_version=$(cat version.txt)
+          new_target="../libexec/pods-control/pods-control"
 
           mkdir -p "$stage/usr/local/bin"
-          printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
+          printf 'foreign-command\n' >"$stage/usr/local/bin/pods-control"
           if DESTDIR="$stage" PREFIX=/usr/local make install >/dev/null 2>&1; then
             echo "make install replaced a command it does not own" >&2
             exit 1
           fi
+          test "$(cat "$stage/usr/local/bin/pods-control")" = foreign-command
+          test ! -e "$stage/usr/local/libexec/pods-control/pods-control"
+          rm -f "$stage/usr/local/bin/pods-control"
+
+          printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
+          if DESTDIR="$stage" PREFIX=/usr/local make install >/dev/null 2>&1; then
+            echo "make install replaced a legacy command it does not own" >&2
+            exit 1
+          fi
           test "$(cat "$stage/usr/local/bin/airpods-control")" = foreign-command
-          test ! -e "$stage/usr/local/libexec/airpods-control/airpods-control"
+          test ! -e "$stage/usr/local/libexec/pods-control/pods-control"
           rm -f "$stage/usr/local/bin/airpods-control"
 
           DESTDIR="$stage" PREFIX=/usr/local make install
+          test "$(readlink "$stage/usr/local/bin/pods-control")" = "$new_target"
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
-            "../libexec/airpods-control/airpods-control"
+            "$new_target"
+          test -x "$stage/usr/local/libexec/pods-control/pods-control"
+          test ! -e "$stage/usr/local/libexec/airpods-control"
+          test -f "$stage/usr/local/share/man/man1/pods-control.1"
           test -f "$stage/usr/local/share/man/man1/airpods-control.1"
+          test "$("$stage/usr/local/bin/pods-control" --version)" = \
+            "$expected_version"
           test "$("$stage/usr/local/bin/airpods-control" --version)" = \
             "$expected_version"
+          "$stage/usr/local/bin/airpods-control" --version >/dev/null \
+            2>"$stage/compat.err"
+          test ! -s "$stage/compat.err"
 
-          rm -f "$stage/usr/local/bin/airpods-control"
-          printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
+          legacy="$RUNNER_TEMP/airpods-control-legacy"
+          mkdir -p "$legacy/usr/local/bin" \
+            "$legacy/usr/local/libexec/airpods-control"
+          printf '%s\n' '#!/bin/sh' "printf '%s\\n' legacy" \
+            >"$legacy/usr/local/libexec/airpods-control/airpods-control"
+          chmod +x "$legacy/usr/local/libexec/airpods-control/airpods-control"
+          ln -s ../libexec/airpods-control/airpods-control \
+            "$legacy/usr/local/bin/airpods-control"
+          DESTDIR="$legacy" PREFIX=/usr/local make install
+          test "$(readlink "$legacy/usr/local/bin/pods-control")" = \
+            "$new_target"
+          test "$(readlink "$legacy/usr/local/bin/airpods-control")" = \
+            "$new_target"
+          test ! -e "$legacy/usr/local/libexec/airpods-control"
+          test "$("$legacy/usr/local/bin/pods-control" --version)" = \
+            "$expected_version"
+
+          rm -f "$stage/usr/local/bin/pods-control"
+          printf 'foreign-command\n' >"$stage/usr/local/bin/pods-control"
           if DESTDIR="$stage" PREFIX=/usr/local make uninstall >/dev/null 2>&1; then
             echo "make uninstall removed a command it does not own" >&2
             exit 1
           fi
-          test "$(cat "$stage/usr/local/bin/airpods-control")" = foreign-command
-          test -e "$stage/usr/local/libexec/airpods-control/airpods-control"
+          test "$(cat "$stage/usr/local/bin/pods-control")" = foreign-command
+          test -e "$stage/usr/local/libexec/pods-control/pods-control"
+          test -L "$stage/usr/local/bin/airpods-control"
+          rm -f "$stage/usr/local/bin/pods-control"
+          ln -s "$new_target" "$stage/usr/local/bin/pods-control"
+
           rm -f "$stage/usr/local/bin/airpods-control"
+          printf 'foreign-command\n' >"$stage/usr/local/bin/airpods-control"
+          if DESTDIR="$stage" PREFIX=/usr/local make uninstall >/dev/null 2>&1; then
+            echo "make uninstall removed a legacy command it does not own" >&2
+            exit 1
+          fi
+          test "$(cat "$stage/usr/local/bin/airpods-control")" = foreign-command
+          test -e "$stage/usr/local/libexec/pods-control/pods-control"
+          test -L "$stage/usr/local/bin/pods-control"
+          rm -f "$stage/usr/local/bin/airpods-control"
+          ln -s "$new_target" "$stage/usr/local/bin/airpods-control"
 
           DESTDIR="$stage" PREFIX=/usr/local make uninstall
+          test ! -e "$stage/usr/local/bin/pods-control"
           test ! -e "$stage/usr/local/bin/airpods-control"
+          test ! -e "$stage/usr/local/libexec/pods-control"
+          test ! -e "$stage/usr/local/libexec/airpods-control"
+          test ! -e "$stage/usr/local/share/man/man1/pods-control.1"
           test ! -e "$stage/usr/local/share/man/man1/airpods-control.1"
 
   runtime-needed:
@@ -195,9 +249,9 @@ jobs:
         run: |
           host_arch=$(uname -m)
           make ARCHS="$host_arch"
-          lipo build/airpods-control -verify_arch "$host_arch"
+          lipo build/pods-control -verify_arch "$host_arch"
           lipo build/avbypass.dylib -verify_arch "$host_arch"
-          codesign --verify --verbose build/airpods-control
+          codesign --verify --verbose build/pods-control
           codesign --verify --verbose build/avbypass.dylib
 
       - name: Verify DYLD interpose runtime
@@ -207,10 +261,14 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
           expected_version=$(cat version.txt)
+          new_target="../libexec/pods-control/pods-control"
           DESTDIR="$stage" PREFIX=/usr/local make install
+          test "$(readlink "$stage/usr/local/bin/pods-control")" = \
+            "$new_target"
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
-            "../libexec/airpods-control/airpods-control"
-          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
+            "$new_target"
+          test ! -e "$stage/usr/local/libexec/airpods-control"
+          test "$("$stage/usr/local/bin/pods-control" --version)" = \
             "$expected_version"
 
   macos-26-gate:
@@ -278,9 +336,9 @@ jobs:
         run: |
           host_arch=$(uname -m)
           make ARCHS="$host_arch"
-          lipo build/airpods-control -verify_arch "$host_arch"
+          lipo build/pods-control -verify_arch "$host_arch"
           lipo build/avbypass.dylib -verify_arch "$host_arch"
-          codesign --verify --verbose build/airpods-control
+          codesign --verify --verbose build/pods-control
           codesign --verify --verbose build/avbypass.dylib
 
       - name: Verify DYLD interpose runtime
@@ -290,10 +348,14 @@ jobs:
         run: |
           stage="$RUNNER_TEMP/airpods-control-install"
           expected_version=$(cat version.txt)
+          new_target="../libexec/pods-control/pods-control"
           DESTDIR="$stage" PREFIX=/usr/local make install
+          test "$(readlink "$stage/usr/local/bin/pods-control")" = \
+            "$new_target"
           test "$(readlink "$stage/usr/local/bin/airpods-control")" = \
-            "../libexec/airpods-control/airpods-control"
-          test "$("$stage/usr/local/bin/airpods-control" --version)" = \
+            "$new_target"
+          test ! -e "$stage/usr/local/libexec/airpods-control"
+          test "$("$stage/usr/local/bin/pods-control" --version)" = \
             "$expected_version"
 
   intel-gate:

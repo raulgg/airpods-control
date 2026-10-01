@@ -1,27 +1,28 @@
 # CLI reference
 
-This is the complete `airpods-control` CLI reference. See the
-[project README](../README.md) for installation and a shorter introduction.
+This is the complete `pods-control` CLI reference. `airpods-control` on
+PATH is the same binary. See the [project README](../README.md) for
+installation and a shorter introduction.
 
 ## Synopsis
 
 ```text
-airpods-control status [--device NAME] [--json] [--debug]
-airpods-control [--device NAME] listening-mode get [--json] [--debug]
-airpods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
-airpods-control [--device NAME] listening-mode list [--json] [--debug]
-airpods-control [--device NAME] listening-mode cycle
+pods-control status [--device NAME] [--json] [--debug]
+pods-control [--device NAME] listening-mode get [--json] [--debug]
+pods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
+pods-control [--device NAME] listening-mode list [--json] [--debug]
+pods-control [--device NAME] listening-mode cycle
     [--modes <m1,m2[,...]>] [--json] [--debug]
-airpods-control [--device NAME] conversation-awareness get [--json] [--debug]
-airpods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
-airpods-control support-report [--with-write-tests | --no-write-tests] [--debug]
-airpods-control --version | -v | version
-airpods-control --help | -h
+pods-control [--device NAME] conversation-awareness get [--json] [--debug]
+pods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
+pods-control support-report [--with-write-tests | --no-write-tests] [--debug]
+pods-control --version | -v | version
+pods-control --help | -h
 ```
 
 `listening-mode` can be shortened to `lm`, and `conversation-awareness` to `ca`.
-These aliases replace only the resource name, so `airpods-control lm get` and
-`airpods-control ca set off` are complete commands. `status` has no alias. Reads
+These aliases replace only the resource name, so `pods-control lm get` and
+`pods-control ca set off` are complete commands. `status` has no alias. Reads
 of an individual resource are always explicit. A bare resource name is an error.
 
 `<mode>` is one of `off`, `transparency`, `adaptive`, or `noise-cancellation`.
@@ -66,14 +67,14 @@ fixed set of fields. The consent prompt and result rows depend on the device.
 ### Read the current mode
 
 ```console
-$ airpods-control listening-mode get
+$ pods-control listening-mode get
 transparency
 ```
 
 ### Set a mode
 
 ```console
-$ airpods-control listening-mode set noise-cancellation
+$ pods-control listening-mode set noise-cancellation
 ok
 ```
 
@@ -84,7 +85,7 @@ cannot be verified within the bounded readback window, the command prints
 `no-op` and exits `3`:
 
 ```console
-$ airpods-control lm set noise-cancellation
+$ pods-control lm set noise-cancellation
 no-op
 ```
 
@@ -107,7 +108,7 @@ AirPods protocol acknowledgement.
 ### List the modes this device supports
 
 ```console
-$ airpods-control listening-mode list
+$ pods-control listening-mode list
 off,transparency,adaptive,noise-cancellation
 ```
 
@@ -128,9 +129,9 @@ continue to expose Off when AV advertises it.
 and prints the resulting mode:
 
 ```console
-$ airpods-control listening-mode cycle
+$ pods-control listening-mode cycle
 adaptive
-$ airpods-control lm cycle
+$ pods-control lm cycle
 noise-cancellation
 ```
 
@@ -148,7 +149,7 @@ two distinct modes, like the "Press and Hold to Cycle Between" checkboxes in
 System Settings:
 
 ```console
-$ airpods-control lm cycle --modes off,transparency,noise-cancellation
+$ pods-control lm cycle --modes off,transparency,noise-cancellation
 transparency
 ```
 
@@ -207,8 +208,14 @@ unreadable data is treated as a miss. The disposable,
 backup-excluded cache is stored at:
 
 ```text
-~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json
+~/Library/Caches/io.github.raulgg.pods-control/allow-off-v1.json
 ```
+
+If that file is missing, the same bytes are copied from
+`~/Library/Caches/io.github.raulgg.airpods-control/allow-off-v1.json`
+when that older directory and file already meet the cache's ownership,
+mode, and regular-file checks. The older file is left in place. A failed
+copy is a cache miss, not an operational error.
 
 The key is the full SHA-256 digest of a random per-cache salt followed by the
 exact, case-sensitive public Core Audio UID. The cache persists the salt,
@@ -233,9 +240,9 @@ readback, a match is macOS-reported state, not a direct AirPods acknowledgement.
 ## Conversation Awareness
 
 ```console
-$ airpods-control conversation-awareness get
+$ pods-control conversation-awareness get
 on
-$ airpods-control ca set off
+$ pods-control ca set off
 ok
 ```
 
@@ -284,7 +291,7 @@ whole-name match. A missing name is `no-device`; an ambiguous name is
 record has a heading, including a selected singleton:
 
 ```console
-$ airpods-control status
+$ pods-control status
 My AirPods Pro:
   Listening mode: transparency
   Conversation Awareness: on
@@ -432,7 +439,7 @@ Connect exactly one compatible AirPods or Beats device as a macOS output device,
 then run:
 
 ```console
-$ airpods-control support-report
+$ pods-control support-report
 Write tests
 ────────────────────────────────────────────
 Plan
@@ -455,7 +462,7 @@ Device
   Identifier               BTHeadphones76,8231 · product 0x2027
   Family                   AirPods
   macOS                    26.5.2
-  airpods-control          0.1.0
+  pods-control             0.1.0
 
 Capabilities
   Listening modes          Off, Transparency, Adaptive, Noise cancellation
@@ -563,7 +570,7 @@ restoration. An interrupted run does not offer or print an issue-form URL. A
 consented report shows each result and a compact summary:
 
 ```console
-$ airpods-control support-report --with-write-tests
+$ pods-control support-report --with-write-tests
 Compatibility report
 ════════════════════════════════════════════
 ...
@@ -615,7 +622,7 @@ endpoint list, regardless of which device is the selected output. To select one
 explicitly:
 
 ```console
-$ airpods-control --device "My AirPods Pro" listening-mode get
+$ pods-control --device "My AirPods Pro" listening-mode get
 transparency
 ```
 
@@ -645,19 +652,19 @@ Add `--json` to an operational command or the version command for structured
 output:
 
 ```console
-$ airpods-control listening-mode get --json
+$ pods-control listening-mode get --json
 {"device":"My AirPods Pro","listeningMode":"transparency","result":"ok"}
 
-$ airpods-control listening-mode set noise-cancellation --json
+$ pods-control listening-mode set noise-cancellation --json
 {"device":"My AirPods Pro","listeningMode":"noise-cancellation","result":"ok"}
 
-$ airpods-control listening-mode list --json
+$ pods-control listening-mode list --json
 {"device":"My AirPods Pro","listeningMode":"transparency","result":"ok","supportedListeningModes":["off","transparency","adaptive","noise-cancellation"]}
 
-$ airpods-control conversation-awareness get --json
+$ pods-control conversation-awareness get --json
 {"conversationAwareness":"on","device":"My AirPods Pro","result":"ok"}
 
-$ airpods-control status --device "My AirPods Pro" --json
+$ pods-control status --device "My AirPods Pro" --json
 {"devices":[{"conversationAwareness":"on","device":"My AirPods Pro","isSelectedAudioInput":false,"isSelectedAudioOutput":true,"listeningMode":"transparency"}],"result":"ok"}
 ```
 
@@ -672,10 +679,10 @@ verification may report the expected eventual Transparency state instead. An
 unresolved device or state is JSON `null`. Errors add an `error` field:
 
 ```console
-$ airpods-control --device "Missing AirPods" listening-mode get --json
+$ pods-control --device "Missing AirPods" listening-mode get --json
 {"device":null,"error":"no-device","listeningMode":null,"result":"error"}
 
-$ airpods-control listening-mode get --json
+$ pods-control listening-mode get --json
 {"device":null,"error":"ambiguous-device","listeningMode":null,"result":"error"}
 ```
 
@@ -771,7 +778,7 @@ contextual help. Version flags are global only and do not accept `--device`.
 Add `--debug` to emit private-API discovery and operation diagnostics on stderr:
 
 ```console
-$ airpods-control --debug listening-mode get
+$ pods-control --debug listening-mode get
 debug: cli.command="listening-mode.get"
 info: audio_context_selector="sharedSystemAudioContext"
 debug: listening_mode.hal_inventory="deferred"

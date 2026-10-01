@@ -45,7 +45,7 @@ enum SupportReportTerminalRenderer {
         options: options
       ),
       row("macOS", document.device.macOS, options: options),
-      row("airpods-control", document.device.cliVersion, options: options),
+      row("pods-control", document.device.cliVersion, options: options),
       "",
       styled("Capabilities", tone: .heading, options: options),
       row(
@@ -366,7 +366,7 @@ enum SupportReportGitHubRenderer {
       "- Device family: "
         + (document.device.family?.rawValue ?? "unavailable/not reported"),
       "- macOS: \(document.device.macOS)",
-      "- airpods-control: \(document.device.cliVersion)",
+      "- pods-control: \(document.device.cliVersion)",
       "",
       "#### Capabilities",
       "",

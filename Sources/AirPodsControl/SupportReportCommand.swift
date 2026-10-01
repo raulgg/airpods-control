@@ -102,7 +102,7 @@ struct SupportReportCommand {
       plain: """
       \(availability)
       Connect exactly one compatible AirPods or Beats device as a macOS output device,
-      then run `airpods-control support-report` again.
+      then run `pods-control support-report` again.
       Nothing was sent to GitHub.
       """,
       terminalReason: reason
