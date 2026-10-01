@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.5.0](https://github.com/raulgg/airpods-control/compare/v0.4.0...v0.5.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* the command is now pods-control; airpods-control remains a symlink and Homebrew alias.
+
+### Features
+
+* rename the CLI binary to pods-control ([#145](https://github.com/raulgg/airpods-control/issues/145)) ([fdded22](https://github.com/raulgg/airpods-control/commit/fdded223a008282e8600571719936f2c60de081e))
+
+
+### Bug Fixes
+
+* restore listening mode after inferred Off fallback ([#143](https://github.com/raulgg/airpods-control/issues/143)) ([37ad499](https://github.com/raulgg/airpods-control/commit/37ad4990f6272e1d2e8b0eb152b3bdcd5fb06f2f))
+
 ## [0.4.0](https://github.com/raulgg/airpods-control/compare/v0.3.0...v0.4.0) (2026-09-05)
 
 
