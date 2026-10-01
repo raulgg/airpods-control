@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/raulgg/airpods-control/compare/v0.4.0...v0.4.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* restore listening mode after inferred Off fallback ([#143](https://github.com/raulgg/airpods-control/issues/143)) ([37ad499](https://github.com/raulgg/airpods-control/commit/37ad4990f6272e1d2e8b0eb152b3bdcd5fb06f2f))
+
 ## [0.4.0](https://github.com/raulgg/airpods-control/compare/v0.3.0...v0.4.0) (2026-09-05)
 
 
