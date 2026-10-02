@@ -104,7 +104,7 @@ The workflow display name can read "Update pods-control formula".
    tag.
 
 User-facing Homebrew commands in [README.md](README.md) must stay aligned
-with formula `pods-control` and alias `airpods-control`:
+with formula `pods-control` and deprecated formula `airpods-control`:
 
 ```sh
 brew install raulgg/tap/pods-control

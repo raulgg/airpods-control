@@ -79,9 +79,10 @@ brew upgrade pods-control
 brew uninstall pods-control
 ```
 
-`brew install raulgg/tap/airpods-control` still installs the published formula
-until `pods-control` is on the tap. After that, `airpods-control` is an alias
-for the same formula, and `brew upgrade airpods-control` moves the keg.
+`brew install airpods-control` and `brew upgrade airpods-control` stay on
+the old formula and print a deprecation. They do not create the
+`pods-control` keg. To switch, uninstall `airpods-control`, then run
+`brew install --formula raulgg/tap/pods-control`.
 
 `airpods-control` on `PATH` is the same binary as `pods-control` and prints
 nothing extra. `man airpods-control` shows the same page. This project is not
