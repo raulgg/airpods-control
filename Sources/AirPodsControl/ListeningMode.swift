@@ -28,7 +28,7 @@ enum ListeningMode: String, CaseIterable {
     }
   }
 
-  // Interface order for listening-mode cycle, matching macOS and iOS.
+  // Cycle order for listening-mode cycle, matching macOS and iOS.
   // Case order stays the list and support-report order. Off is first only
   // when the cycle set includes it; next skips modes absent from the set.
   static let cycleOrder: [ListeningMode] = [

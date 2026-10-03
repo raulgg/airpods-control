@@ -25,7 +25,7 @@ enum CLICommand {
   case listeningModeGet
   case listeningModeSet(ListeningMode)
   case listeningModeList
-  // Requested cycle tokens in interface order; nil means the default set
+  // Requested cycle tokens in cycle order; nil means the default set
   // (every available mode except off).
   case listeningModeCycle(requested: [ListeningMode]?)
   case conversationAwarenessGet
@@ -338,7 +338,7 @@ func helpText(for rawArgs: [String]) -> String? {
   }
 }
 
-// Parses a --modes value into distinct modes in interface order.
+// Parses a --modes value into distinct modes in cycle order.
 // Empty or unknown tokens and sets of fewer than two distinct modes are
 // parse errors.
 func parseCycleModes(_ raw: String) throws -> [ListeningMode] {
