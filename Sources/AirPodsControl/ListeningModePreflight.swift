@@ -33,7 +33,7 @@ enum ListeningModePreflightPolicy {
   static func commandExplicitlyTargetsOff(_ command: ListeningModeCommand) -> Bool {
     switch command {
     case .set(.off): return true
-    case let .cycle(requested): return requested?.contains(.off) == true
+    case let .cycle(request): return request.modes?.contains(.off) == true
     case .get, .list, .set: return false
     }
   }
@@ -44,8 +44,8 @@ enum ListeningModePreflightPolicy {
       return true
     case .set(.off):
       return true
-    case .cycle(let requested):
-      return requested?.contains(.off) == true
+    case .cycle(let request):
+      return request.modes?.contains(.off) == true
     case .get, .set:
       return false
     }

@@ -25,9 +25,8 @@ enum CLICommand {
   case listeningModeGet
   case listeningModeSet(ListeningMode)
   case listeningModeList
-  // Requested cycle tokens in cycle order; nil means the default set
-  // (every available mode except off).
-  case listeningModeCycle(requested: [ListeningMode]?)
+  // Default cycle, a Cycle-order subset, or the written --modes sequence.
+  case listeningModeCycle(ListeningModeCycleRequest)
   case conversationAwarenessGet
   case conversationAwarenessSet(Bool)
 
@@ -182,7 +181,7 @@ Usage:
   pods-control [--device NAME] listening-mode get [--json] [--debug]
   pods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
   pods-control [--device NAME] listening-mode list [--json] [--debug]
-  pods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--json] [--debug]
+  pods-control [--device NAME] listening-mode cycle [--modes <m1,m2[,...]>] [--listed-order] [--json] [--debug]
 
 Alias:
   lm
@@ -204,11 +203,14 @@ Cycle:
   included only when --modes lists it and the device supports it. A mode
   the device lacks is skipped, so a device without adaptive goes from
   noise-cancellation to transparency. --modes selects an explicit subset
-  of at least two distinct modes. The order of those names does not
-  matter. If the current mode is outside the set, cycle continues from
-  that mode's place in the Cycle order to the next mode in the set
-  (wrapping). If the current mode is unknown, cycle starts at the set's
-  first mode.
+  of at least two distinct modes. Without --listed-order, the order of
+  those names does not matter. If the current mode is outside the set,
+  cycle continues from that mode's place in the Cycle order to the next
+  mode in the set (wrapping). If the current mode is unknown, cycle
+  starts at the set's first mode. --listed-order requires --modes and
+  follows that written order, wrapping from the last name to the first.
+  If the current mode is unknown or outside the remaining list, cycle
+  starts at the first remaining name.
 
 Options:
   --device NAME
@@ -217,6 +219,9 @@ Options:
   --modes <m1,m2[,...]>
                Cycle set for listening-mode cycle: at least two distinct
                modes, comma-separated. Mode aliases are accepted.
+  --listed-order
+               Follow the written --modes order for listening-mode cycle.
+               Requires --modes. Repeated use is an error.
   --json       Emit structured JSON instead of plain script-friendly output.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing the device.
@@ -343,6 +348,30 @@ func helpText(for rawArgs: [String]) -> String? {
 // Empty or unknown tokens and sets of fewer than two distinct modes are
 // parse errors.
 func parseCycleModes(_ raw: String) throws -> [ListeningMode] {
+  let ordered = try distinctCycleModes(raw)
+  let unique = Set(ordered)
+  return ListeningMode.cycleOrder.filter { unique.contains($0) }
+}
+
+private func parseListedCycleModes(_ raw: String) throws -> [ListeningMode] {
+  try distinctCycleModes(raw)
+}
+
+private func cycleRequest(
+  rawModes: String?,
+  listedOrder: Bool
+) throws -> ListeningModeCycleRequest {
+  guard let rawModes else {
+    guard !listedOrder else { throw CLIParseError() }
+    return .defaultCycle
+  }
+  if listedOrder {
+    return .listed(try parseListedCycleModes(rawModes))
+  }
+  return .subset(try parseCycleModes(rawModes))
+}
+
+private func distinctCycleModes(_ raw: String) throws -> [ListeningMode] {
   let tokens = try raw
     .split(separator: ",", omittingEmptySubsequences: false)
     .map { piece -> ListeningMode in
@@ -351,9 +380,15 @@ func parseCycleModes(_ raw: String) throws -> [ListeningMode] {
       }
       return mode
     }
-  let unique = Set(tokens)
-  guard unique.count >= 2 else { throw CLIParseError() }
-  return ListeningMode.cycleOrder.filter { unique.contains($0) }
+  var ordered: [ListeningMode] = []
+  var seen = Set<ListeningMode>()
+  for mode in tokens {
+    if seen.insert(mode).inserted {
+      ordered.append(mode)
+    }
+  }
+  guard ordered.count >= 2 else { throw CLIParseError() }
+  return ordered
 }
 
 func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
@@ -363,7 +398,8 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   var withWriteTests = false
   var noWriteTests = false
   var requestedDeviceName: String?
-  var requestedCycleModes: [ListeningMode]?
+  var rawCycleModes: String?
+  var listedOrder = false
   var index = 0
 
   while index < rawArgs.count {
@@ -398,11 +434,15 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       index += 1
 
     case "--modes":
-      guard requestedCycleModes == nil, index + 1 < rawArgs.count else {
+      guard rawCycleModes == nil, index + 1 < rawArgs.count else {
         throw CLIParseError()
       }
-      requestedCycleModes = try parseCycleModes(rawArgs[index + 1])
+      rawCycleModes = rawArgs[index + 1]
       index += 1
+
+    case "--listed-order":
+      guard !listedOrder else { throw CLIParseError() }
+      listedOrder = true
 
     default:
       positional.append(rawArgs[index])
@@ -413,7 +453,8 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
 
   if positional.count == 1, ["--version", "-v", "version"].contains(positional[0]) {
     guard requestedDeviceName == nil,
-          requestedCycleModes == nil,
+          rawCycleModes == nil,
+          !listedOrder,
           !withWriteTests,
           !noWriteTests
     else {
@@ -433,7 +474,8 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   // stream. --json is not allowed; the report is not a JSON payload.
   if positional == ["support-report"] {
     guard requestedDeviceName == nil,
-          requestedCycleModes == nil,
+          rawCycleModes == nil,
+          !listedOrder,
           !jsonOutput,
           !(withWriteTests && noWriteTests)
     else {
@@ -458,7 +500,7 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
   guard !withWriteTests, !noWriteTests else { throw CLIParseError() }
 
   if positional == ["status"] {
-    guard requestedCycleModes == nil else { throw CLIParseError() }
+    guard rawCycleModes == nil, !listedOrder else { throw CLIParseError() }
     return CLIInvocation(
       command: .status,
       jsonOutput: jsonOutput,
@@ -491,8 +533,12 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
 
     case "cycle":
       guard positional.count == 2 else { throw CLIParseError() }
-      command = .listeningModeCycle(requested: requestedCycleModes)
-      requestedCycleModes = nil
+      command = .listeningModeCycle(try cycleRequest(
+        rawModes: rawCycleModes,
+        listedOrder: listedOrder
+      ))
+      rawCycleModes = nil
+      listedOrder = false
 
     default:
       throw CLIParseError()
@@ -518,8 +564,9 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
     throw CLIParseError()
   }
 
-  // --modes is only meaningful for listening-mode cycle, which consumes it.
-  guard requestedCycleModes == nil else { throw CLIParseError() }
+  // --modes and --listed-order are only meaningful for listening-mode cycle,
+  // which consumes them.
+  guard rawCycleModes == nil, !listedOrder else { throw CLIParseError() }
 
   return CLIInvocation(
     command: command,

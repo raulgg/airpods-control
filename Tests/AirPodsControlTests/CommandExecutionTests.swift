@@ -466,6 +466,45 @@ struct CommandExecutionTests {
     )
   }
 
+  @Test("Cycles through --modes in the order written")
+  func listedOrderCycleCommand() throws {
+    let listedDevice = FakeCompatibleAudioDevice(
+      name: "Listed Order AirPods",
+      listeningMode: .adaptive
+    )
+    let listed = try commandOutcome(
+      [
+        "lm", "cycle", "--listed-order", "--modes",
+        "adaptive,transparency,noise-cancellation",
+      ],
+      device: listedDevice
+    )
+    #expect(
+      listed.plain == "transparency",
+      "listed order advances from Adaptive to Transparency"
+    )
+    #expect(
+      listedDevice.listeningMode == .transparency,
+      "listed order applies its target"
+    )
+
+    let cycleOrderDevice = FakeCompatibleAudioDevice(
+      name: "Cycle Order AirPods",
+      listeningMode: .adaptive
+    )
+    let cycleOrder = try commandOutcome(
+      [
+        "lm", "cycle", "--modes",
+        "adaptive,transparency,noise-cancellation",
+      ],
+      device: cycleOrderDevice
+    )
+    #expect(
+      cycleOrder.plain == "noise-cancellation",
+      "the same names without --listed-order follow cycle order"
+    )
+  }
+
   @Test("Reports Conversation Awareness reads and write outcomes")
   func conversationAwarenessCommandExecution() throws {
     let offDevice = FakeCompatibleAudioDevice(

@@ -85,14 +85,14 @@ struct ListeningModePreflightTests {
         "AV default cycle",
         .value([.transparency, .adaptive]),
         .av,
-        .cycle(nil),
+        .cycle(.defaultCycle),
         false
       ),
       (
         "AV explicit Off cycle",
         .value([.transparency, .adaptive]),
         .av,
-        .cycle([.transparency, .off]),
+        .cycle(.subset([.transparency, .off])),
         true
       ),
     ]
@@ -186,24 +186,36 @@ struct ListeningModePreflightTests {
   @Test("Only explicit Off operations opt into Allow Off policy")
   func offCommandPolicy() {
     #expect(
-      !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.cycle(nil)),
+      !ListeningModePreflightPolicy.commandExplicitlyTargetsOff(.cycle(.defaultCycle)),
       "the default cycle does not target Off"
     )
     #expect(
       ListeningModePreflightPolicy.commandExplicitlyTargetsOff(
-        .cycle([.transparency, .off])
+        .cycle(.subset([.transparency, .off]))
       ),
       "an explicit Off cycle targets Off"
     )
     #expect(
-      !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.cycle(nil)),
+      ListeningModePreflightPolicy.commandExplicitlyTargetsOff(
+        .cycle(.listed([.off, .transparency]))
+      ),
+      "a listed Off cycle targets Off"
+    )
+    #expect(
+      !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.cycle(.defaultCycle)),
       "the default cycle does not use Allow Off cache evidence"
     )
     #expect(
       ListeningModePreflightPolicy.commandMayUseAllowOffCache(
-        .cycle([.transparency, .off])
+        .cycle(.subset([.transparency, .off]))
       ),
       "an explicit Off cycle may use Allow Off cache evidence"
+    )
+    #expect(
+      ListeningModePreflightPolicy.commandMayUseAllowOffCache(
+        .cycle(.listed([.off, .transparency]))
+      ),
+      "a listed Off cycle may use Allow Off cache evidence"
     )
 
     // The two predicates disagree for `list`: it surfaces cached Allow Off
