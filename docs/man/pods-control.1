@@ -252,9 +252,9 @@ is included only when
 lists it and the device supports it. Otherwise the set is every mode the device supports except
 .BR off .
 .B --modes
-selects an explicit subset of at least two distinct modes. Without
-.BR --listed-order ,
-the order of those names does not matter. A mode the device does not support is skipped, so a device without
+selects an explicit subset of at least two distinct modes. The order of those names matters only when
+.B --listed-order
+is set. Otherwise cycling follows Cycle order. A mode the device does not support is skipped, so a device without
 .B adaptive
 goes from
 .B noise-cancellation
@@ -269,7 +269,7 @@ the command continues from that mode's place in the Cycle order to the next mode
 .B --listed-order
 requires
 .B --modes
-and cycles through those names in the order written, wrapping from the last name to the first. A mode the device does not support is still skipped, and the remaining names keep their relative order. If the current mode is unknown or outside the remaining list, the command starts at the first remaining name. A change that does not verify reports
+and cycles through those names in the order written, wrapping from the last name to the first. A mode the device does not support is skipped, and the names that remain stay in that order. If the current mode is unknown, or outside the names that remain, the command starts at the first of those names. A change that does not verify reports
 .B no-op
 (exit 3).
 .SS ALLOW OFF CACHE
@@ -402,7 +402,7 @@ For
 .BR "listening-mode cycle" ,
 with
 .BR --modes :
-follow the written mode order. The flag may be supplied once. It is
+cycle through those names in the order written. The flag may be supplied once. It is
 .B bad-args
 (exit 2) when repeated, used without
 .BR --modes ,

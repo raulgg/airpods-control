@@ -157,27 +157,28 @@ $ pods-control lm cycle --modes off,transparency,noise-cancellation
 transparency
 ```
 
-Without `--listed-order`, the order of names in `--modes` does not matter.
-Cycling follows the Cycle order, and the command accepts the mode aliases
-listed above. Fewer than two distinct modes or an unknown token produces
-`bad-args` (exit `2`). The command skips modes that the connected device
-does not support. If fewer than two remain, it reports `unsupported`
+The order of names in `--modes` matters only when `--listed-order` is set.
+Otherwise cycling follows the Cycle order, and the command accepts the mode
+aliases listed above. Fewer than two distinct modes or an unknown token
+produces `bad-args` (exit `2`). The command skips modes that the connected
+device does not support. If fewer than two remain, it reports `unsupported`
 (exit `4`). A change that cannot be verified reports `no-op` (exit `3`).
 
-`--listed-order` requires `--modes` and cycles through those names in the
-order written, wrapping from the last name to the first. A mode the device
-does not support is dropped, and the remaining names keep their relative
-order. If the current mode is unknown or outside the remaining list, the
-command starts at the first remaining name. From `adaptive`, this list
-lands on `transparency`. The same names without `--listed-order` land on
-`noise-cancellation`:
+`--listed-order` requires `--modes`. It cycles through those names in the
+order written and wraps from the last name to the first. A mode the device
+does not support is skipped, and the names that remain stay in that order.
+If the current mode is `unknown`, or outside the names that remain, `cycle`
+starts at the first of those names. From `adaptive`, this command lands on
+`transparency`:
 
 ```console
 $ pods-control lm cycle --listed-order --modes adaptive,transparency,noise-cancellation
 transparency
 ```
 
-From `off` or an unknown mode, this rotation starts at `adaptive`:
+Those names in Cycle order land on `noise-cancellation` from `adaptive`.
+
+From `off`, or from an `unknown` mode, this command starts at `adaptive`:
 
 ```console
 $ pods-control lm cycle --listed-order --modes adaptive,noise-cancellation,transparency
