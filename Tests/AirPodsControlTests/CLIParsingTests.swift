@@ -220,6 +220,98 @@ struct CLIParsingTests {
       listeningModeCycleRequest(from: defaultCycle.command)
     )
     #expect(defaultRequest == .defaultCycle, "cycle without --modes uses the default set")
+
+    let repeatedButDistinct = try parseInvocation([
+      "lm", "cycle", "--modes", "anc,anc,trans",
+    ])
+    let repeatedRequest = try #require(
+      listeningModeCycleRequest(from: repeatedButDistinct.command)
+    )
+    #expect(
+      repeatedRequest == .subset([.transparency, .noiseCancellation]),
+      "a repeat that leaves two distinct modes is ignored"
+    )
+  }
+
+  @Test("Names a repeated cycle mode and a bad token")
+  func namesRepeatedCycleModeAndBadToken() {
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", "trans,transparency"],
+      CLIParseError(reason: .repeatedModeCollapsed(.transparency)),
+      "listening mode \"transparency\" is repeated in --modes, leaving one distinct mode; cycle needs at least two"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", "trans,transparency", "--explicit-order"],
+      CLIParseError(reason: .repeatedModeCollapsed(.transparency)),
+      "listening mode \"transparency\" is repeated in --modes, leaving one distinct mode; cycle needs at least two"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", "anc,anc"],
+      CLIParseError(reason: .repeatedModeCollapsed(.noiseCancellation)),
+      "listening mode \"noise-cancellation\" is repeated in --modes, leaving one distinct mode; cycle needs at least two"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", "transparency"],
+      CLIParseError(reason: .singleCycleMode),
+      "--modes lists one distinct mode; cycle needs at least two"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--explicit-order", "--modes", "transparency"],
+      CLIParseError(reason: .singleCycleMode),
+      "--modes lists one distinct mode; cycle needs at least two"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", ",transparency,adaptive"],
+      CLIParseError(reason: .emptyCycleToken),
+      "empty listening-mode token in --modes"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", ""],
+      CLIParseError(reason: .emptyCycleToken),
+      "empty listening-mode token in --modes"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", "transparency,normal"],
+      CLIParseError(reason: .unknownListeningMode(token: "normal")),
+      "unknown listening mode \"normal\"; expected off, transparency, adaptive, noise-cancellation"
+    )
+    expectExplainedParse(
+      ["lm", "cycle", "--modes", "transparency,normal,transparency"],
+      CLIParseError(reason: .unknownListeningMode(token: "normal")),
+      "unknown listening mode \"normal\"; expected off, transparency, adaptive, noise-cancellation"
+    )
+    expectExplainedParse(
+      ["lm", "set", "normal"],
+      CLIParseError(reason: .unknownListeningMode(token: "normal")),
+      "unknown listening mode \"normal\"; expected off, transparency, adaptive, noise-cancellation"
+    )
+    expectExplainedParse(
+      ["ca", "set", "maybe"],
+      CLIParseError(reason: .unknownConversationAwarenessState(token: "maybe")),
+      "unknown conversation-awareness state \"maybe\"; expected on or off"
+    )
+  }
+
+  @Test("Leaves other malformed arguments unexplained")
+  func leavesOtherMalformedArgumentsUnexplained() {
+    #expect(CLIParseError().stderrLine == nil, "a reason-less parse error has no stderr line")
+    expectUnexplainedParse(["lm", "cycle", "--modes"])
+    expectUnexplainedParse(["lm", "set"])
+    expectUnexplainedParse(["ca", "set"])
+    expectUnexplainedParse(["lm", "cycle", "extra"])
+  }
+
+  @Test("Keeps bad-args plain and JSON output unchanged")
+  func keepsBadArgsOutputUnchanged() {
+    #expect(
+      CLIOutputSerializer.plain("bad-args") == "bad-args\n",
+      "plain bad-args stays the terminal-reason token"
+    )
+    #expect(
+      CLIOutputSerializer.json(TerminalReason.badArgs.addingEnvelope(to: [:]))
+        == "{\"error\":\"bad-args\",\"result\":\"error\"}\n",
+      "JSON bad-args stays the existing error envelope"
+    )
   }
 }
 
@@ -245,6 +337,31 @@ struct InvalidInvocation: Sendable, CustomTestStringConvertible {
   }
 
   var testDescription: String { name }
+}
+
+private func expectExplainedParse(
+  _ arguments: [String],
+  _ expected: CLIParseError,
+  _ stderr: String,
+  sourceLocation: SourceLocation = #_sourceLocation
+) {
+  #expect(throws: expected, sourceLocation: sourceLocation) {
+    _ = try parseInvocation(arguments)
+  }
+  #expect(
+    expected.stderrLine == stderr,
+    "stderr names the parse mistake",
+    sourceLocation: sourceLocation
+  )
+}
+
+private func expectUnexplainedParse(
+  _ arguments: [String],
+  sourceLocation: SourceLocation = #_sourceLocation
+) {
+  #expect(throws: CLIParseError(), sourceLocation: sourceLocation) {
+    _ = try parseInvocation(arguments)
+  }
 }
 
 private func listeningModeSet(from command: CLICommand) -> ListeningMode? {

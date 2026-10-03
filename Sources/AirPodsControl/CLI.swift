@@ -63,7 +63,38 @@ struct CLIInvocation {
   let requestedDeviceName: String?
 }
 
-struct CLIParseError: Error {}
+struct CLIParseError: Error, Equatable {
+  enum Reason: Equatable {
+    case unknownListeningMode(token: String)
+    case emptyCycleToken
+    case repeatedModeCollapsed(ListeningMode)
+    case singleCycleMode
+    case unknownConversationAwarenessState(token: String)
+  }
+
+  let reason: Reason?
+
+  init(reason: Reason? = nil) {
+    self.reason = reason
+  }
+
+  var stderrLine: String? {
+    switch reason {
+    case let .unknownListeningMode(token):
+      return "unknown listening mode \"\(token)\"; expected off, transparency, adaptive, noise-cancellation"
+    case .emptyCycleToken:
+      return "empty listening-mode token in --modes"
+    case let .repeatedModeCollapsed(mode):
+      return "listening mode \"\(mode.rawValue)\" is repeated in --modes, leaving one distinct mode; cycle needs at least two"
+    case .singleCycleMode:
+      return "--modes lists one distinct mode; cycle needs at least two"
+    case let .unknownConversationAwarenessState(token):
+      return "unknown conversation-awareness state \"\(token)\"; expected on or off"
+    case nil:
+      return nil
+    }
+  }
+}
 
 let globalHelp = """
 macOS CLI for AirPods and Beats listening modes.
@@ -196,6 +227,8 @@ Mode aliases:
                adaptive
   anc, nc      noise-cancellation
 
+An unknown mode token exits bad-args and names the token on stderr.
+
 Cycle:
   cycle advances in Cycle order: off, transparency, adaptive, and
   noise-cancellation, wrapping around, and prints the mode it landed on.
@@ -212,6 +245,8 @@ Cycle:
   given, wrapping from the last mode to the first. If the current mode is
   unknown, or outside the set, cycle starts at the first mode in the
   order given.
+  An empty --modes token, a one-mode set, or a repeated mode that leaves one
+  distinct mode exits bad-args and names that mistake on stderr.
 
 Options:
   --device NAME
@@ -248,6 +283,9 @@ Usage:
 
 Alias:
   ca
+
+set accepts on or off. Another state token exits bad-args and names the token
+on stderr.
 
 Options:
   --device NAME
@@ -346,8 +384,9 @@ func helpText(for rawArgs: [String]) -> String? {
 }
 
 // Parses a --modes value into distinct modes in cycle order.
-// Empty or unknown tokens and sets of fewer than two distinct modes are
-// parse errors.
+// An empty or unknown token, a repeated mode that leaves one distinct mode,
+// and a one-mode set are classified parse errors. A repeat that leaves at
+// least two distinct modes is ignored.
 func parseCycleModes(_ raw: String) throws -> [ListeningMode] {
   let ordered = try distinctCycleModes(raw)
   let unique = Set(ordered)
@@ -369,22 +408,29 @@ private func cycleRequest(
 }
 
 private func distinctCycleModes(_ raw: String) throws -> [ListeningMode] {
-  let tokens = try raw
-    .split(separator: ",", omittingEmptySubsequences: false)
-    .map { piece -> ListeningMode in
-      guard let mode = ListeningMode(token: String(piece)) else {
-        throw CLIParseError()
-      }
-      return mode
-    }
   var ordered: [ListeningMode] = []
   var seen = Set<ListeningMode>()
-  for mode in tokens {
+  var repeated: ListeningMode?
+  for piece in raw.split(separator: ",", omittingEmptySubsequences: false) {
+    let token = String(piece)
+    if token.isEmpty {
+      throw CLIParseError(reason: .emptyCycleToken)
+    }
+    guard let mode = ListeningMode(token: token) else {
+      throw CLIParseError(reason: .unknownListeningMode(token: token))
+    }
     if seen.insert(mode).inserted {
       ordered.append(mode)
+    } else {
+      repeated = repeated ?? mode
     }
   }
-  guard ordered.count >= 2 else { throw CLIParseError() }
+  guard ordered.count >= 2 else {
+    if let repeated {
+      throw CLIParseError(reason: .repeatedModeCollapsed(repeated))
+    }
+    throw CLIParseError(reason: .singleCycleMode)
+  }
   return ordered
 }
 
@@ -517,10 +563,9 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       command = .listeningModeGet
 
     case "set":
-      guard positional.count == 3,
-            let mode = ListeningMode(token: positional[2])
-      else {
-        throw CLIParseError()
+      guard positional.count == 3 else { throw CLIParseError() }
+      guard let mode = ListeningMode(token: positional[2]) else {
+        throw CLIParseError(reason: .unknownListeningMode(token: positional[2]))
       }
       command = .listeningModeSet(mode)
 
@@ -548,10 +593,17 @@ func parseInvocation(_ rawArgs: [String]) throws -> CLIInvocation {
       command = .conversationAwarenessGet
 
     case "set":
-      guard positional.count == 3, ["on", "off"].contains(positional[2]) else {
-        throw CLIParseError()
+      guard positional.count == 3 else { throw CLIParseError() }
+      switch positional[2] {
+      case "on":
+        command = .conversationAwarenessSet(true)
+      case "off":
+        command = .conversationAwarenessSet(false)
+      default:
+        throw CLIParseError(
+          reason: .unknownConversationAwarenessState(token: positional[2])
+        )
       }
-      command = .conversationAwarenessSet(positional[2] == "on")
 
     default:
       throw CLIParseError()
