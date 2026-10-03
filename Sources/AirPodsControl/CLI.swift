@@ -198,16 +198,17 @@ Mode aliases:
   anc, nc      noise-cancellation
 
 Cycle:
-  cycle advances in cycle order: off, transparency, adaptive,
-  noise-cancellation. It wraps around and prints the mode it landed on. The cycle
-  set defaults to every mode the device supports except off. Off is included
-  only when --modes lists it and the device supports it. Modes the device
-  lacks are skipped, so a device without adaptive goes from
-  noise-cancellation to transparency. --modes selects an explicit subset (at
-  least two distinct modes); argument order does not matter. If the current
-  mode is outside the cycle set, cycle still advances in the order above
-  from the current mode to the next mode that is in the set (wrapping); if
-  the current mode is unknown, cycle starts at the set's first mode.
+  cycle advances in Cycle order: off, transparency, adaptive, and
+  noise-cancellation, wrapping around, and prints the mode it landed on.
+  The set defaults to every mode the device supports except off. Off is
+  included only when --modes lists it and the device supports it. A mode
+  the device lacks is skipped, so a device without adaptive goes from
+  noise-cancellation to transparency. --modes selects an explicit subset
+  of at least two distinct modes. The order of those names does not
+  matter. If the current mode is outside the set, cycle continues from
+  that mode's place in the Cycle order to the next mode in the set
+  (wrapping). If the current mode is unknown, cycle starts at the set's
+  first mode.
 
 Options:
   --device NAME

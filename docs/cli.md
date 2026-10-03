@@ -136,14 +136,13 @@ $ pods-control lm cycle
 noise-cancellation
 ```
 
-By default, the cycle set contains every supported mode except `off`. Modes
-cycle in cycle order (`off`, `transparency`, `adaptive`,
-`noise-cancellation`) and wrap at the end. `off` is included only when
-`--modes` lists it and the device supports it. Modes the device does not
-support are skipped, so a device without `adaptive` goes from
-`noise-cancellation` to `transparency`. If the current mode is outside the
-cycle set, the command still advances from its position in that cycle order.
-For example, cycling from `adaptive` with
+By default, the cycle set contains every supported mode except `off`. Cycle
+order is `off`, `transparency`, `adaptive`, `noise-cancellation`, and it
+wraps at the end. `off` is included only when `--modes` lists it and the
+device supports it. A mode the device does not support is skipped, so a
+device without `adaptive` goes from `noise-cancellation` to `transparency`.
+If the current mode is outside the set, the command continues from that
+mode's place in the Cycle order. For example, cycling from `adaptive` with
 `--modes transparency,noise-cancellation` lands on `noise-cancellation`.
 Cycling from `adaptive` with `--modes off,transparency` wraps to `off`. If
 the current mode is `unknown`, `cycle` starts at the first mode in the set.
@@ -158,8 +157,8 @@ $ pods-control lm cycle --modes off,transparency,noise-cancellation
 transparency
 ```
 
-Order within `--modes` does not matter. Cycling follows the cycle order, and
-the command accepts the mode aliases listed above. Fewer than two
+The order of names in `--modes` does not matter. Cycling follows the Cycle
+order, and the command accepts the mode aliases listed above. Fewer than two
 distinct modes or an unknown token produces `bad-args` (exit `2`). The
 command skips modes that the connected device does not support. If fewer
 than two remain, it reports `unsupported` (exit `4`). A change that cannot

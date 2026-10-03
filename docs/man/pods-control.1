@@ -240,7 +240,7 @@ Without usable positive evidence, HAL lists omit Off. The default cycle never in
 or explicit cycle containing Off may make one HAL setter attempt when there is neither usable positive evidence nor a cached denial. A cached denial suppresses the probe and makes explicit Off unsupported. AV-backed commands follow the modes AV advertises, including Off when advertised.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
-Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes cycle in cycle order:
+Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Cycle order is
 .BR off ,
 .BR transparency ,
 .BR adaptive ,
@@ -248,21 +248,21 @@ Advance to the next mode in the cycle set, wrapping around, and print the mode l
 .B off
 is included only when
 .B --modes
-lists it and the device supports it. The cycle set otherwise defaults to every mode the device supports except
+lists it and the device supports it. Otherwise the set is every mode the device supports except
 .BR off .
 .B --modes
-selects an explicit subset of at least two distinct modes; argument order does not matter. Modes the device does not support are skipped, so a device without
+selects an explicit subset of at least two distinct modes. The order of those names does not matter. A mode the device does not support is skipped, so a device without
 .B adaptive
 goes from
 .B noise-cancellation
 to
 .BR transparency .
-If fewer than two remain the command reports
+If fewer than two remain, the command reports
 .B unsupported
-(exit 4). If the current mode is outside the cycle set (including
+(exit 4). If the current mode is outside the set (including
 .BR off
-when the default set is in use),
-cycle still advances in cycle order from the current mode to the next mode that is in the set, wrapping around; if the current mode is unknown, cycle starts at the set's first mode. A change that does not verify reports
+on the default cycle),
+the command continues from that mode's place in the Cycle order to the next mode in the set, wrapping around. If the current mode is unknown, the command starts at the set's first mode. A change that does not verify reports
 .B no-op
 (exit 3).
 .SS ALLOW OFF CACHE
