@@ -346,9 +346,7 @@ func helpText(for rawArgs: [String]) -> String? {
   }
 }
 
-// Parses a --modes value into distinct modes in cycle order.
-// Empty or unknown tokens and sets of fewer than two distinct modes are
-// parse errors.
+// Returns the modes accepted by distinctCycleModes in cycle order.
 func parseCycleModes(_ raw: String) throws -> [ListeningMode] {
   let ordered = try distinctCycleModes(raw)
   let unique = Set(ordered)
@@ -369,6 +367,9 @@ private func cycleRequest(
   return .subset(try parseCycleModes(rawModes))
 }
 
+// Parses a --modes list in the order given.
+// Empty or unknown tokens, a repeated canonical mode (an alias of a mode
+// already listed counts), and fewer than two modes are parse errors.
 private func distinctCycleModes(_ raw: String) throws -> [ListeningMode] {
   let tokens = try raw
     .split(separator: ",", omittingEmptySubsequences: false)
