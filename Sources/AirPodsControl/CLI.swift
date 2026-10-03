@@ -219,7 +219,8 @@ Options:
                Duplicate exact names are ambiguous.
   --modes <m1,m2[,...]>
                Cycle set for listening-mode cycle: at least two distinct
-               modes, comma-separated. Mode aliases are accepted.
+               modes, comma-separated. Mode aliases are accepted. A
+               repeated mode is an error.
   --explicit-order
                Cycle modes in the order given. Requires --modes. Supply
                it once.
@@ -380,9 +381,8 @@ private func distinctCycleModes(_ raw: String) throws -> [ListeningMode] {
   var ordered: [ListeningMode] = []
   var seen = Set<ListeningMode>()
   for mode in tokens {
-    if seen.insert(mode).inserted {
-      ordered.append(mode)
-    }
+    guard seen.insert(mode).inserted else { throw CLIParseError() }
+    ordered.append(mode)
   }
   guard ordered.count >= 2 else { throw CLIParseError() }
   return ordered
