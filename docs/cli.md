@@ -30,10 +30,11 @@ For interactive use, `trans` aliases `transparency`; `automatic` and `auto`
 alias `adaptive`; and `anc` and `nc` alias `noise-cancellation`. Output always
 uses the canonical names. There is intentionally no alias for `off`.
 
-An unknown mode or state token produces `bad-args` (exit `2`). For an individual
-resource command, a valid feature that the connected hardware does not provide
-produces `unsupported` (exit `4`). Aggregate status instead omits a
-proven-unsupported field.
+An unknown mode or state token produces `bad-args` (exit `2`). Stderr names an
+unknown listening mode or a conversation-awareness state other than `on` or
+`off`. For an individual resource command, a valid feature that the connected
+hardware does not provide produces `unsupported` (exit `4`). Aggregate status
+instead omits a proven-unsupported field.
 
 Operational commands accept `--device NAME`, `--json`, and `--debug` in any
 position. `--device` uses a case-insensitive, whole-name match among the
@@ -158,11 +159,13 @@ transparency
 ```
 
 The command accepts the mode aliases listed above. The order of those modes
-does not matter unless `--explicit-order` is set. Fewer than two
-distinct modes or an unknown token produces `bad-args` (exit `2`). The
-command skips modes that the connected device does not support. If fewer
-than two remain, it reports `unsupported` (exit `4`). A change that cannot
-be verified reports `no-op` (exit `3`).
+does not matter unless `--explicit-order` is set. Fewer than two distinct
+modes or an unknown token produces `bad-args` (exit `2`). Stderr names an
+unknown mode, an empty token, a repeated mode that leaves one distinct
+mode, or a one-mode set. A repeated name that still leaves two distinct
+modes is ignored. The command skips modes that the connected device does
+not support. If fewer than two remain, it reports `unsupported` (exit `4`).
+A change that cannot be verified reports `no-op` (exit `3`).
 
 `--explicit-order` requires `--modes` and cycles those modes in the order
 given, wrapping from the last mode to the first. If the current mode is

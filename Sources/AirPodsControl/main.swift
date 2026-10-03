@@ -228,6 +228,11 @@ let invocation: CLIInvocation
 do {
   invocation = try parseInvocation(rawArgs)
 } catch {
+  if let parseError = error as? CLIParseError,
+     let line = parseError.stderrLine {
+    fputs(line + "\n", stderr)
+    fflush(stderr)
+  }
   preliminaryLogger.warning("cli.parse", "bad-args")
   finish(plain: "bad-args", terminalReason: .badArgs, jsonOutput: preliminaryJSON)
 }

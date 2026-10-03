@@ -318,7 +318,9 @@ the current state does not issue another write. It uses the same
 .B ok
 and
 .B no-op
-contract as listening mode.
+contract as listening mode. Another state token is
+.B bad-args
+(exit 2), and stderr names the token.
 .SS GLOBAL
 .TP
 .B support-report
@@ -386,6 +388,9 @@ alias
 .BR noise-cancellation .
 Output always uses canonical names. There is no alias for
 .BR off .
+An unknown mode token is
+.B bad-args
+(exit 2), and stderr names the token.
 .SH OPTIONS
 .TP
 .BI "--modes " m1,m2[,...]
@@ -393,9 +398,11 @@ For
 .BR "listening-mode cycle" :
 a comma-separated subset of the modes documented under
 .BR MODES ,
-at least two distinct entries. Mode aliases are accepted. Duplicates are ignored. Unknown tokens are
+at least two distinct entries. Mode aliases are accepted. A repeated name that
+still leaves two distinct modes is ignored. An unknown token, an empty token,
+a one-mode set, or a repeated mode that leaves one distinct mode is
 .B bad-args
-(exit 2).
+(exit 2), and stderr names the mistake.
 .TP
 .B --explicit-order
 For
