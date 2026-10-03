@@ -11,6 +11,9 @@ private let allowOffCacheLockRetryMicroseconds: useconds_t = 10_000
 let allowOffCacheDirectoryName = "io.github.raulgg.pods-control"
 let allowOffCacheLegacyDirectoryName = "io.github.raulgg.airpods-control"
 let allowOffCacheFileName = "allow-off-v1.json"
+let allowOffCacheLegacyMigrationMarkerName =
+  "allow-off-v1.migrated-to-pods-control"
+private let allowOffCacheLegacyMigrationMarkerBytes = Data("1\n".utf8)
 private let allowOffCacheDenyMarkerPrefix = "allow-off-v1-deny-"
 private let allowOffCacheDenyMarkerSuffix = ".jsonl"
 private let allowOffCacheDenyMarkerMaximumByteCount = 4_096
@@ -204,6 +207,9 @@ final class AllowOffCacheFileStorage {
   ) -> AllowOffCacheMutation {
     allowOffCacheProcessMutationLock.lock()
     defer { allowOffCacheProcessMutationLock.unlock() }
+    // Import before creating the new directory. Creating it first would make
+    // the legacy file look already migrated and drop its evidence.
+    importLegacyAllowOffCacheIfNeeded()
     guard ensureCacheDirectory(), let descriptor = openLockFile() else {
       return .unavailable
     }
@@ -215,6 +221,15 @@ final class AllowOffCacheFileStorage {
 
   private var directoryURL: URL {
     fileURL.deletingLastPathComponent()
+  }
+
+  private var legacyDirectoryURL: URL {
+    directoryURL
+      .deletingLastPathComponent()
+      .appendingPathComponent(
+        allowOffCacheLegacyDirectoryName,
+        isDirectory: true
+      )
   }
 
   private var lockFileURL: URL {
@@ -380,32 +395,50 @@ final class AllowOffCacheFileStorage {
     }
   }
 
-  // Copies a trusted legacy cache. A file the reader would reject stays
-  // where it is, and a path this call did not create is never chmod'd.
+  // Copies a trusted legacy cache once. A file the reader would reject
+  // stays where it is, and a path this call did not create is never chmod'd.
+  // After the new directory or the legacy migration marker exists, a missing
+  // file stays missing so a purge or deletion cannot restore stale evidence.
   private func importLegacyAllowOffCacheIfNeeded() {
     guard directoryURL.lastPathComponent == allowOffCacheDirectoryName,
-          fileURL.lastPathComponent == allowOffCacheFileName,
-          pathIsAbsent(fileURL)
+          fileURL.lastPathComponent == allowOffCacheFileName
     else { return }
-    let legacyDirectoryURL = directoryURL
-      .deletingLastPathComponent()
-      .appendingPathComponent(
-        allowOffCacheLegacyDirectoryName,
-        isDirectory: true
-      )
-    guard let legacyDirectory = openTrustedDirectory(legacyDirectoryURL) else {
+    let legacyDirectory = openTrustedDirectory(legacyDirectoryURL)
+    defer {
+      if let legacyDirectory {
+        Darwin.close(legacyDirectory)
+      }
+    }
+    if let legacyDirectory,
+       legacyMigrationMarkerIsPresent(dirfd: legacyDirectory) {
       return
     }
-    defer { Darwin.close(legacyDirectory) }
-    guard let legacy = readTrustedLegacyCache(dirfd: legacyDirectory) else {
+    if !pathIsAbsent(directoryURL) {
+      if let legacyDirectory,
+         let currentDirectory = openTrustedDirectory(directoryURL) {
+        Darwin.close(currentDirectory)
+        recordLegacyMigrationMarker(dirfd: legacyDirectory)
+      }
       return
     }
-    guard let destination = openNewCacheDirectory() else { return }
-    defer { Darwin.close(destination) }
+    guard let legacyDirectory,
+          let legacy = readTrustedLegacyCache(dirfd: legacyDirectory)
+    else { return }
+    guard let opened = openNewCacheDirectory() else { return }
+    let destination = opened.descriptor
+    let creation = opened.creation
+    var committed = false
+    defer {
+      Darwin.close(destination)
+      if !committed {
+        removeEmptyDirectoryIfCreated(creation)
+      }
+    }
 
     var created: [CreatedAllowOffCacheFile] = []
     switch installExclusiveSibling(
       dirfd: destination,
+      parentURL: directoryURL,
       name: allowOffCacheFileName,
       bytes: legacy.document,
       maximumByteCount: AllowOffCachePolicy.maximumByteCount
@@ -422,6 +455,7 @@ final class AllowOffCacheFileStorage {
     for marker in legacy.markers {
       switch installExclusiveSibling(
         dirfd: destination,
+        parentURL: directoryURL,
         name: marker.name,
         bytes: marker.bytes,
         maximumByteCount: allowOffCacheDenyMarkerMaximumByteCount
@@ -441,6 +475,31 @@ final class AllowOffCacheFileStorage {
       removeCreatedFiles(dirfd: destination, created)
       return
     }
+    recordLegacyMigrationMarker(dirfd: legacyDirectory)
+    committed = true
+  }
+
+  private func legacyMigrationMarkerIsPresent(dirfd: Int32) -> Bool {
+    switch readSibling(
+      dirfd: dirfd,
+      name: allowOffCacheLegacyMigrationMarkerName,
+      maximumByteCount: allowOffCacheLegacyMigrationMarkerBytes.count
+    ) {
+    case .absent:
+      return false
+    case .rejected, .value:
+      return true
+    }
+  }
+
+  private func recordLegacyMigrationMarker(dirfd: Int32) {
+    _ = installExclusiveSibling(
+      dirfd: dirfd,
+      parentURL: legacyDirectoryURL,
+      name: allowOffCacheLegacyMigrationMarkerName,
+      bytes: allowOffCacheLegacyMigrationMarkerBytes,
+      maximumByteCount: allowOffCacheLegacyMigrationMarkerBytes.count
+    )
   }
 
   private struct AllowOffCacheFileIdentity: Equatable {
@@ -510,31 +569,39 @@ final class AllowOffCacheFileStorage {
       > allowOffCacheDenyMarkerPrefix.count + allowOffCacheDenyMarkerSuffix.count
   }
 
-  private func openNewCacheDirectory() -> Int32? {
+  private func openNewCacheDirectory() -> (
+    descriptor: Int32,
+    creation: DirectoryCreation
+  )? {
     let creation = makeCacheDirectory()
     guard creation != .failed else { return nil }
     let descriptor = openFile(
       directoryURL,
       flags: O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
     )
-    guard descriptor >= 0 else { return nil }
+    guard descriptor >= 0 else {
+      removeEmptyDirectoryIfCreated(creation)
+      return nil
+    }
     var value = stat()
     guard Darwin.fstat(descriptor, &value) == 0,
           isTrustedOwnedDirectory(value)
     else {
       Darwin.close(descriptor)
+      removeEmptyDirectoryIfCreated(creation)
       return nil
     }
     if creation == .created {
       guard Darwin.fchmod(descriptor, allowOffCacheDirectoryPermissions) == 0 else {
         Darwin.close(descriptor)
+        removeEmptyDirectoryIfCreated(creation)
         return nil
       }
     } else if permissionBits(value) != allowOffCacheDirectoryPermissions {
       Darwin.close(descriptor)
       return nil
     }
-    return descriptor
+    return (descriptor, creation)
   }
 
   private func makeCacheDirectory() -> DirectoryCreation {
@@ -556,6 +623,7 @@ final class AllowOffCacheFileStorage {
 
   private func installExclusiveSibling(
     dirfd: Int32,
+    parentURL: URL,
     name: String,
     bytes: Data,
     maximumByteCount: Int
@@ -635,7 +703,7 @@ final class AllowOffCacheFileStorage {
       installed == bytes,
       installedIdentity == identity,
       excludeBackupIfUnchanged(
-        directoryURL.appendingPathComponent(name, isDirectory: false),
+        parentURL.appendingPathComponent(name, isDirectory: false),
         dirfd: dirfd,
         name: name,
         identity: identity
@@ -773,6 +841,14 @@ final class AllowOffCacheFileStorage {
       return nil
     }
     return descriptor
+  }
+
+  private func removeEmptyDirectoryIfCreated(_ creation: DirectoryCreation) {
+    guard creation == .created else { return }
+    directoryURL.withUnsafeFileSystemRepresentation { path in
+      guard let path else { return }
+      _ = Darwin.rmdir(path)
+    }
   }
 
   private func pathIsAbsent(_ url: URL) -> Bool {
