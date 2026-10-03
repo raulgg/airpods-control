@@ -12,7 +12,7 @@ pods-control [--device NAME] listening-mode get [--json] [--debug]
 pods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
 pods-control [--device NAME] listening-mode list [--json] [--debug]
 pods-control [--device NAME] listening-mode cycle
-    [--modes <m1,m2[,...]>] [--listed-order] [--json] [--debug]
+    [--modes <m1,m2[,...]>] [--explicit-order] [--json] [--debug]
 pods-control [--device NAME] conversation-awareness get [--json] [--debug]
 pods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
 pods-control support-report [--with-write-tests | --no-write-tests] [--debug]
@@ -157,14 +157,14 @@ $ pods-control lm cycle --modes off,transparency,noise-cancellation
 transparency
 ```
 
-The order of names in `--modes` matters only when `--listed-order` is set.
+The order of names in `--modes` matters only when `--explicit-order` is set.
 Otherwise cycling follows the Cycle order, and the command accepts the mode
 aliases listed above. Fewer than two distinct modes or an unknown token
 produces `bad-args` (exit `2`). The command skips modes that the connected
 device does not support. If fewer than two remain, it reports `unsupported`
 (exit `4`). A change that cannot be verified reports `no-op` (exit `3`).
 
-`--listed-order` requires `--modes`. It cycles through those names in the
+`--explicit-order` requires `--modes`. It cycles through those names in the
 order written and wraps from the last name to the first. A mode the device
 does not support is skipped, and the names that remain stay in that order.
 If the current mode is `unknown`, or outside the names that remain, `cycle`
@@ -172,7 +172,7 @@ starts at the first of those names. From `adaptive`, this command lands on
 `transparency`:
 
 ```console
-$ pods-control lm cycle --listed-order --modes adaptive,transparency,noise-cancellation
+$ pods-control lm cycle --explicit-order --modes adaptive,transparency,noise-cancellation
 transparency
 ```
 
@@ -181,7 +181,7 @@ Those names in Cycle order land on `noise-cancellation` from `adaptive`.
 From `off`, or from an `unknown` mode, this command starts at `adaptive`:
 
 ```console
-$ pods-control lm cycle --listed-order --modes adaptive,noise-cancellation,transparency
+$ pods-control lm cycle --explicit-order --modes adaptive,noise-cancellation,transparency
 adaptive
 ```
 

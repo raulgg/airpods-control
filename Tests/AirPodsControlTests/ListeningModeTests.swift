@@ -61,36 +61,36 @@ struct ListeningModeTests {
     )
   }
 
-  @Test("Follows the written list when listed order is requested")
-  func listedOrderCycle() {
+  @Test("Follows the written list when explicit order is requested")
+  func explicitOrderCycle() {
     let listed: [ListeningMode] = [
       .adaptive, .transparency, .noiseCancellation,
     ]
     #expect(
-      ListeningMode.next(current: .adaptive, within: listed, order: .listed) == .transparency,
-      "listed order advances from Adaptive to Transparency"
+      ListeningMode.next(current: .adaptive, within: listed, order: .explicit) == .transparency,
+      "explicit order advances from Adaptive to Transparency"
     )
     #expect(
-      ListeningMode.next(current: .transparency, within: listed, order: .listed)
+      ListeningMode.next(current: .transparency, within: listed, order: .explicit)
         == .noiseCancellation,
-      "listed order continues to Noise cancellation"
+      "explicit order continues to Noise cancellation"
     )
     #expect(
-      ListeningMode.next(current: .noiseCancellation, within: listed, order: .listed)
+      ListeningMode.next(current: .noiseCancellation, within: listed, order: .explicit)
         == .adaptive,
-      "listed order wraps to the first written mode"
+      "explicit order wraps to the first written mode"
     )
 
     let rotation: [ListeningMode] = [
       .adaptive, .noiseCancellation, .transparency,
     ]
     #expect(
-      ListeningMode.next(current: nil, within: rotation, order: .listed) == .adaptive,
-      "an unknown mode starts at the first listed mode"
+      ListeningMode.next(current: nil, within: rotation, order: .explicit) == .adaptive,
+      "an unknown mode starts at the first written mode"
     )
     #expect(
-      ListeningMode.next(current: .off, within: rotation, order: .listed) == .adaptive,
-      "a mode outside the list starts at the first listed mode"
+      ListeningMode.next(current: .off, within: rotation, order: .explicit) == .adaptive,
+      "a mode outside the list starts at the first written mode"
     )
   }
 

@@ -32,7 +32,7 @@ pods-control \- macOS CLI for AirPods and Beats listening modes
 .B cycle
 .RB [ --modes
 .IR m1,m2[,...] ]
-.RB [ --listed-order ]
+.RB [ --explicit-order ]
 .RB [ --json ]
 .RB [ --debug ]
 .br
@@ -253,7 +253,7 @@ lists it and the device supports it. Otherwise the set is every mode the device 
 .BR off .
 .B --modes
 selects an explicit subset of at least two distinct modes. The order of those names matters only when
-.B --listed-order
+.B --explicit-order
 is set. Otherwise cycling follows Cycle order. A mode the device does not support is skipped, so a device without
 .B adaptive
 goes from
@@ -266,7 +266,7 @@ If fewer than two remain, the command reports
 .BR off
 on the default cycle),
 the command continues from that mode's place in the Cycle order to the next mode in the set, wrapping around. If the current mode is unknown, the command starts at the set's first mode.
-.B --listed-order
+.B --explicit-order
 requires
 .B --modes
 and cycles through those names in the order written, wrapping from the last name to the first. A mode the device does not support is skipped, and the names that remain stay in that order. If the current mode is unknown, or outside the names that remain, the command starts at the first of those names. A change that does not verify reports
@@ -397,7 +397,7 @@ at least two distinct entries. Mode aliases are accepted. Duplicates are ignored
 .B bad-args
 (exit 2).
 .TP
-.B --listed-order
+.B --explicit-order
 For
 .BR "listening-mode cycle" ,
 with

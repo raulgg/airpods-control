@@ -143,23 +143,23 @@ struct CLIParsingTests {
         ["lm", "get", "--modes", "transparency,adaptive"]
       ),
       InvalidInvocation(
-        "listed order without modes",
-        ["lm", "cycle", "--listed-order"]
+        "explicit order without modes",
+        ["lm", "cycle", "--explicit-order"]
       ),
       InvalidInvocation(
-        "listed order on get",
-        ["lm", "get", "--listed-order"]
+        "explicit order on get",
+        ["lm", "get", "--explicit-order"]
       ),
       InvalidInvocation(
-        "duplicate listed order",
+        "duplicate explicit order",
         [
-          "lm", "cycle", "--listed-order", "--listed-order", "--modes",
+          "lm", "cycle", "--explicit-order", "--explicit-order", "--modes",
           "adaptive,transparency",
         ]
       ),
       InvalidInvocation(
-        "listed order aliases deduplicate",
-        ["lm", "cycle", "--listed-order", "--modes", "trans,transparency"]
+        "explicit order aliases deduplicate",
+        ["lm", "cycle", "--explicit-order", "--modes", "trans,transparency"]
       ),
     ]
   )
@@ -169,7 +169,7 @@ struct CLIParsingTests {
     }
   }
 
-  @Test("Preserves listed cycle order only when --listed-order is set")
+  @Test("Preserves explicit cycle order only when --explicit-order is set")
   func preservesListedCycleOrder() throws {
     let sorted = try parseInvocation([
       "lm", "cycle", "--modes", "adaptive,noise-cancellation,transparency",
@@ -177,27 +177,27 @@ struct CLIParsingTests {
     let sortedRequest = try #require(listeningModeCycleRequest(from: sorted.command))
     #expect(
       sortedRequest == .subset([.transparency, .adaptive, .noiseCancellation]),
-      "--modes without --listed-order sorts into cycle order"
+      "--modes without --explicit-order sorts into cycle order"
     )
 
     let listed = try parseInvocation([
-      "lm", "cycle", "--listed-order", "--modes",
+      "lm", "cycle", "--explicit-order", "--modes",
       "adaptive,noise-cancellation,transparency",
     ])
     let listedRequest = try #require(listeningModeCycleRequest(from: listed.command))
     #expect(
-      listedRequest == .listed([.adaptive, .noiseCancellation, .transparency]),
-      "--listed-order keeps the written mode sequence"
+      listedRequest == .explicitOrder([.adaptive, .noiseCancellation, .transparency]),
+      "--explicit-order keeps the written mode sequence"
     )
 
     let flagAfterModes = try parseInvocation([
-      "lm", "cycle", "--modes", "anc,trans,adaptive,anc", "--listed-order",
+      "lm", "cycle", "--modes", "anc,trans,adaptive,anc", "--explicit-order",
     ])
     let flagAfterRequest = try #require(
       listeningModeCycleRequest(from: flagAfterModes.command)
     )
     #expect(
-      flagAfterRequest == .listed([
+      flagAfterRequest == .explicitOrder([
         .noiseCancellation, .transparency, .adaptive,
       ]),
       "aliases canonicalize and duplicate names are ignored"

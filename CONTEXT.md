@@ -151,7 +151,7 @@
   cycle leaves `off` out. An explicit cycle includes `off` only when its
   set names `off` and the device supports it. `--modes` selects a set, and
   cycling follows Cycle order, including when the current mode is outside
-  that set. `--listed-order` cycles through the `--modes` names in the
+  that set. `--explicit-order` cycles through the `--modes` names in the
   order written. It starts at the first name that remains when the current
   mode is unknown or outside those names. Cycling skips a mode the device
   does not support. Support-report write tests probe Cycle order in

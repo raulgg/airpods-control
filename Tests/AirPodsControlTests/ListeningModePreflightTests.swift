@@ -197,9 +197,9 @@ struct ListeningModePreflightTests {
     )
     #expect(
       ListeningModePreflightPolicy.commandExplicitlyTargetsOff(
-        .cycle(.listed([.off, .transparency]))
+        .cycle(.explicitOrder([.off, .transparency]))
       ),
-      "a listed Off cycle targets Off"
+      "an explicit-order Off cycle targets Off"
     )
     #expect(
       !ListeningModePreflightPolicy.commandMayUseAllowOffCache(.cycle(.defaultCycle)),
@@ -213,9 +213,9 @@ struct ListeningModePreflightTests {
     )
     #expect(
       ListeningModePreflightPolicy.commandMayUseAllowOffCache(
-        .cycle(.listed([.off, .transparency]))
+        .cycle(.explicitOrder([.off, .transparency]))
       ),
-      "a listed Off cycle may use Allow Off cache evidence"
+      "an explicit-order Off cycle may use Allow Off cache evidence"
     )
 
     // The two predicates disagree for `list`: it surfaces cached Allow Off

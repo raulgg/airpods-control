@@ -41,7 +41,7 @@ enum ListeningMode: String, CaseIterable {
     order: ListeningModeCycleOrder = .cycle
   ) -> ListeningMode {
     switch order {
-    case .listed:
+    case .explicit:
       guard let current, let start = cycle.firstIndex(of: current) else {
         return cycle[0]
       }
@@ -61,19 +61,19 @@ enum ListeningMode: String, CaseIterable {
 
 enum ListeningModeCycleOrder: Equatable {
   case cycle
-  case listed
+  case explicit
 }
 
 enum ListeningModeCycleRequest: Equatable {
   case defaultCycle
   case subset([ListeningMode])
-  case listed([ListeningMode])
+  case explicitOrder([ListeningMode])
 
   var modes: [ListeningMode]? {
     switch self {
     case .defaultCycle:
       return nil
-    case let .subset(modes), let .listed(modes):
+    case let .subset(modes), let .explicitOrder(modes):
       return modes
     }
   }
@@ -82,8 +82,8 @@ enum ListeningModeCycleRequest: Equatable {
     switch self {
     case .defaultCycle, .subset(_):
       return .cycle
-    case .listed(_):
-      return .listed
+    case .explicitOrder(_):
+      return .explicit
     }
   }
 }

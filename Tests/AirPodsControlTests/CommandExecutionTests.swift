@@ -467,25 +467,25 @@ struct CommandExecutionTests {
   }
 
   @Test("Cycles through --modes in the order written")
-  func listedOrderCycleCommand() throws {
+  func explicitOrderCycleCommand() throws {
     let listedDevice = FakeCompatibleAudioDevice(
       name: "Listed Order AirPods",
       listeningMode: .adaptive
     )
     let listed = try commandOutcome(
       [
-        "lm", "cycle", "--listed-order", "--modes",
+        "lm", "cycle", "--explicit-order", "--modes",
         "adaptive,transparency,noise-cancellation",
       ],
       device: listedDevice
     )
     #expect(
       listed.plain == "transparency",
-      "listed order advances from Adaptive to Transparency"
+      "explicit order advances from Adaptive to Transparency"
     )
     #expect(
       listedDevice.listeningMode == .transparency,
-      "listed order applies its target"
+      "explicit order applies its target"
     )
 
     let cycleOrderDevice = FakeCompatibleAudioDevice(
@@ -501,7 +501,7 @@ struct CommandExecutionTests {
     )
     #expect(
       cycleOrder.plain == "noise-cancellation",
-      "the same names without --listed-order follow cycle order"
+      "the same names without --explicit-order follow cycle order"
     )
   }
 
