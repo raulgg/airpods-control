@@ -153,13 +153,13 @@ struct CLIParsingTests {
       InvalidInvocation(
         "duplicate explicit order",
         [
-          "lm", "cycle", "--explicit-order", "--explicit-order", "--modes",
-          "adaptive,transparency",
+          "lm", "cycle", "--modes", "adaptive,transparency",
+          "--explicit-order", "--explicit-order",
         ]
       ),
       InvalidInvocation(
         "explicit order aliases deduplicate",
-        ["lm", "cycle", "--explicit-order", "--modes", "trans,transparency"]
+        ["lm", "cycle", "--modes", "trans,transparency", "--explicit-order"]
       ),
     ]
   )
@@ -181,13 +181,25 @@ struct CLIParsingTests {
     )
 
     let listed = try parseInvocation([
-      "lm", "cycle", "--explicit-order", "--modes",
-      "adaptive,noise-cancellation,transparency",
+      "lm", "cycle", "--modes",
+      "adaptive,noise-cancellation,transparency", "--explicit-order",
     ])
     let listedRequest = try #require(listeningModeCycleRequest(from: listed.command))
     #expect(
       listedRequest == .explicitOrder([.adaptive, .noiseCancellation, .transparency]),
       "--explicit-order keeps the written mode sequence"
+    )
+
+    let flagBeforeModes = try parseInvocation([
+      "lm", "cycle", "--explicit-order", "--modes",
+      "adaptive,noise-cancellation,transparency",
+    ])
+    let flagBeforeRequest = try #require(
+      listeningModeCycleRequest(from: flagBeforeModes.command)
+    )
+    #expect(
+      flagBeforeRequest == listedRequest,
+      "the flag is also accepted before --modes"
     )
 
     let flagAfterModes = try parseInvocation([

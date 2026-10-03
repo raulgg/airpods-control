@@ -474,8 +474,8 @@ struct CommandExecutionTests {
     )
     let listed = try commandOutcome(
       [
-        "lm", "cycle", "--explicit-order", "--modes",
-        "adaptive,transparency,noise-cancellation",
+        "lm", "cycle", "--modes",
+        "adaptive,transparency,noise-cancellation", "--explicit-order",
       ],
       device: listedDevice
     )

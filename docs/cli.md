@@ -171,7 +171,7 @@ order given. From `adaptive`,
 `--modes adaptive,transparency,noise-cancellation` lands on `transparency`:
 
 ```console
-$ pods-control lm cycle --explicit-order --modes adaptive,transparency,noise-cancellation
+$ pods-control lm cycle --modes adaptive,transparency,noise-cancellation --explicit-order
 transparency
 ```
 
@@ -181,7 +181,7 @@ From `off`, or from an `unknown` mode,
 `--modes adaptive,noise-cancellation,transparency` starts at `adaptive`:
 
 ```console
-$ pods-control lm cycle --explicit-order --modes adaptive,noise-cancellation,transparency
+$ pods-control lm cycle --modes adaptive,noise-cancellation,transparency --explicit-order
 adaptive
 ```
 
