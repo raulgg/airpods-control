@@ -72,7 +72,7 @@ enum ListeningModeCommand {
   case get
   case list
   case set(ListeningMode)
-  case cycle([ListeningMode]?)
+  case cycle(ListeningModeCycleRequest)
 
   init?(_ command: CLICommand) {
     switch command {
@@ -82,8 +82,8 @@ enum ListeningModeCommand {
       self = .list
     case .listeningModeSet(let target):
       self = .set(target)
-    case .listeningModeCycle(let requested):
-      self = .cycle(requested)
+    case .listeningModeCycle(let request):
+      self = .cycle(request)
     case .version, .status, .supportReport,
          .conversationAwarenessGet, .conversationAwarenessSet:
       return nil
@@ -624,9 +624,9 @@ final class ListeningModeCoordinator {
       }
     case .set(let target):
       return session.writePlan?.canWrite(target) == true
-    case .cycle(let requested):
+    case .cycle(let request):
       let supported = ListeningModeCyclePolicy.supportedModes(
-        requested: requested,
+        requested: request.modes,
         available: session.availableModes
       )
       return supported.count >= 2 && session.writePlan != nil

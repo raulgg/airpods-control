@@ -149,10 +149,14 @@
   or `noise-cancellation`, in Cycle order. Parsing, aliases, listing,
   cycling, and write-result interpretation use these names. The default
   cycle leaves `off` out. An explicit cycle includes `off` only when its
-  set names `off` and the device supports it. Cycling skips a mode the
-  device does not support. Support-report write tests probe Cycle order in
-  reverse. Raw private AVFoundation or system HAL values are not listening
-  modes until their adapter translates them.
+  set names `off` and the device supports it. `--modes` selects a cycle
+  set. A current mode outside the set advances from its place in the
+  Cycle order. `--explicit-order` cycles those modes in the order given.
+  An unknown mode, or a current mode outside the set, starts at the
+  first mode in that order. Cycling skips a mode the device does not
+  support. Support-report write tests probe Cycle order in reverse. Raw
+  private AVFoundation or system HAL values are not listening modes until
+  their adapter translates them.
 
 **Compatible audio device**
 : The device interface used by command execution. It provides typed status-field

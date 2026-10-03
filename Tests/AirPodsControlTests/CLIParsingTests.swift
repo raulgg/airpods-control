@@ -142,12 +142,84 @@ struct CLIParsingTests {
         "modes on get",
         ["lm", "get", "--modes", "transparency,adaptive"]
       ),
+      InvalidInvocation(
+        "explicit order without modes",
+        ["lm", "cycle", "--explicit-order"]
+      ),
+      InvalidInvocation(
+        "explicit order on get",
+        ["lm", "get", "--explicit-order"]
+      ),
+      InvalidInvocation(
+        "duplicate explicit order",
+        [
+          "lm", "cycle", "--modes", "adaptive,transparency",
+          "--explicit-order", "--explicit-order",
+        ]
+      ),
+      InvalidInvocation(
+        "explicit order aliases deduplicate",
+        ["lm", "cycle", "--modes", "trans,transparency", "--explicit-order"]
+      ),
     ]
   )
   func rejectsInvalidCycleArguments(_ example: InvalidInvocation) {
     #expect(throws: CLIParseError.self) {
       _ = try parseInvocation(example.arguments)
     }
+  }
+
+  @Test("Preserves explicit cycle order only when --explicit-order is set")
+  func preservesListedCycleOrder() throws {
+    let sorted = try parseInvocation([
+      "lm", "cycle", "--modes", "adaptive,noise-cancellation,transparency",
+    ])
+    let sortedRequest = try #require(listeningModeCycleRequest(from: sorted.command))
+    #expect(
+      sortedRequest == .subset([.transparency, .adaptive, .noiseCancellation]),
+      "--modes without --explicit-order sorts into cycle order"
+    )
+
+    let listed = try parseInvocation([
+      "lm", "cycle", "--modes",
+      "adaptive,noise-cancellation,transparency", "--explicit-order",
+    ])
+    let listedRequest = try #require(listeningModeCycleRequest(from: listed.command))
+    #expect(
+      listedRequest == .explicitOrder([.adaptive, .noiseCancellation, .transparency]),
+      "--explicit-order keeps the written mode sequence"
+    )
+
+    let flagBeforeModes = try parseInvocation([
+      "lm", "cycle", "--explicit-order", "--modes",
+      "adaptive,noise-cancellation,transparency",
+    ])
+    let flagBeforeRequest = try #require(
+      listeningModeCycleRequest(from: flagBeforeModes.command)
+    )
+    #expect(
+      flagBeforeRequest == listedRequest,
+      "the flag is also accepted before --modes"
+    )
+
+    let flagAfterModes = try parseInvocation([
+      "lm", "cycle", "--modes", "anc,trans,adaptive,anc", "--explicit-order",
+    ])
+    let flagAfterRequest = try #require(
+      listeningModeCycleRequest(from: flagAfterModes.command)
+    )
+    #expect(
+      flagAfterRequest == .explicitOrder([
+        .noiseCancellation, .transparency, .adaptive,
+      ]),
+      "aliases canonicalize and duplicate names are ignored"
+    )
+
+    let defaultCycle = try parseInvocation(["lm", "cycle"])
+    let defaultRequest = try #require(
+      listeningModeCycleRequest(from: defaultCycle.command)
+    )
+    #expect(defaultRequest == .defaultCycle, "cycle without --modes uses the default set")
   }
 }
 
@@ -178,4 +250,11 @@ struct InvalidInvocation: Sendable, CustomTestStringConvertible {
 private func listeningModeSet(from command: CLICommand) -> ListeningMode? {
   guard case let .listeningModeSet(mode) = command else { return nil }
   return mode
+}
+
+private func listeningModeCycleRequest(
+  from command: CLICommand
+) -> ListeningModeCycleRequest? {
+  guard case let .listeningModeCycle(request) = command else { return nil }
+  return request
 }

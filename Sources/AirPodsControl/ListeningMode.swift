@@ -35,15 +35,56 @@ enum ListeningMode: String, CaseIterable {
     .off, .transparency, .adaptive, .noiseCancellation,
   ]
 
-  static func next(current: ListeningMode?, within cycle: [ListeningMode]) -> ListeningMode {
-    guard let current, let start = cycleOrder.firstIndex(of: current) else {
+  static func next(
+    current: ListeningMode?,
+    within cycle: [ListeningMode],
+    order: ListeningModeCycleOrder = .cycle
+  ) -> ListeningMode {
+    switch order {
+    case .explicit:
+      guard let current, let start = cycle.firstIndex(of: current) else {
+        return cycle[0]
+      }
+      return cycle[(start + 1) % cycle.count]
+    case .cycle:
+      guard let current, let start = cycleOrder.firstIndex(of: current) else {
+        return cycle[0]
+      }
+      for step in 1...cycleOrder.count {
+        let candidate = cycleOrder[(start + step) % cycleOrder.count]
+        if cycle.contains(candidate) { return candidate }
+      }
       return cycle[0]
     }
-    for step in 1...cycleOrder.count {
-      let candidate = cycleOrder[(start + step) % cycleOrder.count]
-      if cycle.contains(candidate) { return candidate }
+  }
+}
+
+enum ListeningModeCycleOrder: Equatable {
+  case cycle
+  case explicit
+}
+
+enum ListeningModeCycleRequest: Equatable {
+  case defaultCycle
+  case subset([ListeningMode])
+  case explicitOrder([ListeningMode])
+
+  var modes: [ListeningMode]? {
+    switch self {
+    case .defaultCycle:
+      return nil
+    case let .subset(modes), let .explicitOrder(modes):
+      return modes
     }
-    return cycle[0]
+  }
+
+  var order: ListeningModeCycleOrder {
+    switch self {
+    case .defaultCycle, .subset(_):
+      return .cycle
+    case .explicitOrder(_):
+      return .explicit
+    }
   }
 }
 

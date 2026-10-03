@@ -61,6 +61,39 @@ struct ListeningModeTests {
     )
   }
 
+  @Test("Follows the written list when explicit order is requested")
+  func explicitOrderCycle() {
+    let listed: [ListeningMode] = [
+      .adaptive, .transparency, .noiseCancellation,
+    ]
+    #expect(
+      ListeningMode.next(current: .adaptive, within: listed, order: .explicit) == .transparency,
+      "explicit order advances from Adaptive to Transparency"
+    )
+    #expect(
+      ListeningMode.next(current: .transparency, within: listed, order: .explicit)
+        == .noiseCancellation,
+      "explicit order continues to Noise cancellation"
+    )
+    #expect(
+      ListeningMode.next(current: .noiseCancellation, within: listed, order: .explicit)
+        == .adaptive,
+      "explicit order wraps to the first written mode"
+    )
+
+    let rotation: [ListeningMode] = [
+      .adaptive, .noiseCancellation, .transparency,
+    ]
+    #expect(
+      ListeningMode.next(current: nil, within: rotation, order: .explicit) == .adaptive,
+      "an unknown mode starts at the first written mode"
+    )
+    #expect(
+      ListeningMode.next(current: .off, within: rotation, order: .explicit) == .adaptive,
+      "a mode outside the list starts at the first written mode"
+    )
+  }
+
   @Test("Shares the canonical Bluetooth listening-mode numeric mapping")
   func bluetoothListeningModeNumericMapping() {
     #expect(

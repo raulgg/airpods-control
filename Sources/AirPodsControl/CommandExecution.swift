@@ -58,8 +58,8 @@ enum CommandExecution {
       return listeningModeList(session: session)
     case .set(let target):
       return listeningModeSet(target, session: session, logger: logger)
-    case .cycle(let requested):
-      return listeningModeCycle(requested, session: session, logger: logger)
+    case .cycle(let request):
+      return listeningModeCycle(request, session: session, logger: logger)
     }
   }
 
@@ -259,12 +259,12 @@ enum CommandExecution {
   }
 
   private static func listeningModeCycle(
-    _ requested: [ListeningMode]?,
+    _ request: ListeningModeCycleRequest,
     session: ListeningModeSession,
     logger: DebugLogger
   ) -> CommandOutcome {
     let cycleModes = ListeningModeCyclePolicy.supportedModes(
-      requested: requested,
+      requested: request.modes,
       available: session.availableModes
     )
     switch listeningModeMutationEligibility(
@@ -274,7 +274,11 @@ enum CommandExecution {
     case let .ineligible(reason):
       return listeningModeFailureOutcome(reason, session: session)
     case let .eligible(writePlan):
-      let target = ListeningMode.next(current: session.currentMode, within: cycleModes)
+      let target = ListeningMode.next(
+        current: session.currentMode,
+        within: cycleModes,
+        order: request.order
+      )
       logger.debug("cycle.set", cycleModes.map(\.rawValue).joined(separator: ","))
       logger.debug("cycle.target", target.rawValue)
       return listeningModeWriteOutcome(

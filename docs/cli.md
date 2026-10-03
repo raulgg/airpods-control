@@ -12,7 +12,7 @@ pods-control [--device NAME] listening-mode get [--json] [--debug]
 pods-control [--device NAME] listening-mode set <mode> [--json] [--debug]
 pods-control [--device NAME] listening-mode list [--json] [--debug]
 pods-control [--device NAME] listening-mode cycle
-    [--modes <m1,m2[,...]>] [--json] [--debug]
+    [--modes <m1,m2[,...]>] [--explicit-order] [--json] [--debug]
 pods-control [--device NAME] conversation-awareness get [--json] [--debug]
 pods-control [--device NAME] conversation-awareness set <on|off> [--json] [--debug]
 pods-control support-report [--with-write-tests | --no-write-tests] [--debug]
@@ -157,12 +157,33 @@ $ pods-control lm cycle --modes off,transparency,noise-cancellation
 transparency
 ```
 
-The order of names in `--modes` does not matter. Cycling follows the Cycle
-order, and the command accepts the mode aliases listed above. Fewer than two
+The command accepts the mode aliases listed above. The order of those modes
+does not matter unless `--explicit-order` is set. Fewer than two
 distinct modes or an unknown token produces `bad-args` (exit `2`). The
 command skips modes that the connected device does not support. If fewer
 than two remain, it reports `unsupported` (exit `4`). A change that cannot
 be verified reports `no-op` (exit `3`).
+
+`--explicit-order` requires `--modes` and cycles those modes in the order
+given, wrapping from the last mode to the first. If the current mode is
+`unknown`, or outside the set, `cycle` starts at the first mode in the
+order given. From `adaptive`,
+`--modes adaptive,transparency,noise-cancellation` lands on `transparency`:
+
+```console
+$ pods-control lm cycle --modes adaptive,transparency,noise-cancellation --explicit-order
+transparency
+```
+
+From `adaptive`, those modes in Cycle order land on `noise-cancellation`.
+
+From `off`, or from an `unknown` mode,
+`--modes adaptive,noise-cancellation,transparency` starts at `adaptive`:
+
+```console
+$ pods-control lm cycle --modes adaptive,noise-cancellation,transparency --explicit-order
+adaptive
+```
 
 ### Cached Allow Off availability
 
