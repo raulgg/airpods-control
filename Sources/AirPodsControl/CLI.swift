@@ -203,16 +203,15 @@ Cycle:
   included only when --modes lists it and the device supports it. A mode
   the device lacks is skipped, so a device without adaptive goes from
   noise-cancellation to transparency. --modes selects an explicit subset
-  of at least two distinct modes. The order of those names matters only
-  when --explicit-order is set. Otherwise cycling follows Cycle order. If
-  the current mode is outside the set, cycle continues from that mode's
-  place in the Cycle order to the next mode in the set (wrapping). If the
-  current mode is unknown, cycle starts at the set's first mode.
-  --explicit-order requires --modes and cycles through the names in the
-  order written, wrapping from the last name to the first. A mode the
-  device lacks is skipped, and the names that remain stay in that order.
-  If the current mode is unknown, or outside the names that remain, cycle
-  starts at the first of those names.
+  of at least two distinct modes. The order of those modes does not
+  matter unless --explicit-order is set. If the current mode is outside
+  the set, cycle continues from that mode's place in the Cycle order to
+  the next mode in the set (wrapping). If the current mode is unknown,
+  cycle starts at the set's first mode.
+  --explicit-order requires --modes and cycles those modes in the order
+  given, wrapping from the last mode to the first. If the current mode is
+  unknown, or outside the set, cycle starts at the first mode in the
+  order given.
 
 Options:
   --device NAME
@@ -222,8 +221,8 @@ Options:
                Cycle set for listening-mode cycle: at least two distinct
                modes, comma-separated. Mode aliases are accepted.
   --explicit-order
-               Cycle through the --modes names in the order written.
-               Requires --modes. Supply it once.
+               Cycle modes in the order given. Requires --modes. Supply
+               it once.
   --json       Emit structured JSON instead of plain script-friendly output.
   --debug      Emit diagnostic logs to stderr without changing command output.
   --help, -h   Print this help and exit without accessing the device.
