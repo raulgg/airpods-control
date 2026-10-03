@@ -126,39 +126,44 @@ continue to expose Off when AV advertises it.
 ### Cycle through modes
 
 `cycle` advances to the next mode, like pressing and holding an AirPods stem,
-and prints the resulting mode:
+and prints the resulting mode. From `transparency`, the default cycle
+advances to `noise-cancellation`, then `adaptive`:
 
 ```console
 $ pods-control listening-mode cycle
-adaptive
-$ pods-control lm cycle
 noise-cancellation
+$ pods-control lm cycle
+adaptive
 ```
 
 By default, the cycle set contains every supported mode except `off`. Modes
-cycle in canonical order (`off`, `transparency`, `adaptive`,
-`noise-cancellation`) and wrap at the end. If the current mode is outside the
-cycle set, the command still advances from its canonical position. For example,
-cycling from `adaptive` with `--modes transparency,noise-cancellation` lands on
-`noise-cancellation`. Cycling from `adaptive` with `--modes off,transparency`
-wraps to `off`. If the current mode is `unknown`, `cycle` starts at the first
-mode in the set.
+cycle in interface order (`off`, `noise-cancellation`, `adaptive`,
+`transparency`) and wrap at the end. `off` is included only when `--modes`
+lists it and the device supports it. Modes the device does not support are
+skipped, so a device without `adaptive` goes from `noise-cancellation` to
+`transparency`. If the current mode is outside the cycle set, the command
+still advances from its position in that interface order. For example,
+cycling from `adaptive` with `--modes transparency,noise-cancellation` lands
+on `transparency`. Cycling from `adaptive` with `--modes off,transparency`
+lands on `transparency`. If the current mode is `unknown`, `cycle` starts at
+the first mode in the set.
 
-`--modes` selects an explicit cycle set. Pass a comma-separated list of at least
-two distinct modes, like the "Press and Hold to Cycle Between" checkboxes in
-System Settings:
+`--modes` selects an explicit cycle set. Pass a comma-separated list of at
+least two distinct modes, like the "Press and Hold to Cycle Between"
+checkboxes in System Settings. From `off`, this set lands on
+`noise-cancellation`:
 
 ```console
 $ pods-control lm cycle --modes off,transparency,noise-cancellation
-transparency
+noise-cancellation
 ```
 
-Order within `--modes` does not matter. Cycling follows the canonical order, and
-the command accepts the mode aliases listed above. Fewer than two distinct modes
-or an unknown token produces `bad-args` (exit `2`). The command skips modes that
-the connected device does not support. If fewer than two remain, it reports
-`unsupported` (exit `4`). A change that cannot be verified reports `no-op` (exit
-`3`).
+Order within `--modes` does not matter. Cycling follows the interface order,
+and the command accepts the mode aliases listed above. Fewer than two
+distinct modes or an unknown token produces `bad-args` (exit `2`). The
+command skips modes that the connected device does not support. If fewer
+than two remain, it reports `unsupported` (exit `4`). A change that cannot
+be verified reports `no-op` (exit `3`).
 
 ### Cached Allow Off availability
 

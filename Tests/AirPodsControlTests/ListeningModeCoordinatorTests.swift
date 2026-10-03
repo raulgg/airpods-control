@@ -220,10 +220,10 @@ struct ListeningModeCoordinatorTests {
       candidates: [candidate(av: cycleAV, route: .unknown)]
     )
     #expect(
-      cycleOutcome.plain == "transparency",
+      cycleOutcome.plain == "noise-cancellation",
       "AV cycle with unknown current starts at the first default mode"
     )
-    #expect(cycleAV.setterTargets == [.transparency], "unknown AV cycle writes its first target")
+    #expect(cycleAV.setterTargets == [.noiseCancellation], "unknown AV cycle writes its first target")
   }
 
   @Test

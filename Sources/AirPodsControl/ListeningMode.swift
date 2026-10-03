@@ -28,12 +28,19 @@ enum ListeningMode: String, CaseIterable {
     }
   }
 
+  // Interface order for listening-mode cycle, matching macOS and iOS.
+  // Case order stays the list and support-report order. Off is first only
+  // when the cycle set includes it; next skips modes absent from the set.
+  static let cycleOrder: [ListeningMode] = [
+    .off, .noiseCancellation, .adaptive, .transparency,
+  ]
+
   static func next(current: ListeningMode?, within cycle: [ListeningMode]) -> ListeningMode {
-    guard let current, let start = allCases.firstIndex(of: current) else {
+    guard let current, let start = cycleOrder.firstIndex(of: current) else {
       return cycle[0]
     }
-    for step in 1...allCases.count {
-      let candidate = allCases[(start + step) % allCases.count]
+    for step in 1...cycleOrder.count {
+      let candidate = cycleOrder[(start + step) % cycleOrder.count]
       if cycle.contains(candidate) { return candidate }
     }
     return cycle[0]

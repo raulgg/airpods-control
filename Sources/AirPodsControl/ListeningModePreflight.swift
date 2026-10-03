@@ -82,7 +82,7 @@ enum ListeningModeCyclePolicy {
     requested: [ListeningMode]?,
     available: [ListeningMode]
   ) -> [ListeningMode] {
-    let base = requested ?? ListeningMode.allCases.filter { $0 != .off }
+    let base = requested ?? ListeningMode.cycleOrder.filter { $0 != .off }
     return base.filter { available.contains($0) }
   }
 }

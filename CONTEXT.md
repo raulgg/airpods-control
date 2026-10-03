@@ -146,9 +146,14 @@
 
 **Listening mode**
 : A canonical user-facing AirPods state: `off`, `transparency`, `adaptive`, or
-  `noise-cancellation`. Parsing, ordering, aliases, cycling, and write-result
-  interpretation use this vocabulary. Raw private AVFoundation or system HAL
-  values are not listening modes until their adapter translates them.
+  `noise-cancellation`. Parsing, aliases, list ordering, and write-result
+  interpretation use this vocabulary in case order (`off`, `transparency`,
+  `adaptive`, `noise-cancellation`). `listening-mode cycle` advances in
+  interface order: `off` when that cycle enables it, then
+  `noise-cancellation`, `adaptive`, and `transparency`, skipping any mode the
+  device does not support. Support-report write tests keep probing reverse
+  case order. Raw private AVFoundation or system HAL values are not listening
+  modes until their adapter translates them.
 
 **Compatible audio device**
 : The device interface used by command execution. It provides typed status-field
@@ -191,7 +196,7 @@
   observations that remain. Identity does not decide write-test eligibility;
   the captured runtime plan, explicit consent, bounded verification, and
   restoration rules do. Listening-mode write tests probe advertised modes in
-  reverse canonical order so an Off fallback to Transparency cannot make the
+  reverse case order so an Off fallback to Transparency cannot make the
   Transparency write already-current. The document contains one result row per
   attempted write and omits unresolved values instead of turning them into
   prose. The terminal and GitHub renderers format the document and choose how

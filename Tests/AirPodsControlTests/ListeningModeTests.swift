@@ -16,6 +16,51 @@ struct ListeningModeTests {
     #expect(ListeningMode(token: "normal") == nil, "private raw names are not public tokens")
   }
 
+  @Test("Cycles in interface order and skips modes the device lacks")
+  func listeningModeCycleOrder() {
+    #expect(
+      ListeningMode.cycleOrder == [.off, .noiseCancellation, .adaptive, .transparency],
+      "cycle order matches the macOS and iOS interface"
+    )
+
+    let supported = ListeningMode.cycleOrder
+    #expect(ListeningMode.next(current: .off, within: supported) == .noiseCancellation)
+    #expect(ListeningMode.next(current: .noiseCancellation, within: supported) == .adaptive)
+    #expect(ListeningMode.next(current: .adaptive, within: supported) == .transparency)
+    #expect(ListeningMode.next(current: .transparency, within: supported) == .off)
+    #expect(ListeningMode.next(current: nil, within: supported) == .off)
+
+    let defaultSet = ListeningMode.cycleOrder.filter { $0 != .off }
+    #expect(
+      ListeningMode.next(current: .transparency, within: defaultSet) == .noiseCancellation,
+      "the default cycle wraps from Transparency to Noise cancellation"
+    )
+    #expect(
+      ListeningMode.next(current: .off, within: defaultSet) == .noiseCancellation,
+      "Off advances to Noise cancellation when Off is outside the set"
+    )
+
+    let withoutAdaptive: [ListeningMode] = [.noiseCancellation, .transparency]
+    #expect(
+      ListeningMode.next(current: .noiseCancellation, within: withoutAdaptive) == .transparency,
+      "Noise cancellation skips a missing Adaptive mode"
+    )
+    #expect(
+      ListeningMode.next(current: .transparency, within: withoutAdaptive) == .noiseCancellation,
+      "Transparency wraps to Noise cancellation when Adaptive is absent"
+    )
+
+    let withoutAdaptiveWithOff: [ListeningMode] = [.off, .noiseCancellation, .transparency]
+    #expect(
+      ListeningMode.next(current: .transparency, within: withoutAdaptiveWithOff) == .off,
+      "Transparency advances to Off when Off is enabled and Adaptive is absent"
+    )
+    #expect(
+      ListeningMode.next(current: .off, within: withoutAdaptiveWithOff) == .noiseCancellation,
+      "Off advances to Noise cancellation when Adaptive is absent"
+    )
+  }
+
   @Test("Shares the canonical Bluetooth listening-mode numeric mapping")
   func bluetoothListeningModeNumericMapping() {
     #expect(
