@@ -16,28 +16,28 @@ struct ListeningModeTests {
     #expect(ListeningMode(token: "normal") == nil, "private raw names are not public tokens")
   }
 
-  @Test("Cycles in interface order and skips modes the device lacks")
+  @Test("Cycles in cycle order and skips modes the device lacks")
   func listeningModeCycleOrder() {
     #expect(
-      ListeningMode.cycleOrder == [.off, .noiseCancellation, .adaptive, .transparency],
-      "cycle order matches the macOS and iOS interface"
+      ListeningMode.cycleOrder == [.off, .transparency, .adaptive, .noiseCancellation],
+      "cycle order matches the Apple listening-mode control"
     )
 
     let supported = ListeningMode.cycleOrder
-    #expect(ListeningMode.next(current: .off, within: supported) == .noiseCancellation)
-    #expect(ListeningMode.next(current: .noiseCancellation, within: supported) == .adaptive)
-    #expect(ListeningMode.next(current: .adaptive, within: supported) == .transparency)
-    #expect(ListeningMode.next(current: .transparency, within: supported) == .off)
+    #expect(ListeningMode.next(current: .off, within: supported) == .transparency)
+    #expect(ListeningMode.next(current: .transparency, within: supported) == .adaptive)
+    #expect(ListeningMode.next(current: .adaptive, within: supported) == .noiseCancellation)
+    #expect(ListeningMode.next(current: .noiseCancellation, within: supported) == .off)
     #expect(ListeningMode.next(current: nil, within: supported) == .off)
 
     let defaultSet = ListeningMode.cycleOrder.filter { $0 != .off }
     #expect(
-      ListeningMode.next(current: .transparency, within: defaultSet) == .noiseCancellation,
-      "the default cycle wraps from Transparency to Noise cancellation"
+      ListeningMode.next(current: .transparency, within: defaultSet) == .adaptive,
+      "the default cycle advances from Transparency to Adaptive"
     )
     #expect(
-      ListeningMode.next(current: .off, within: defaultSet) == .noiseCancellation,
-      "Off advances to Noise cancellation when Off is outside the set"
+      ListeningMode.next(current: .off, within: defaultSet) == .transparency,
+      "Off advances to Transparency when Off is outside the set"
     )
 
     let withoutAdaptive: [ListeningMode] = [.noiseCancellation, .transparency]
@@ -52,12 +52,12 @@ struct ListeningModeTests {
 
     let withoutAdaptiveWithOff: [ListeningMode] = [.off, .noiseCancellation, .transparency]
     #expect(
-      ListeningMode.next(current: .transparency, within: withoutAdaptiveWithOff) == .off,
-      "Transparency advances to Off when Off is enabled and Adaptive is absent"
+      ListeningMode.next(current: .transparency, within: withoutAdaptiveWithOff) == .noiseCancellation,
+      "Transparency advances to Noise cancellation when Adaptive is absent"
     )
     #expect(
-      ListeningMode.next(current: .off, within: withoutAdaptiveWithOff) == .noiseCancellation,
-      "Off advances to Noise cancellation when Adaptive is absent"
+      ListeningMode.next(current: .noiseCancellation, within: withoutAdaptiveWithOff) == .off,
+      "Noise cancellation advances to Off when Off is enabled and Adaptive is absent"
     )
   }
 

@@ -240,11 +240,11 @@ Without usable positive evidence, HAL lists omit Off. The default cycle never in
 or explicit cycle containing Off may make one HAL setter attempt when there is neither usable positive evidence nor a cached denial. A cached denial suppresses the probe and makes explicit Off unsupported. AV-backed commands follow the modes AV advertises, including Off when advertised.
 .TP
 .BR "listening-mode cycle" ", " "lm cycle"
-Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes cycle in interface order:
+Advance to the next mode in the cycle set, wrapping around, and print the mode landed on. Modes cycle in cycle order:
 .BR off ,
-.BR noise-cancellation ,
+.BR transparency ,
 .BR adaptive ,
-.BR transparency .
+.BR noise-cancellation .
 .B off
 is included only when
 .B --modes
@@ -262,7 +262,7 @@ If fewer than two remain the command reports
 (exit 4). If the current mode is outside the cycle set (including
 .BR off
 when the default set is in use),
-cycle still advances in interface order from the current mode to the next mode that is in the set, wrapping around; if the current mode is unknown, cycle starts at the set's first mode. A change that does not verify reports
+cycle still advances in cycle order from the current mode to the next mode that is in the set, wrapping around; if the current mode is unknown, cycle starts at the set's first mode. A change that does not verify reports
 .B no-op
 (exit 3).
 .SS ALLOW OFF CACHE

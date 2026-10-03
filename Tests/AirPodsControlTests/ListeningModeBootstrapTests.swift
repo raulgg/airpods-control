@@ -172,7 +172,7 @@ struct ListeningModeBootstrapTests {
       avDevices: [selected],
       loadHAL: recorder.load
     )
-    #expect(outcome.plain == "noise-cancellation", "selected AV-ready cycle advances from transparency")
+    #expect(outcome.plain == "adaptive", "selected AV-ready cycle advances from transparency")
     #expect(selectedRaw.listeningModeSetCount == 1, "selected AV receives the cycle setter")
     #expect(recorder.loadCount == 0, "selected AV-ready cycle does not construct HAL inventory")
   }

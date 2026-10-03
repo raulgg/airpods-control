@@ -157,14 +157,14 @@ struct ListeningModePreflightTests {
 
     #expect(
       ListeningModeCyclePolicy.supportedModes(requested: nil, available: available)
-        == [.noiseCancellation, .adaptive, .transparency],
-      "the default cycle excludes Off and keeps interface order"
+        == [.transparency, .adaptive, .noiseCancellation],
+      "the default cycle excludes Off and keeps cycle order"
     )
     #expect(
       ListeningModeCyclePolicy.supportedModes(
         requested: nil,
         available: [.off, .noiseCancellation, .transparency]
-      ) == [.noiseCancellation, .transparency],
+      ) == [.transparency, .noiseCancellation],
       "the default cycle skips Adaptive when the device lacks it"
     )
     #expect(

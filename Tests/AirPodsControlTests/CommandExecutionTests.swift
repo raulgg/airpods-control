@@ -361,12 +361,12 @@ struct CommandExecutionTests {
       listeningMode: .transparency
     )
     let defaultCycle = try commandOutcome(["lm", "cycle"], device: defaultDevice)
-    #expect(defaultCycle.plain == "noise-cancellation", "default cycle advances to Noise cancellation")
+    #expect(defaultCycle.plain == "adaptive", "default cycle advances to Adaptive")
     #expect(
-      defaultCycle.payload["listeningMode"] as? String == "noise-cancellation",
+      defaultCycle.payload["listeningMode"] as? String == "adaptive",
       "cycle payload has target mode"
     )
-    #expect(defaultDevice.listeningMode == .noiseCancellation, "cycle mutates the device")
+    #expect(defaultDevice.listeningMode == .adaptive, "cycle mutates the device")
     #expect(
       defaultCycle.payload["supportedListeningModes"] == nil,
       "cycle payload omits supported mode list"
@@ -381,11 +381,11 @@ struct CommandExecutionTests {
       device: explicitDevice
     )
     #expect(
-      explicitCycle.plain == "transparency",
-      "explicit aliases advance in interface order from an excluded current mode"
+      explicitCycle.plain == "noise-cancellation",
+      "explicit aliases advance in cycle order from an excluded current mode"
     )
     #expect(
-      explicitDevice.listeningMode == .transparency,
+      explicitDevice.listeningMode == .noiseCancellation,
       "explicit cycle applies its target"
     )
     let wrappedCycle = try commandOutcome(
@@ -393,37 +393,37 @@ struct CommandExecutionTests {
       device: explicitDevice
     )
     #expect(
-      wrappedCycle.plain == "noise-cancellation",
+      wrappedCycle.plain == "transparency",
       "explicit cycle wraps after its last selected mode"
     )
 
-    explicitDevice.listeningMode = .transparency
+    explicitDevice.listeningMode = .noiseCancellation
     let cycleThroughOff = try commandOutcome(
       ["lm", "cycle", "--modes", "noise-cancellation,off,transparency"],
       device: explicitDevice
     )
     #expect(cycleThroughOff.plain == "off", "an explicit cycle can wrap through Off")
     let cycleOutOfOff = try commandOutcome(["lm", "cycle"], device: explicitDevice)
-    #expect(cycleOutOfOff.plain == "noise-cancellation", "the default cycle advances out of Off")
+    #expect(cycleOutOfOff.plain == "transparency", "the default cycle advances out of Off")
 
     let unknownDevice = FakeCompatibleAudioDevice(
       name: "Unknown Cycle AirPods",
       listeningMode: nil
     )
     let unknownCycle = try commandOutcome(["lm", "cycle"], device: unknownDevice)
-    #expect(unknownCycle.plain == "noise-cancellation", "an unknown mode starts at the first mode")
+    #expect(unknownCycle.plain == "transparency", "an unknown mode starts at the first mode")
 
     let unknownExplicitDevice = FakeCompatibleAudioDevice(
       name: "Unknown Explicit Cycle AirPods",
       listeningMode: nil
     )
     let unknownExplicitCycle = try commandOutcome(
-      ["lm", "cycle", "--modes", "transparency,noise-cancellation"],
+      ["lm", "cycle", "--modes", "noise-cancellation,transparency"],
       device: unknownExplicitDevice
     )
     #expect(
-      unknownExplicitCycle.plain == "noise-cancellation",
-      "an unknown mode starts at the first mode in interface order"
+      unknownExplicitCycle.plain == "transparency",
+      "an unknown mode starts at the first mode in cycle order"
     )
 
     let noAdaptiveDevice = FakeCompatibleAudioDevice(

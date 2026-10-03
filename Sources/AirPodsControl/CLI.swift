@@ -198,8 +198,8 @@ Mode aliases:
   anc, nc      noise-cancellation
 
 Cycle:
-  cycle advances in interface order: off, noise-cancellation, adaptive,
-  transparency. It wraps around and prints the mode it landed on. The cycle
+  cycle advances in cycle order: off, transparency, adaptive,
+  noise-cancellation. It wraps around and prints the mode it landed on. The cycle
   set defaults to every mode the device supports except off. Off is included
   only when --modes lists it and the device supports it. Modes the device
   lacks are skipped, so a device without adaptive goes from

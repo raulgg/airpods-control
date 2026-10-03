@@ -179,7 +179,7 @@ struct ListeningModeCoordinatorAllowOffTests {
       ["lm", "cycle", "--modes", "off,noise-cancellation"],
       candidates: [successful.candidate]
     )
-    #expect(defaultCycle.plain == "adaptive", "the default cycle remains non-Off")
+    #expect(defaultCycle.plain == "transparency", "the default cycle remains non-Off")
     #expect(explicitCycle.plain == "off", "an explicit Off cycle consumes cached evidence")
     #expect(
       successfulTransport.allowOffWrites == [true, false, true],
